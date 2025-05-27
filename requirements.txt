@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+openai
+python-multipart
+pydantic
+python-dotenv
+google-cloud-speech
+google-cloud-texttospeech
+git+https://github.com/openai/whisper.git

@@ -1,0 +1,7 @@
+# .gitignore
+.env
+credentials/
+venv
+AI_TUTOR_NOTES.txt
+prompts.txt
+audio_checking
