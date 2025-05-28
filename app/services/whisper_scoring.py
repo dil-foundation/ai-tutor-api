@@ -2,30 +2,34 @@ import whisper
 import tempfile
 import os
 
-# Load Whisper model only once
 model = whisper.load_model("base")
 
-def score_pronunciation(audio_bytes: bytes, expected_text: str) -> float:
-    # Create a temporary .wav file to save the audio bytes
+def transcribe_with_whisper(audio_bytes: bytes) -> str:
+    # Save audio bytes to a temporary .wav file
     with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as f:
         f.write(audio_bytes)
         f.flush()
-        os.fsync(f.fileno())  # Make sure it's written to disk
+        os.fsync(f.fileno())
         temp_file_path = f.name
 
     try:
-        # Transcribe the audio using Whisper
         result = model.transcribe(temp_file_path)
         transcript = result["text"]
-
-        # Compare transcribed text with expected text (basic word match scoring)
-        expected_words = set(expected_text.lower().split())
-        transcript_words = set(transcript.lower().split())
-
-        accuracy = len(transcript_words & expected_words) / len(expected_words) if expected_words else 0
-        return round(accuracy * 100, 2)
-
+        return transcript.strip()
     finally:
-        # Clean up temporary file
         if os.path.exists(temp_file_path):
             os.remove(temp_file_path)
+
+def score_pronunciation(audio_bytes: bytes, expected_text: str) -> float:
+    # Transcribe the audio
+    transcript = transcribe_with_whisper(audio_bytes)
+
+    # Basic word-match scoring
+    expected_words = set(expected_text.lower().split())
+    transcript_words = set(transcript.lower().split())
+
+    if not expected_words:
+        return 0.0
+
+    accuracy = len(transcript_words & expected_words) / len(expected_words)
+    return round(accuracy * 100, 2)
