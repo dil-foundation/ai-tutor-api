@@ -1,28 +1,24 @@
 import whisper
 import tempfile
-import base64
 import os
 
-# Load the Whisper model once
+# Load Whisper model only once
 model = whisper.load_model("base")
 
-def score_pronunciation(audio_base64: str, expected_text: str) -> float:
-    # Decode the base64 audio string
-    audio_data = base64.b64decode(audio_base64)
-
-    # Create a temporary .wav file
+def score_pronunciation(audio_bytes: bytes, expected_text: str) -> float:
+    # Create a temporary .wav file to save the audio bytes
     with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as f:
-        f.write(audio_data)
+        f.write(audio_bytes)
         f.flush()
-        os.fsync(f.fileno())  # Ensure data is written to disk
+        os.fsync(f.fileno())  # Make sure it's written to disk
         temp_file_path = f.name
 
     try:
-        # Run transcription using Whisper
+        # Transcribe the audio using Whisper
         result = model.transcribe(temp_file_path)
         transcript = result["text"]
 
-        # Basic similarity scoring
+        # Compare transcribed text with expected text (basic word match scoring)
         expected_words = set(expected_text.lower().split())
         transcript_words = set(transcript.lower().split())
 

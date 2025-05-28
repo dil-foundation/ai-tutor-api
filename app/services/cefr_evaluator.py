@@ -1,22 +1,3 @@
-# def evaluate_cefr_level(user_text: str) -> str:
-#     system_prompt = (
-#         "You are a professional English tutor and CEFR evaluator. "
-#         "Evaluate the user's English writing and assign one CEFR stage (A1, A2, B1, B2, C1, or C2). "
-#         "Only respond with the level (e.g., A2)."
-#     )
-
-#     prompt = f"User's writing:\n\"{user_text}\""
-
-#     response = openai.ChatCompletion.create(
-#         model="gpt-4-turbo",
-#         messages=[
-#             {"role": "system", "content": system_prompt},
-#             {"role": "user", "content": prompt}
-#         ],
-#         max_tokens=10,
-#         temperature=0.3,
-#     )
-
 from openai import OpenAI
 from fastapi import HTTPException
 

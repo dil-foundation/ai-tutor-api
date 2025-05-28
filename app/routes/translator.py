@@ -1,15 +1,26 @@
-from fastapi import APIRouter
-from app.schemas.user_input import VoiceInput
-from app.services import stt, translation, tts, whisper_scoring, feedback
+from fastapi import APIRouter, UploadFile, File
 from fastapi.responses import JSONResponse
+import io
+
+from app.services import stt, translation, tts, whisper_scoring, feedback
 
 router = APIRouter()
 
 @router.post("/speak")
-def process_voice(input: VoiceInput):
-    urdu_text = stt.transcribe_audio(input.audio_base64)
+async def process_voice(file: UploadFile = File(...)):
+    # Read file as bytes
+    audio_bytes = await file.read()
+    
+    # Transcribe Urdu audio
+    urdu_text = stt.transcribe_audio_bytes(audio_bytes)
+    
+    # Translate to English
     english_translation = translation.translate_urdu_to_english(urdu_text)
-    pronunciation_score = whisper_scoring.score_pronunciation(input.audio_base64, english_translation)
+    
+    # Score pronunciation
+    pronunciation_score = whisper_scoring.score_pronunciation(audio_bytes, english_translation)
+    
+    # Fluency feedback
     fluency_feedback = feedback.get_fluency_feedback(english_translation)
 
     return JSONResponse(content={
