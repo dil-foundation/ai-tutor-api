@@ -11,7 +11,7 @@ router = APIRouter()
 async def speak_urdu_to_english_metadata(file: UploadFile = File(...)):
     # Step 1: Read Urdu audio bytes
     audio_bytes = await file.read()
-
+    
     # Step 2: Convert Urdu audio to text
     urdu_text = stt.transcribe_audio_bytes(audio_bytes)
     print("🔍 Urdu Text:", urdu_text)
