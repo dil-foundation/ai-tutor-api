@@ -65,3 +65,32 @@ ai_tutor_backend/
 │
 ├── requirements.txt
 └── README.md
+
+
+# Docker Setup for AI Tutor Backend
+
+### Step 1: Clone the Repository
+
+### Step 2: Build the Docker Image:
+docker build -t ai-tutor-backend .
+
+### Step 3: Run the Docker Container
+
+docker run -d -p 8000:8000 -v "$(pwd)/credentials:/app/credentials" -e GOOGLE_APPLICATION_CREDENTIALS=/app/credentials/google-credentials.json -e OPENAI_API_KEY='openai-key' --name ai-tutor-backend ai-tutor-backend 
+
+## Explanation:
+-d: Runs the container in detached mode.
+
+-p 8000:8000: Maps container port 8000 to host.
+
+-v: Mounts credentials into the container securely.
+
+-e: Sets required environment variables.
+
+### Access the API
+After successful deployment, access the API docs here:
+
+Swagger UI: http://localhost:8000/docs
+
+
+

@@ -2,6 +2,7 @@ fastapi
 uvicorn
 openai
 python-multipart
+pydub
 pydantic
 python-dotenv
 google-cloud-speech

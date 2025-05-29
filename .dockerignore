@@ -1,0 +1,32 @@
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environment
+venv/
+
+# Environment variables
+.env
+*.env*
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+.vscode/
+*.swp
+*.swo
+*.bak
+
+# Logs
+*.log
+
+# Sensitive credentials
+credentials/google-credentials.json
+
+# Project-specific notes and temp files
+AI_TUTOR_NOTES.txt
+prompt.txt
+prompts/
+audio_checking/
