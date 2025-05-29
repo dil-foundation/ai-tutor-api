@@ -40,3 +40,28 @@ uvicorn app.main:app --reload
 The server will start at: http://127.0.0.1:8000
 
 Interactive API Docs available at: http://127.0.0.1:8000/docs
+
+
+## Project Structure:
+
+ai_tutor_backend/
+│
+├── app/
+│   ├── main.py
+│   ├── .env
+│   ├── config.py
+│   ├── schemas/
+│   │   └── user_input.py
+│   ├── services/
+│   │   ├── translation.py
+│   │   ├── tts.py
+│   │   ├── stt.py
+│   │   ├── whisper_scoring.py
+│   │   └── feedback.py
+│   └── routes/
+│       └── translator.py
+│   └── credentials/
+│       └── google-credentials.json
+│
+├── requirements.txt
+└── README.md
