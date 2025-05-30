@@ -80,7 +80,7 @@ async def get_english_feedback(file: UploadFile = File(...), expected_text: str 
     # Step 5: Return response
     return JSONResponse(content={
         "user_text": user_text,
-        "pronunciation_score": score,
+        "pronounciation_accuracy_score": score,
         "fluency_feedback": feedback_text
     })
 

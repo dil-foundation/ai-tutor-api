@@ -3,18 +3,20 @@ from openai import OpenAI
 
 client = OpenAI()
 
-def get_fluency_feedback(user_text: str, expected_text: str) -> str:
+def get_fluency_feedback(user_text: str, expected_text: str) -> dict:
     prompt = f"""
-You are an English language speaking and pronunciation evaluator.
+You are an English pronunciation and tone evaluator.
 
 The user was expected to say: "{expected_text}"
 The user actually said (transcribed): "{user_text}"
 
-Please:
-- Evaluate how fluent the user was
-- Identify pronunciation or grammar mistakes if any
-- Give a brief, constructive feedback in 3-4 sentences
-- End with a motivational comment to help the user improve
+Please evaluate and return the result in the following format:
+
+Pronunciation score: <percentage>% (based on clarity and accuracy)
+Tone & Intonation: <one-word rating like Excellent, Good, Fair, Poor>
+Feedback: <short one-line constructive tip>
+
+Only provide the output in that format. No extra text.
 """
 
     response = client.chat.completions.create(
@@ -23,4 +25,14 @@ Please:
         temperature=0.7
     )
 
-    return response.choices[0].message.content.strip()
+    output = response.choices[0].message.content.strip()
+
+    # Optional: parse into structured dictionary if needed
+    lines = output.split("\n")
+    result = {
+        "pronunciation_score": lines[0].split(":")[1].strip(),
+        "tone_intonation": lines[1].split(":")[1].strip(),
+        "feedback": lines[2].split(":", 1)[1].strip()
+    }
+
+    return result
