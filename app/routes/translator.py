@@ -1,4 +1,4 @@
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Query
 from fastapi.responses import JSONResponse, StreamingResponse
 import io
 import base64
@@ -84,3 +84,16 @@ async def get_english_feedback(file: UploadFile = File(...), expected_text: str 
         "fluency_feedback": feedback_text
     })
 
+@router.post("/transcribe-audio-direct")
+async def transcribe_audio_direct(file: UploadFile = File(...), language_code: str = Query("en-US")):
+    audio_bytes = await file.read()
+    
+    # Use the existing STT service, providing the language code
+    transcribed_text = stt.transcribe_audio_bytes(audio_bytes, language_code=language_code)
+    
+    if not transcribed_text.strip():
+        # This case might be covered by stt.transcribe_audio_bytes if it returns an empty string
+        # and also raises an HTTPException for no transcription, but good to double check.
+        raise HTTPException(status_code=400, detail="Audio transcribed to empty text.")
+
+    return JSONResponse(content={"transcribed_text": transcribed_text})
