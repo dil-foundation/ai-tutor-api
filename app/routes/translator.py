@@ -1,4 +1,4 @@
-from fastapi import APIRouter, UploadFile, File, Body, Form, HTTPException, Query
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Query
 from fastapi.responses import JSONResponse, StreamingResponse
 import io
 import base64
@@ -64,112 +64,36 @@ async def speak_urdu_to_english_audio(file: UploadFile = File(...)):
     )
 
 @router.post("/feedback")
-async def get_english_feedback(
-    payload: dict = Body(...)
-):
-    print("✅ /api/translate/feedback endpoint CALLED (expecting Base64 JSON for audio)")
-    try:
-        expected_text = payload.get("expected_text")
-        audio_base64 = payload.get("audio_base64")
-        filename = payload.get("filename", "practiced_audio.wav")
+async def get_english_feedback(file: UploadFile = File(...), expected_text: str = Form(...)):
+    # Step 1: Read audio bytes
+    audio_bytes = await file.read()
 
-        if not expected_text:
-            raise HTTPException(status_code=400, detail="Missing 'expected_text' in payload.")
-        if not audio_base64:
-            raise HTTPException(status_code=400, detail="Missing 'audio_base64' in payload.")
+    # Step 2: Transcribe using Whisper
+    user_text = whisper_scoring.transcribe_with_whisper(audio_bytes)
 
-        print(f"Received for feedback: expected_text='{expected_text}', audio_filename='{filename}', audio_base64 length={len(audio_base64)}")
+    # Step 3: Pronunciation accuracy score
+    score = whisper_scoring.score_pronunciation(audio_bytes, expected_text)
 
-        # Decode the Base64 string to bytes
-        audio_bytes = base64.b64decode(audio_base64)
-        print(f"Decoded audio bytes length for feedback: {len(audio_bytes)}")
+    # Step 4: GPT-4 feedback on fluency, grammar, etc.
+    feedback_text = feedback.get_fluency_feedback(user_text, expected_text)
 
-        if not audio_bytes:
-            raise HTTPException(status_code=400, detail="Decoded audio for feedback is empty.")
-
-        # Step 2: Transcribe using Whisper
-        # Assuming whisper_scoring.transcribe_with_whisper expects audio_bytes
-        user_text = whisper_scoring.transcribe_with_whisper(audio_bytes)
-        print(f"Whisper transcription for feedback: {user_text}")
-
-        # Step 3: Pronunciation accuracy score
-        # Assuming whisper_scoring.score_pronunciation expects audio_bytes and expected_text
-        score = whisper_scoring.score_pronunciation(audio_bytes, expected_text)
-        print(f"Pronunciation score: {score}")
-
-        # Step 4: GPT-4 feedback on fluency, grammar, etc.
-        # Assuming feedback.get_fluency_feedback expects user_text (transcribed) and expected_text
-        feedback_text = feedback.get_fluency_feedback(user_text, expected_text)
-        print(f"Fluency feedback: {feedback_text}")
-
-        # Step 5: Return response
-        # Ensure the score key matches your client's 'FeedbackData' interface ('pronunciation_score')
-        return JSONResponse(content={
-            "user_text": user_text,
-            "pronunciation_score": score, # Matching common client interface key
-            "fluency_feedback": feedback_text
-        })
-
-    except HTTPException as e:
-        # Re-raise HTTPExceptions directly
-        raise e
-    except Exception as e:
-        print(f"❌ ERROR in /api/translate/feedback (Base64 audio): {str(e)}")
-        # Consider logging the full traceback for non-HTTP exceptions
-        # import traceback
-        # print(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=f"Internal server error during feedback processing: {str(e)}")
-
-
+    # Step 5: Return response
+    return JSONResponse(content={
+        "user_text": user_text,
+        "pronounciation_accuracy_score": score,
+        "fluency_feedback": feedback_text
+    })
 
 @router.post("/transcribe-audio-direct")
-async def transcribe_audio_direct(
-    payload: dict = Body(...),  # Expect a JSON body containing the base64 string
-    # language_code: str = Query("en-US") # language_code can be part of the payload if preferred
-):
-    print("✅ /api/translate/transcribe-audio-direct endpoint CALLED (expecting Base64 JSON)")
-    try:
-        audio_base64 = payload.get("audio_base64")
-        filename = payload.get("filename", "audio.wav") # Optional: use filename if needed
-        # language_code can also be retrieved from payload if you move it there:
-        # language_code = payload.get("language_code", "en-US")
+async def transcribe_audio_direct(file: UploadFile = File(...), language_code: str = Query("en-US")):
+    audio_bytes = await file.read()
+    
+    # Use the existing STT service, providing the language code
+    transcribed_text = stt.transcribe_audio_bytes(audio_bytes, language_code=language_code)
+    
+    if not transcribed_text.strip():
+        # This case might be covered by stt.transcribe_audio_bytes if it returns an empty string
+        # and also raises an HTTPException for no transcription, but good to double check.
+        raise HTTPException(status_code=400, detail="Audio transcribed to empty text.")
 
-
-        if not audio_base64:
-            raise HTTPException(status_code=400, detail="Missing 'audio_base64' in payload.")
-
-        print(f"Received audio_base64 for: {filename}, length: {len(audio_base64)}")
-
-        # Decode the Base64 string to bytes
-        audio_bytes = base64.b64decode(audio_base64)
-        print(f"Decoded audio bytes length: {len(audio_bytes)}")
-
-        if not audio_bytes:
-            raise HTTPException(status_code=400, detail="Decoded audio is empty.")
-
-        # Use your existing STT service, providing the language code.
-        # The language_code is still a query parameter here, but you could move it into the JSON payload too.
-        # For this example, let's assume language_code for English transcription is desired.
-        # You might want to pass language_code from the client in the JSON payload as well.
-        # For now, if your stt.transcribe_audio_bytes defaults to "ur-PK" and you need "en-US",
-        # ensure you pass the correct one.
-        # Let's assume we want to transcribe English here, so "en-US" or similar is needed.
-        # Modify this as per your stt.transcribe_audio_bytes function's needs for English.
-        # If the audioBlob sent from client is always English audio, "en-US" is likely correct.
-
-        transcribed_text = stt.transcribe_audio_bytes(audio_bytes, language_code="en-US") # Ensure correct language_code for English
-
-        if not transcribed_text.strip():
-            raise HTTPException(status_code=400, detail="Audio transcribed to empty text.")
-
-        return JSONResponse(content={"transcribed_text": transcribed_text})
-
-    except HTTPException as e:
-        # Re-raise HTTPExceptions directly
-        raise e
-    except Exception as e:
-        print(f"❌ ERROR in /api/translate/transcribe-audio-direct (Base64): {str(e)}")
-        # Consider logging the full traceback for non-HTTP exceptions
-        # import traceback
-        # print(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=f"Internal server error during transcription: {str(e)}")
+    return JSONResponse(content={"transcribed_text": transcribed_text})

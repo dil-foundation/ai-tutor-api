@@ -9,7 +9,7 @@ app = FastAPI()
 
 # Add CORS middleware
 origins = [
-    "*",  # Reverted from "*" to be compatible with allow_credentials=True
+    "http://localhost:8081",  # Reverted from "*" to be compatible with allow_credentials=True
 ]
 
 app.add_middleware(
@@ -25,7 +25,3 @@ app.include_router(user.router, prefix="/user")
 app.include_router(translator.router, prefix="/api/translate")
 app.include_router(repeat_after_me.router, prefix="/api")
 app.include_router(quick_response.router, prefix="/api")
-
-@app.get("/api/healthcheck")
-async def health_check():
-    return {"status": "ok"}
