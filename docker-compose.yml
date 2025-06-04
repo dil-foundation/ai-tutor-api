@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  ai-tutor-backend:
+    build: .
+    container_name: ai-tutor-backend-compose
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./app:/app/app 
+      - ./credentials:/app/credentials
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/credentials/google-credentials.json
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--proxy-headers", "--forwarded-allow-ips=*"]
