@@ -7,7 +7,19 @@ from app.services import stt, translation, tts, whisper_scoring, feedback
 
 router = APIRouter()
 
-@router.post("/speak/metadata")
+@router.post(
+    "/speak/metadata",
+    summary="Convert Urdu Speech to English Text (Metadata)",
+    description=(
+        "This endpoint helps users view the **Urdu transcription** and the **English translation** of their spoken input.\n\n"
+        "**Workflow:**\n"
+        "1. Takes Urdu speech as audio input.\n"
+        "2. Transcribes the speech into Urdu text.\n"
+        "3. Translates the Urdu text into English.\n\n"
+        "**Use Case:** Supports conversational learning and fluency tracking by showing what the user said in Urdu and how it translates to English.\n"
+        "Returns a **JSON** with both Urdu and English text."
+    )
+)
 async def speak_urdu_to_english_metadata(file: UploadFile = File(...)):
     # Step 1: Read Urdu audio bytes
     audio_bytes = await file.read()
@@ -30,7 +42,19 @@ async def speak_urdu_to_english_metadata(file: UploadFile = File(...)):
         "english_translation": english_translation
     }
 
-@router.post("/speak/audio")
+@router.post(
+    "/speak/audio",
+    summary="Convert Urdu Speech to English Audio",
+    description=(
+        "This endpoint allows users to speak in **Urdu** and receive a fluent **English audio translation** in real-time.\n\n"
+        "**Workflow:**\n"
+        "1. Transcribes the Urdu audio input into Urdu text.\n"
+        "2. Translates the Urdu text into English using AI.\n"
+        "3. Converts the English text into spoken audio (WAV format).\n\n"
+        "**Use Case:** Part of the chat assistant – helps Urdu-speaking users improve English listening and understanding by hearing translations.\n"
+        "Returns a **streaming English audio file** as the response."
+    )
+)
 async def speak_urdu_to_english_audio(file: UploadFile = File(...)):
     # Step 1: Read Urdu audio bytes
     audio_bytes = await file.read()

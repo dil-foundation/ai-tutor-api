@@ -18,7 +18,7 @@
   { "id": 17, "question": "Do you like animals?", "expected_answer": "Yes, I do." },
   { "id": 18, "question": "What is your favorite animal?", "expected_answer": "A cat." },
   { "id": 19, "question": "Do you have a pet?", "expected_answer": "Yes, a cat." },
-  { "id": 20, "question": "What is your cat’s name?", "expected_answer": "Its name is Snowy." },
+  { "id": 20, "question": "What is your cat's name?", "expected_answer": "Its name is Snowy." },
   { "id": 21, "question": "Do you watch TV?", "expected_answer": "Yes, I do." },
   { "id": 22, "question": "What do you watch?", "expected_answer": "Cartoons." },
   { "id": 23, "question": "Do you like music?", "expected_answer": "Yes, I do." },
