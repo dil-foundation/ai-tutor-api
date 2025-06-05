@@ -82,5 +82,6 @@ After successful deployment, access the API docs here:
 
 Swagger UI: http://localhost:8000/docs
 
+Development Server URL: https://api.dil.lms-staging.com
 
 
