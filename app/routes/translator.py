@@ -2,8 +2,8 @@ from fastapi import APIRouter, UploadFile, File, Body, Form, HTTPException, Quer
 from fastapi.responses import JSONResponse, StreamingResponse
 import io
 import base64
-from app.services.tts import synthesize_speech_with_openai
-from app.services import stt, translation, whisper_scoring, feedback
+
+from app.services import stt, translation, tts, whisper_scoring, feedback
 
 router = APIRouter()
 
@@ -71,8 +71,21 @@ async def speak_urdu_to_english_audio(file: UploadFile = File(...)):
     if not english_translation.strip():
         raise HTTPException(status_code=400, detail="Failed to translate Urdu.")
 
-    return synthesize_speech_with_openai(english_translation)
+    # Step 4: Generate English audio
+    english_audio_bytes = tts.synthesize_speech(english_translation)
+    print("Length of the english audio bytes: ",len(english_audio_bytes))
+    if not english_audio_bytes:
+        raise HTTPException(status_code=500, detail="Generated audio is empty")
 
+    # Step 5: Return audio as stream (WAV format)
+    audio_stream = io.BytesIO(english_audio_bytes)
+    audio_stream.seek(0)  # Rewind to start
+
+    return StreamingResponse(
+        content=audio_stream,
+        media_type="audio/wav",
+        headers={"Content-Disposition": 'inline; filename="response.wav"'}
+    )
 
 @router.post("/feedback")
 async def get_english_feedback(
