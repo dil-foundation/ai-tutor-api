@@ -5,3 +5,4 @@ venv
 AI_TUTOR_NOTES.txt
 prompts.txt
 audio_checking
+**/__pycache__/
