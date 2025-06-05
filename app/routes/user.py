@@ -4,7 +4,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import text
-from datetime import datetime # Keep for any potential date formatting if needed, though API handles user_registered
+from datetime import datetime
 
 from app.schemas.user_input import UserRegisterInput, StageResult, WordPressUserRegistration
 from app.services.cefr_evaluator import evaluate_cefr_level
@@ -12,17 +12,13 @@ from app.database import get_db
 
 router = APIRouter()
 
-# wp_hasher is no longer needed
 
-WP_TABLE_PREFIX = os.getenv("WP_TABLE_PREFIX", "wp_") # Get table prefix from env or default to wp_
+WP_TABLE_PREFIX = os.getenv("WP_TABLE_PREFIX", "wp_")
 
-# Load WordPress API credentials from environment variables
 WP_SITE_URL = os.getenv("WP_SITE_URL")
 WP_API_USERNAME = os.getenv("WP_API_USERNAME")
 WP_API_APPLICATION_PASSWORD = os.getenv("WP_API_APPLICATION_PASSWORD")
 
-# Assumed token endpoint from a plugin like "JWT Authentication for WP REST API"
-# If your plugin uses a different endpoint, or requires different payload (e.g. JSON), you'll need to change this.
 DEFAULT_WP_TOKEN_ENDPOINT_PATH = "/wp-json/jwt-auth/v1/token"
 
 @router.post("/register", response_model=StageResult)
@@ -40,7 +36,6 @@ async def register_wordpress_user_api(user_data: WordPressUserRegistration, db: 
         )
 
     wp_api_users_url = f"{WP_SITE_URL.rstrip('/')}/wp-json/wp/v2/users"
-    # Construct token URL using the same WP_SITE_URL
     wp_token_url = f"{WP_SITE_URL.rstrip('/')}{DEFAULT_WP_TOKEN_ENDPOINT_PATH}"
 
     api_payload = {
@@ -55,8 +50,8 @@ async def register_wordpress_user_api(user_data: WordPressUserRegistration, db: 
     new_user_id = None
     access_token = None
     user_creation_successful = False
-    metadata_update_successful = False # Initialize to False
-    token_retrieval_successful = False # Initialize to False
+    metadata_update_successful = False
+    token_retrieval_successful = False
     
     final_response_message = ""
     metadata_error_detail_message = None
@@ -68,7 +63,7 @@ async def register_wordpress_user_api(user_data: WordPressUserRegistration, db: 
             response = await client.post(
                 wp_api_users_url,
                 json=api_payload,
-                auth=(WP_API_USERNAME, WP_API_APPLICATION_PASSWORD) # Auth with Admin/App Password
+                auth=(WP_API_USERNAME, WP_API_APPLICATION_PASSWORD)
             )
         
         if response.status_code == 201:
@@ -86,7 +81,7 @@ async def register_wordpress_user_api(user_data: WordPressUserRegistration, db: 
                 detail_message = error_details.get("message", response.text)
             except Exception:
                 detail_message = response.text
-            # This exception will terminate the process if user creation fails
+           
             raise HTTPException(
                 status_code=response.status_code,
                 detail=f"WordPress API User Creation Error: {detail_message}"
@@ -99,7 +94,6 @@ async def register_wordpress_user_api(user_data: WordPressUserRegistration, db: 
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Unexpected error during user creation API call: {str(e)}")
 
     # 2. Add/Update Custom Usermeta (only if user creation was successful)
-    # This section is reached only if user_creation_successful is True from above block
     try:
         meta_to_add_or_update = [
             {"meta_key": "date_of_birth", "meta_value": user_data.date_of_birth.isoformat() if user_data.date_of_birth else None},
@@ -131,25 +125,21 @@ async def register_wordpress_user_api(user_data: WordPressUserRegistration, db: 
         db.rollback()
         print(f"User {new_user_id} created via WP API, but failed to save custom usermeta: {e}")
         metadata_error_detail_message = str(e)
-        # Continue to attempt token retrieval even if usermeta fails, as user exists in WP
 
     # 3. Get Access Token for the new user (user_creation_successful must be true)
     try:
         async with httpx.AsyncClient() as client:
-            # Common JWT plugins expect username & password as form data (application/x-www-form-urlencoded)
-            # Some might accept JSON; adjust `data` vs `json` kwarg if needed.
             token_payload = {
-                "username": user_data.username, # Use the new user's credentials
-                "password": user_data.password  # Use the new user's password
+                "username": user_data.username,
+                "password": user_data.password
             }
             token_response = await client.post(wp_token_url, data=token_payload)
 
         if token_response.status_code == 200:
             token_data = token_response.json()
-            # Attempt to extract token from common JWT plugin response structures
             access_token = token_data.get("token") or \
                            token_data.get("data", {}).get("token") or \
-                           token_data.get("jwt_token") # Add other common variants if known
+                           token_data.get("jwt_token")
             if access_token:
                 token_retrieval_successful = True
             else:
@@ -170,7 +160,6 @@ async def register_wordpress_user_api(user_data: WordPressUserRegistration, db: 
         print(f"Unexpected error during WP token retrieval: {e}")
         token_error_detail_message = f"Unexpected error during token retrieval: {str(e)}"
 
-    # Construct final response message based on success of each step
     if user_creation_successful and metadata_update_successful and token_retrieval_successful:
         final_response_message = "User registered, metadata updated, and token retrieved successfully."
     elif user_creation_successful and metadata_update_successful:
