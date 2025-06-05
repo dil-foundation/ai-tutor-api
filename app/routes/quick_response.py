@@ -3,7 +3,7 @@ from fastapi.responses import StreamingResponse
 import json
 import os
 from io import BytesIO
-from app.services.tts import synthesize_speech
+from app.services.tts import synthesize_speech_with_openai
 from app.services.stt_english import transcribe_english_audio
 from app.services.evaluator import evaluate_response
 
@@ -30,15 +30,7 @@ async def quick_response_audio(phrase_id: int):
     if not question:
         raise HTTPException(status_code=404, detail="Question not found")
 
-    audio_content = synthesize_speech(question)
-    audio_stream = BytesIO(audio_content)
-    audio_stream.seek(0)
-
-    return StreamingResponse(
-        content=audio_stream,
-        media_type="audio/wav",
-        headers={"Content-Disposition": 'inline; filename="question.wav"'}
-    )
+    return synthesize_speech_with_openai(question) 
 
 @router.get(
     "/quick-response/expected-answer/{phrase_id}",

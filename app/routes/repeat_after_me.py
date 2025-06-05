@@ -3,7 +3,7 @@ from fastapi.responses import StreamingResponse
 import json
 import os
 from io import BytesIO
-from app.services.tts import synthesize_speech
+from app.services.tts import synthesize_speech_with_openai
 from app.services.feedback import get_fluency_feedback
 from app.services.stt_english import transcribe_english_audio
 from fastapi import UploadFile, File
@@ -36,15 +36,8 @@ async def repeat_after_me(phrase_id: int):
     if not phrase:
         raise HTTPException(status_code=404, detail="Phrase not found")
 
-    audio_content = synthesize_speech(phrase)
-    audio_stream = BytesIO(audio_content)
-    audio_stream.seek(0)
+    return synthesize_speech_with_openai(phrase)
 
-    return StreamingResponse(
-        content=audio_stream,
-        media_type="audio/wav",
-        headers={"Content-Disposition": 'inline; filename="response.wav"'}
-    )
 
 @router.post(
     "/repeat-after-me/evaluate/{phrase_id}",

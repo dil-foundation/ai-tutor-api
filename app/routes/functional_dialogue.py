@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse
 from io import BytesIO
 from app.services.dialogue_manager import get_prompt_by_id, get_next_prompt_id
-from app.services.tts import synthesize_speech
+from app.services.tts import synthesize_speech_with_openai
 from app.services.stt_english import transcribe_english_audio
 from app.services.dialogue_evaluator import evaluate_dialogue_with_gpt
 
@@ -12,8 +12,8 @@ router = APIRouter()
     "/dialogue/{dialogue_id}/prompt-audio",
     summary="Stage 1 - Exercise 3: Play Predefined Dialogue as audio",
     description=(
-        "Listen and Reply - Functional Dialogue: Plays a predefined AI dialogue prompt audio for functional conversation practice."
-        "User listen to the dialogue and reply verbally. Each dialogue is identified by a unique dialogue ID."
+        "Listen and Reply - Functional Dialogue: Plays a predefined AI dialogue prompt audio for functional conversation practice. "
+        "User listens to the dialogue and replies verbally. Each dialogue is identified by a unique dialogue ID."
     )
 )
 async def get_dialogue_prompt_audio(dialogue_id: int):
@@ -21,15 +21,7 @@ async def get_dialogue_prompt_audio(dialogue_id: int):
     if not prompt_data:
         raise HTTPException(status_code=404, detail="Dialogue prompt not found")
 
-    audio_content = synthesize_speech(prompt_data['ai_prompt'])
-    audio_stream = BytesIO(audio_content)
-    audio_stream.seek(0)
-
-    return StreamingResponse(
-        content=audio_stream,
-        media_type="audio/wav",
-        headers={"Content-Disposition": f'inline; filename="dialogue_{dialogue_id}.wav"'}
-    )
+    return synthesize_speech_with_openai(prompt_data['ai_prompt']) 
 
 @router.post(
     "/dialogue/{dialogue_id}/evaluate",

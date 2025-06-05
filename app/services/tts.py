@@ -1,19 +1,23 @@
-from google.cloud import texttospeech
+import openai
+from io import BytesIO
+from fastapi.responses import StreamingResponse
+import os
 
-def synthesize_speech(text: str):
-    client = texttospeech.TextToSpeechClient()
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
-    synthesis_input = texttospeech.SynthesisInput(text=text)
-    voice = texttospeech.VoiceSelectionParams(
-        language_code="en-US",
-        ssml_gender=texttospeech.SsmlVoiceGender.FEMALE
-    )
-    audio_config = texttospeech.AudioConfig(
-        audio_encoding=texttospeech.AudioEncoding.LINEAR16  # WAV format
-    )
-
-    response = client.synthesize_speech(
-        input=synthesis_input, voice=voice, audio_config=audio_config
+def synthesize_speech_with_openai(text: str):
+    response = openai.audio.speech.create(
+        model="tts-1-hd",
+        voice="nova",      
+        input=text
     )
 
-    return response.audio_content  # WAV audio bytes
+    # The response is a binary audio stream (MP3)
+    audio_stream = BytesIO(response.read())
+    audio_stream.seek(0)
+
+    return StreamingResponse(
+        content=audio_stream,
+        media_type="audio/wav",
+        headers={"Content-Disposition": 'inline; filename="output.wav"'}
+    )
