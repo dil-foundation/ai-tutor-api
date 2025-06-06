@@ -93,11 +93,21 @@ async def register_wordpress_user_api(user_data: WordPressUserRegistration, db: 
         print(f"Unexpected error during WP API user creation: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Unexpected error during user creation API call: {str(e)}")
 
+
+    # Fetch english sentence:
+    english_sample = user_data.english_assessment_text
+
+    # Step 2: Evaluate CEFR stage
+    try:
+        cefr_stage = evaluate_cefr_level(english_sample)
+    except HTTPException as e:
+        return {"message": "Failed to evaluate CEFR level", "error": e.detail}
+
     # 2. Add/Update Custom Usermeta (only if user creation was successful)
     try:
         meta_to_add_or_update = [
             {"meta_key": "date_of_birth", "meta_value": user_data.date_of_birth.isoformat() if user_data.date_of_birth else None},
-            {"meta_key": "english_assessment_text", "meta_value": user_data.english_assessment_text},
+            {"meta_key": "english_assessment_text", "meta_value": user_data.english_assessment_text},{"meta_key":"stage","meta_value":cefr_stage}
         ]
         insert_usermeta_query = text(f"""
             INSERT INTO {WP_TABLE_PREFIX}usermeta (user_id, meta_key, meta_value)
