@@ -3,6 +3,52 @@ from pydub import AudioSegment
 import base64
 import io
 from fastapi import HTTPException
+from .translation import detect_language
+from langdetect import detect
+import torch
+import whisper
+import tempfile
+import os
+
+# Load the Whisper model only once
+model = whisper.load_model("base")
+
+def transcribe_and_detect_language(audio_bytes: bytes) -> tuple[str, str]:
+    transcribed_text = transcribe_audio_bytes_whisper(audio_bytes)
+    if not transcribed_text.strip():
+        return "", "Unknown"
+    
+    language = detect_language(transcribed_text)
+    print(f"Detected Language from Text: {language}")
+    return transcribed_text, language
+
+def transcribe_audio_bytes_whisper(audio_bytes: bytes) -> str:
+    """
+    Saves audio bytes to a temporary file and uses Whisper to transcribe.
+    Returns the transcribed text.
+    """
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+            tmp.write(audio_bytes)
+            tmp.flush()
+            temp_audio_path = tmp.name
+
+        # Transcribe using Whisper
+        result = model.transcribe(temp_audio_path)
+
+        transcribed_text = result['text']
+        print(f"📝 Transcribed Text: {transcribed_text.strip()}")
+
+        return transcribed_text.strip()
+    except Exception as e:
+        print(f"❌ Error during transcription: {str(e)}")
+        return ""
+    finally:
+        try:
+            os.remove(temp_audio_path)  # Clean up temp file
+        except:
+            pass
+
 
 def transcribe_audio_bytes(audio_bytes: bytes, language_code: str = "ur-PK") -> str:
     try:
@@ -37,6 +83,7 @@ def transcribe_audio_bytes(audio_bytes: bytes, language_code: str = "ur-PK") -> 
             raise HTTPException(status_code=400, detail="No transcription received from speech API.")
             
         transcript = response.results[0].alternatives[0].transcript
+        print("transcript: ",transcript)
         return transcript
         
     except HTTPException as e: # Re-raise HTTPException

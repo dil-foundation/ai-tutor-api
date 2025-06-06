@@ -4,8 +4,10 @@ import json
 import os
 from io import BytesIO
 from app.services.tts import synthesize_speech_with_openai
+from app.services.tts import synthesize_speech_with_elevenlabs
 from app.services.feedback import get_fluency_feedback
 from app.services.stt_english import transcribe_english_audio
+
 from fastapi import UploadFile, File
 
 
@@ -36,7 +38,7 @@ async def repeat_after_me(phrase_id: int):
     if not phrase:
         raise HTTPException(status_code=404, detail="Phrase not found")
 
-    return synthesize_speech_with_openai(phrase)
+    return await synthesize_speech_with_elevenlabs(phrase)
 
 
 @router.post(

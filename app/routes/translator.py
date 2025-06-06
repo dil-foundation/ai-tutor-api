@@ -2,8 +2,9 @@ from fastapi import APIRouter, UploadFile, File, Body, Form, HTTPException, Quer
 from fastapi.responses import JSONResponse, StreamingResponse
 import io
 import base64
-
-from app.services import stt, translation, tts, whisper_scoring, feedback
+from app.services.tts import synthesize_speech_with_openai
+from app.services import stt, translation, whisper_scoring, feedback
+from app.services.tts import synthesize_speech_with_elevenlabs
 
 router = APIRouter()
 
@@ -51,13 +52,20 @@ async def speak_urdu_to_english_metadata(file: UploadFile = File(...)):
         "1. Transcribes the Urdu audio input into Urdu text.\n"
         "2. Translates the Urdu text into English using AI.\n"
         "3. Converts the English text into spoken audio (WAV format).\n\n"
-        "**Use Case:** Part of the chat assistant – helps Urdu-speaking users improve English listening and understanding by hearing translations.\n"
+        "**Use Case:** Part of the chat assistant - helps Urdu-speaking users improve English listening and understanding by hearing translations.\n"
         "Returns a **streaming English audio file** as the response."
     )
 )
 async def speak_urdu_to_english_audio(file: UploadFile = File(...)):
     # Step 1: Read Urdu audio bytes
     audio_bytes = await file.read()
+
+    # 🔍 Step 1.5: Transcribe and detect language
+    transcribed_text, detected_language = stt.transcribe_and_detect_language(audio_bytes)
+    print("📝 Transcribed Text:", transcribed_text)
+
+    if detected_language.lower() != "urdu":
+        raise HTTPException(status_code=500, detail="❌ Detected language is not Urdu.")
 
     # Step 2: Convert to Urdu text
     urdu_text = stt.transcribe_audio_bytes(audio_bytes)
@@ -71,21 +79,9 @@ async def speak_urdu_to_english_audio(file: UploadFile = File(...)):
     if not english_translation.strip():
         raise HTTPException(status_code=400, detail="Failed to translate Urdu.")
 
-    # Step 4: Generate English audio
-    english_audio_bytes = tts.synthesize_speech(english_translation)
-    print("Length of the english audio bytes: ",len(english_audio_bytes))
-    if not english_audio_bytes:
-        raise HTTPException(status_code=500, detail="Generated audio is empty")
+    # return synthesize_speech_with_openai(english_translation)
+    return await synthesize_speech_with_elevenlabs(english_translation)
 
-    # Step 5: Return audio as stream (WAV format)
-    audio_stream = io.BytesIO(english_audio_bytes)
-    audio_stream.seek(0)  # Rewind to start
-
-    return StreamingResponse(
-        content=audio_stream,
-        media_type="audio/wav",
-        headers={"Content-Disposition": 'inline; filename="response.wav"'}
-    )
 
 @router.post("/feedback")
 async def get_english_feedback(
