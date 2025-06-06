@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.sql import text
 from datetime import datetime
 
-from app.schemas.user_input import UserRegisterInput, StageResult, WordPressUserRegistration
+from app.schemas.user_input import UserRegisterInput, StageResult, WordPressUserRegistration, UserLogin
 from app.services.cefr_evaluator import evaluate_cefr_level
 from app.database import get_db
 
@@ -181,4 +181,75 @@ async def register_wordpress_user_api(user_data: WordPressUserRegistration, db: 
     
     
     return response_payload
+
+
+@router.post("/login-wordpress")
+async def login_wordpress_user(login_data: UserLogin, db: Session = Depends(get_db)):
+    if not WP_SITE_URL:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="WordPress site URL is not configured."
+        )
+
+    # 1. Check if user exists in the database and get their username and ID
+    get_user_query = text(f"SELECT ID, user_login FROM {WP_TABLE_PREFIX}users WHERE user_email = :email")
+    user_record = db.execute(get_user_query, {"email": login_data.email}).fetchone()
+
+    if not user_record:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid credentials."
+        )
+    
+    user_id = user_record[0]
+    username = user_record[1]
+
+    # 2. Make API request to get the access token
+    wp_token_url = f"{WP_SITE_URL.rstrip('/')}{DEFAULT_WP_TOKEN_ENDPOINT_PATH}"
+    token_payload = {
+        "username": username,
+        "password": login_data.password
+    }
+
+    try:
+        async with httpx.AsyncClient() as client:
+            token_response = await client.post(wp_token_url, json=token_payload)
+
+        # This will now be handled inside the try block
+        token_response.raise_for_status() # Raise an exception for 4xx/5xx responses
+
+        token_data = token_response.json()
+        access_token = token_data.get("token")
+        if not access_token:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Login successful, but token was not found in the response from WordPress."
+            )
+        
+        return {
+            "message": "Login successful.",
+            "user_id": user_id,
+            "access_token": access_token
+        }
+    except httpx.HTTPStatusError:
+        # This catches 4xx/5xx errors from raise_for_status()
+        # It's the most common case for a wrong password.
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid credentials."
+        )
+    except httpx.RequestError as e:
+        # This catches network errors
+        print(f"HTTPX RequestError during WP token retrieval for login: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Error connecting to authentication service."
+        )
+    except Exception as e:
+        # A catch-all for other unexpected errors, like JSON decoding failure
+        print(f"Unexpected error during login process: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred during login."
+        )
 
