@@ -34,3 +34,7 @@ class WordPressUserRegistration(BaseModel):
     date_of_birth: date
     english_assessment_text: str
 
+class UserLogin(BaseModel):
+    email: EmailStr
+    password: str
+
