@@ -71,26 +71,17 @@ ai_tutor_backend/
 
 ### Step 1: Clone the Repository
 
-### Step 2: Build the Docker Image:
-docker build -t ai-tutor-backend .
+### Step 2: Make sure you place the .env file in the root folder, the .env file should be sibling to the requirements.txt file
+Link for .env file: https://drive.google.com/file/d/15HvQpkuHxqIrCJTEnmQmThcEZQEa2Rnb/view?usp=drive_link
 
-### Step 3: Run the Docker Container
-
-docker run -d -p 8000:8000 -v "$(pwd)/credentials:/app/credentials" -e GOOGLE_APPLICATION_CREDENTIALS=/app/credentials/google-credentials.json -e OPENAI_API_KEY='openai-key' --name ai-tutor-backend ai-tutor-backend 
-
-## Explanation:
--d: Runs the container in detached mode.
-
--p 8000:8000: Maps container port 8000 to host.
-
--v: Mounts credentials into the container securely.
-
--e: Sets required environment variables.
+### Step 3: Build and run the docker iamge using docker compose:
+docker compose up --build
 
 ### Access the API
 After successful deployment, access the API docs here:
 
 Swagger UI: http://localhost:8000/docs
 
+Development Server URL: https://api.dil.lms-staging.com
 
 
