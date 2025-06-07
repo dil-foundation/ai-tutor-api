@@ -74,6 +74,9 @@ ai_tutor_backend/
 ### Step 2: Make sure you place the .env file in the root folder, the .env file should be sibling to the requirements.txt file
 Link for .env file: https://drive.google.com/file/d/15HvQpkuHxqIrCJTEnmQmThcEZQEa2Rnb/view?usp=drive_link
 
+### Step 3: Create a credentials in the root directory and make sure you place the google-credentials.json file in the credentials folder
+Link for google-credentials.json: https://drive.google.com/file/d/1DRvdEWGpfxXnHrXAucltZS64T1BOu-DU/view?usp=drive_link
+
 ### Step 3: Build and run the docker iamge using docker compose:
 docker compose up --build
 
