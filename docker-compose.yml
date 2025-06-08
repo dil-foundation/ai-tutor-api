@@ -6,6 +6,7 @@ services:
     container_name: ai-tutor-backend-compose
     ports:
       - "8000:8000"
+    restart: always
     volumes:
       - ./app:/app/app 
       - ./credentials:/app/credentials
