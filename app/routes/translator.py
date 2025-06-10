@@ -150,9 +150,7 @@ async def transcribe_audio_direct(
     print("✅ /api/translate/transcribe-audio-direct endpoint CALLED (expecting Base64 JSON)")
     try:
         audio_base64 = payload.get("audio_base64")
-        filename = payload.get("filename", "audio.wav") # Optional: use filename if needed
-        # language_code can also be retrieved from payload if you move it there:
-        # language_code = payload.get("language_code", "en-US")
+        filename = payload.get("filename", "audio.wav")
 
 
         if not audio_base64:
@@ -166,16 +164,6 @@ async def transcribe_audio_direct(
 
         if not audio_bytes:
             raise HTTPException(status_code=400, detail="Decoded audio is empty.")
-
-        # Use your existing STT service, providing the language code.
-        # The language_code is still a query parameter here, but you could move it into the JSON payload too.
-        # For this example, let's assume language_code for English transcription is desired.
-        # You might want to pass language_code from the client in the JSON payload as well.
-        # For now, if your stt.transcribe_audio_bytes defaults to "ur-PK" and you need "en-US",
-        # ensure you pass the correct one.
-        # Let's assume we want to transcribe English here, so "en-US" or similar is needed.
-        # Modify this as per your stt.transcribe_audio_bytes function's needs for English.
-        # If the audioBlob sent from client is always English audio, "en-US" is likely correct.
 
         transcribed_text = stt.transcribe_audio_bytes(audio_bytes, language_code="en-US") # Ensure correct language_code for English
 

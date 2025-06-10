@@ -12,3 +12,5 @@ python-decouple
 SQLAlchemy
 git+https://github.com/openai/whisper.git
 
+httpx
+email-validator
