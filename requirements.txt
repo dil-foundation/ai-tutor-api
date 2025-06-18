@@ -11,4 +11,5 @@ git+https://github.com/openai/whisper.git
 SQLAlchemy
 mysql-connector-python
 httpx
+pymupdf
 email-validator
