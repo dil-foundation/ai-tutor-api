@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import text
@@ -47,3 +47,34 @@ def db_check(db: Session = Depends(get_db)):
         return {"db_status": "error", "detail": str(e)}
     
 
+@app.get("/api/wp-users", summary="Fetch all WordPress users with full columns")
+def get_wp_users(db: Session = Depends(get_db)):
+    try:
+        query = text("SELECT * FROM wp_users LIMIT 15")
+        result = db.execute(query)
+        
+        column_names = result.keys()
+        users = [dict(zip(column_names, row)) for row in result.fetchall()]
+        
+        return {"users": users}
+    except Exception as e:
+        return {"error": str(e)}
+    
+@app.get("/api/user-stage/{user_id}", summary="Fetch CEFR stage for a user")
+def get_user_stage(user_id: int, db: Session = Depends(get_db)):
+    try:
+        query = text("""
+            SELECT meta_value 
+            FROM wp_usermeta 
+            WHERE user_id = :user_id AND meta_key = 'stage'
+            ORDER BY umeta_id DESC 
+            LIMIT 1
+        """)
+        result = db.execute(query, {"user_id": user_id})
+        row = result.fetchone()
+        if row:
+            return {"user_id": user_id, "stage": row[0]}
+        else:
+            raise HTTPException(status_code=404, detail="Stage not found for this user.")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")

@@ -6,5 +6,10 @@ AI_TUTOR_NOTES.txt
 prompts.txt
 audio_checking
 **/__pycache__/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.log
 app\routes\__pycache__
 app\services\__pycache__
