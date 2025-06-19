@@ -25,23 +25,43 @@ def extract_json_from_response(content: str) -> Dict:
 
 def extract_quiz_from_text_using_gpt(text: str) -> Dict:
     prompt = f"""
-You are an AI that extracts multiple choice questions from text. 
-Extract all MCQs from the following text and return them as JSON in this format:
+You are an AI quiz generator trained to extract quiz questions from educational text. Your output must follow LearnDash-compatible question types and return in the following structured JSON format:
 
 {{
-    "title": "Title of the quiz (first heading or line)",
+    "title": "Title of the quiz (derived from the first heading or sentence)",
     "questions": [
         {{
-            "question": "Question text",
-            "options": ["A", "B", "C", "D"],
-            "answer": "Answer Text"
+            "question": "Question text here",
+            "options": ["Option A", "Option B", "Option C", "Option D"],
+            "answer": "Correct answer text or comma-separated answers",
+            "type": "single"  // One of the allowed types listed below
         }}
     ]
 }}
 
-Here is the text:
+Each question must include:
+- A clearly stated question
+- A list of answer options (if applicable)
+- The correct answer(s)
+- The question type (required)
+
+Allowed question types (based on LearnDash format):
+- "single" (single correct choice)
+- "multiple" (multiple correct choices)
+- "true_or_false"
+- "fill_in_the_blank"
+- "short_answer"
+- "essay"
+- "matching"
+- "sorting"
+- "matrix_sort"
+
+Respond only with a valid JSON object. Do not include explanations, markdown, or natural language outside of the JSON structure.
+
+Here is the educational text to process:
 {text}
 """
+
 
     response = client.chat.completions.create(
         model="gpt-4",
