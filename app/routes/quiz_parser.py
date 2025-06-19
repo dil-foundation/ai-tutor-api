@@ -12,7 +12,7 @@ router = APIRouter()
 @router.post(
     "/upload-quiz-from-url",
     response_model=QuizResponse,
-    summary="Extract quiz questions from uploaded PDF"
+    summary="Extract quiz questions from uploaded link - PDF"
 )
 async def upload_quiz_from_url(request: PDFUrlRequest):
     try:
@@ -27,7 +27,7 @@ async def upload_quiz_from_url(request: PDFUrlRequest):
             tmp_path = tmp.name
 
         text = extract_text_from_pdf(tmp_path)
-        result = parse_questions_from_text(text)  # dict with title + questions
+        result = parse_questions_from_text(text) 
         return result
 
     except Exception as e:
