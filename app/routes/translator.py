@@ -7,7 +7,15 @@ from app.services import stt, translation, tts, whisper_scoring, feedback
 
 router = APIRouter()
 
-@router.post("/speak/metadata")
+@router.post(
+    "/speak/metadata",
+    summary="Transcribe Urdu audio and translate to English",
+    description="""
+This endpoint is part of the App Learn Feature. It accepts an Urdu audio file, transcribes it into Urdu text,
+and then translates that text into English. The response includes both the original Urdu and the English translation.
+""",
+    tags=["App Learn Feature"]
+)
 async def speak_urdu_to_english_metadata(file: UploadFile = File(...)):
     # Step 1: Read Urdu audio bytes
     audio_bytes = await file.read()
@@ -30,7 +38,16 @@ async def speak_urdu_to_english_metadata(file: UploadFile = File(...)):
         "english_translation": english_translation
     }
 
-@router.post("/speak/audio")
+
+@router.post(
+    "/speak/audio",
+    summary="Convert translated English text to speech",
+    description="""
+Generates an English audio file from the translated text produced earlier. 
+This helps learners hear and practice correct English pronunciation.
+""",
+    tags=["App Learn Feature"]
+)
 async def speak_urdu_to_english_audio(file: UploadFile = File(...)):
     # Step 1: Read Urdu audio bytes
     audio_bytes = await file.read()
@@ -63,7 +80,17 @@ async def speak_urdu_to_english_audio(file: UploadFile = File(...)):
         headers={"Content-Disposition": 'inline; filename="response.wav"'}
     )
 
-@router.post("/feedback")
+
+@router.post(
+    "/feedback",
+    summary="Evaluate spoken English against expected text",
+    description="""
+This endpoint accepts a base64-encoded audio of the user speaking English (translated from Urdu),
+transcribes the speech, and compares it with the expected text. It returns a pronunciation score,
+grammar/fluency feedback (via GPT), and the transcribed user response.
+""",
+    tags=["App Learn Feature"]
+)
 async def get_english_feedback(
     payload: dict = Body(...)
 ):
