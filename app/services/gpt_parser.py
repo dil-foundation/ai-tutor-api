@@ -4,7 +4,7 @@ import re
 from app.schemas.pdf_quiz import QuizItem
 from typing import List, Dict
 from openai import OpenAI
-
+    
 client = OpenAI()
 
 def extract_json_from_response(content: str) -> Dict:
