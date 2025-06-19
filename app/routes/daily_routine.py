@@ -4,6 +4,7 @@ import json
 import os
 from io import BytesIO
 from app.services.tts import synthesize_speech
+from app.services.tts import synthesize_speech_with_elevenlabs
 from app.services.stt import transcribe_audio_bytes
 from app.services.stt_english import transcribe_english_audio
 from app.services.feedback_stage_2 import generate_feedback
@@ -34,8 +35,11 @@ async def get_question_audio(phrase_id: int):
     if not prompt:
         raise HTTPException(status_code=404, detail="Prompt not found")
 
-    audio_bytes = synthesize_speech(prompt["phrase"])
-    return StreamingResponse(BytesIO(audio_bytes), media_type="audio/wav")
+    # audio_bytes = synthesize_speech(prompt["phrase"])
+
+    # return StreamingResponse(BytesIO(audio_bytes), media_type="audio/wav")
+    
+    return await synthesize_speech_with_elevenlabs(prompt["phrase"])
 
 
 @router.get(
@@ -75,8 +79,10 @@ async def get_example_audio(phrase_id: int):
     if not prompt:
         raise HTTPException(status_code=404, detail="Prompt not found")
 
-    audio_bytes = synthesize_speech(prompt["example"])
-    return StreamingResponse(BytesIO(audio_bytes), media_type="audio/wav")
+    # audio_bytes = synthesize_speech(prompt["example"])
+    # return StreamingResponse(BytesIO(audio_bytes), media_type="audio/wav")
+    
+    return await synthesize_speech_with_elevenlabs(prompt["example"])
 
 
 @router.post(
