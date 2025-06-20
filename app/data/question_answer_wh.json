@@ -1,0 +1,16 @@
+[
+  {
+    "id": 1,
+    "question": "Where do you live?",
+    "expected_answers": ["I live in Karachi", "I live in Lahore", "I live in Islamabad"],
+    "keywords": ["live", "Karachi", "Lahore", "Islamabad"],
+    "tense": "present"
+  },
+  {
+    "id": 2,
+    "question": "What do you usually eat for lunch?",
+    "expected_answers": ["I eat rice and curry", "I eat a sandwich"],
+    "keywords": ["eat", "lunch", "sandwich", "rice", "curry"],
+    "tense": "present"
+  }
+]

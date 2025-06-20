@@ -13,3 +13,4 @@ mysql-connector-python
 httpx
 pymupdf
 email-validator
+language_tool_python
