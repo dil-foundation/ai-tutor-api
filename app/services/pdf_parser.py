@@ -25,7 +25,7 @@ def parse_questions_from_text(text: str) -> dict:
     remaining_text = "\n".join(lines[1:]) if title else text
 
     # Split each question block
-    question_blocks = re.split(r"\n(?=\d+\.)", remaining_text.strip())
+    question_blocks = re.split(r"\n(?=\d+[\.\)])", remaining_text.strip())
 
     questions = []
 
@@ -36,7 +36,7 @@ def parse_questions_from_text(text: str) -> dict:
 
         # Question line
         question_line = lines[0].strip()
-        question_text = re.sub(r"^\d+\.\s*", "", question_line)
+        question_text = re.sub(r"^\d+[\.\)]\s*", "", question_line)
 
         options = []
         answer_text = None
@@ -44,7 +44,8 @@ def parse_questions_from_text(text: str) -> dict:
         for i, line in enumerate(lines[1:]):
             line = line.strip()
 
-            option_match = re.match(r"^[A-D]\)\s*(.+)", line)
+            # Updated regex to match "A)", "1." or "1)" style options
+            option_match = re.match(r"^(?:[A-Da-d]\)|[0-9]+[\.\)])\s*(.+)", line, re.IGNORECASE)
             if option_match:
                 options.append(option_match.group(1).strip())
                 continue

@@ -108,7 +108,7 @@ def create_learndash_quiz(quiz_data: QuizResponse):
                 :name, :start_text, :result_text, 0, 0, 0,
                 0, 0, 0, 0, 1,
                 120, 1, 0, 'cookie', 1,
-                1440, 1, 0, 0,
+                1440, 0, 0, 0,
                 0, 0, 0, 1,
                 0, :toplist_data, 0, 0, 2,
                 0, 0, 0, 0,
