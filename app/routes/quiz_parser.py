@@ -1,0 +1,45 @@
+from fastapi import APIRouter, UploadFile, File
+import os
+import requests
+import tempfile
+from app.services.pdf_parser import extract_text_from_pdf, parse_questions_from_text
+from app.schemas.pdf_quiz import PDFUrlRequest, QuizResponse, QuizItem
+from typing import List
+from fastapi import APIRouter, HTTPException
+from app.services.learndash import create_learndash_quiz
+
+router = APIRouter()
+
+@router.post(
+    "/upload-quiz-from-url",
+    # response_model=QuizResponse, # The response is now from the LearnDash service
+    summary="Extract quiz questions from PDF and create in LearnDash"
+)
+async def upload_quiz_from_url(request: PDFUrlRequest):
+    try:
+        response = requests.get(request.url, stream=True)
+        if response.status_code != 200:
+            raise HTTPException(status_code=400, detail="Failed to download the PDF")
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+            for chunk in response.iter_content(chunk_size=8192):
+                if chunk:
+                    tmp.write(chunk)
+            tmp_path = tmp.name
+
+        text = extract_text_from_pdf(tmp_path)
+        quiz_data = parse_questions_from_text(text)  # dict with title + questions
+        
+        # Convert dict to QuizResponse Pydantic model
+        quiz_response_obj = QuizResponse(**quiz_data)
+        
+        # Create the quiz in LearnDash
+        learndash_result = create_learndash_quiz(quiz_response_obj)
+        
+        return learndash_result
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
+    finally:
+        if 'tmp_path' in locals() and os.path.exists(tmp_path):
+            os.remove(tmp_path)

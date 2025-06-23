@@ -16,8 +16,8 @@ COPY requirements.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the entire app including code and credentials
-COPY . .
+# Copy the application code
+COPY app/ app/
 
 # Set environment variable to locate Google credentials
 ENV GOOGLE_APPLICATION_CREDENTIALS=/app/credentials/google-credentials.json
