@@ -17,7 +17,16 @@ def get_phrase_by_id(phrase_id: int):
                 return phrase['phrase']
     return None
 
-@router.get("/repeat-after-me/{phrase_id}")
+@router.post(
+    "/repeat-after-me/{phrase_id}",
+    summary="Convert phrase to audio for Repeat After Me Exercise",
+    description="""
+This endpoint is part of Stage 1 - Exercise 1 (Repeat After Me). 
+It takes a phrase ID from a predefined list, converts the corresponding sentence into speech (TTS),
+and returns the generated audio file as the response.
+""",
+    tags=["Stage 1 - Exercise 1 (Repeat After Me)"]
+)
 async def repeat_after_me(phrase_id: int):
     phrase = get_phrase_by_id(phrase_id)
     if not phrase:

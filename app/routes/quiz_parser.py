@@ -12,8 +12,8 @@ router = APIRouter()
 
 @router.post(
     "/upload-quiz-from-url",
-    # response_model=QuizResponse, # The response is now from the LearnDash service
-    summary="Extract quiz questions from PDF and create in LearnDash"
+    response_model=QuizResponse,
+    summary="Extract quiz questions from uploaded link - PDF"
 )
 async def upload_quiz_from_url(request: PDFUrlRequest):
     try:
