@@ -14,3 +14,4 @@ httpx
 pymupdf
 email-validator
 language_tool_python
+redis

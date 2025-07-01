@@ -5,7 +5,7 @@ from sqlalchemy.sql import text
 
 from app.routes import user
 from app.routes import translator
-from app.routes import repeat_after_me, quick_response, quiz_parser, gpt_quiz_parser, daily_routine, question_answer_wh
+from app.routes import repeat_after_me, quick_response, quiz_parser, gpt_quiz_parser, daily_routine, question_answer_wh, roleplay_simulation
 from .database import get_db, engine
 
 
@@ -33,7 +33,9 @@ app.include_router(quick_response.router, prefix="/api")
 app.include_router(quiz_parser.router, prefix="/api")
 app.include_router(daily_routine.router, prefix="/api", tags=["Stage 2 - Exercise 1 (Daily Routine Narration)"])
 app.include_router(question_answer_wh.router,prefix="/api", tags=["Stage 2 - Exercise 2 (Questions & Answers Practice - Responding to WH-questions)"])
+app.include_router(roleplay_simulation.router,prefix="/api", tags=["Stage 2 - Exercise 3 (Roleplay Simulation)"])
 app.include_router(gpt_quiz_parser.router, prefix="/api/quiz")
+
 
 @app.get("/api/healthcheck")
 async def health_check():
