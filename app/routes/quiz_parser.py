@@ -6,6 +6,7 @@ from app.services.pdf_parser import extract_text_from_pdf, parse_questions_from_
 from app.schemas.pdf_quiz import PDFUrlRequest, QuizResponse, QuizItem
 from typing import List
 from fastapi import APIRouter, HTTPException
+from app.services.learndash import create_learndash_quiz
 
 router = APIRouter()
 
