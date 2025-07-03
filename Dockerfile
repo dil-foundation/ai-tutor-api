@@ -1,29 +1,30 @@
-# Use the official Python slim image
+# Use official Python slim image
 FROM python:3.10-slim
 
-# Set the working directory
+# Set working directory
 WORKDIR /app
 
-# Install system dependencies including ffmpeg and git
-RUN apt-get update && apt-get install -y \
-    git \
+# Install system dependencies: ffmpeg for audio, git (if needed), and clean up
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
-    && apt-get clean
+    git \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
-# Copy the requirements file
+# Install Python dependencies early for caching
 COPY requirements.txt .
-
-# Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the application code
+# Copy the application code and credentials
 COPY app/ app/
+COPY credentials/ credentials/
+COPY .env .
 
-# Set environment variable to locate Google credentials
+# Set Google credentials environment variable
 ENV GOOGLE_APPLICATION_CREDENTIALS=/app/credentials/google-credentials.json
 
-# Expose the FastAPI default port
+# Expose port 8000
 EXPOSE 8000
 
-# Start the FastAPI app
+# Run FastAPI with uvicorn (WebSockets are supported by default)
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips=*"]

@@ -15,3 +15,4 @@ pymupdf
 email-validator
 language_tool_python
 redis
+elevenlabs>=0.2.27
