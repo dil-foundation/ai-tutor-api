@@ -1,7 +1,8 @@
 from openai import OpenAI
 from fastapi import HTTPException
+from app.config import OPENAI_API_KEY
 
-client = OpenAI()
+client = OpenAI(api_key=OPENAI_API_KEY)
 
 def evaluate_cefr_level(writing_sample: str) -> str:
     try:

@@ -21,7 +21,7 @@ def extract_text_by_page(file_path: str) -> str:
     response_model=QuizResponse,
     summary="Upload a PDF and extract quiz",
     description="This endpoint accepts a PDF file uploaded by the user, extracts the text, and  then sends the text to GPT to extract a quiz with questions and answers from the extracted text from the pdf. The output includes a title (if available) and a list of questions with options.",
-    tags=["GPT Quiz Parser"]
+    tags=["AI Based Quiz Parser"]
 )
 async def upload_pdf_for_gpt_quiz(file: UploadFile = File(...)):
     temp_file_path = f"temp_{file.filename}"
@@ -42,7 +42,7 @@ async def upload_pdf_for_gpt_quiz(file: UploadFile = File(...)):
     response_model=QuizResponse,
     summary="Extract quiz from a PDF via URL",
     description="This endpoint accepts a PDF link (e.g., S3 URL), downloads the file, extracts text using PyMuPDF, and then sends the text to GPT to extract a quiz with questions and answers from the extracted text from the pdf",
-    tags=["GPT Quiz Parser"]
+    tags=["AI Based Quiz Parser"]
 )
 async def upload_pdf_from_url_for_gpt_quiz(request: PDFUrlRequest):
     try:

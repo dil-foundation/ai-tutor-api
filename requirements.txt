@@ -13,9 +13,6 @@ mysql-connector-python
 httpx
 pymupdf
 email-validator
-PyMuPDF==1.23.5
-python-dotenv==1.0.0
-requests==2.31.0
-uvicorn==0.23.2
-mysql-connector-python==8.1.0
-phpserialize
+language_tool_python
+redis
+elevenlabs>=0.2.27
