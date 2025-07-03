@@ -12,8 +12,8 @@ router = APIRouter()
 
 @router.post(
     "/upload-quiz-from-url",
-    # response_model=QuizResponse, # The response is now from the LearnDash service
-    summary="Extract quiz questions from PDF and create in LearnDash"
+    response_model=QuizResponse,
+    summary="Extract quiz questions from uploaded link - PDF"
 )
 async def upload_quiz_from_url(request: PDFUrlRequest):
     try:
@@ -28,15 +28,8 @@ async def upload_quiz_from_url(request: PDFUrlRequest):
             tmp_path = tmp.name
 
         text = extract_text_from_pdf(tmp_path)
-        quiz_data = parse_questions_from_text(text)  # dict with title + questions
-        
-        # Convert dict to QuizResponse Pydantic model
-        quiz_response_obj = QuizResponse(**quiz_data)
-        
-        # Create the quiz in LearnDash
-        learndash_result = create_learndash_quiz(quiz_response_obj)
-        
-        return learndash_result
+        result = parse_questions_from_text(text) 
+        return result
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
