@@ -36,7 +36,7 @@ async def synthesize_speech_with_elevenlabs(text: str):
     )
 
 
-def synthesize_speech(text: str):
+async def synthesize_speech(text: str) -> bytes:
     client = texttospeech.TextToSpeechClient()
 
     synthesis_input = texttospeech.SynthesisInput(text=text)
@@ -52,4 +52,4 @@ def synthesize_speech(text: str):
         input=synthesis_input, voice=voice, audio_config=audio_config
     )
 
-    return response.audio_content  # WAV audio bytes
+    return response.audio_content  # This is bytes
