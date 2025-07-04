@@ -28,8 +28,15 @@ async def upload_quiz_from_url(request: PDFUrlRequest):
             tmp_path = tmp.name
 
         text = extract_text_from_pdf(tmp_path)
-        result = parse_questions_from_text(text) 
-        return result
+        quiz_data = parse_questions_from_text(text)  # dict with title + questions
+        
+        # Convert dict to QuizResponse Pydantic model
+        quiz_response_obj = QuizResponse(**quiz_data)
+        
+        # Create the quiz in LearnDash
+        learndash_result = create_learndash_quiz(quiz_response_obj)
+        
+        return learndash_result
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
