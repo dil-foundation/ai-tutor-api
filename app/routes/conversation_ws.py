@@ -5,6 +5,8 @@ from app.services.feedback import evaluate_response
 from app.services import stt 
 import base64
 import json
+from app.services.translation import translate_urdu_to_english
+
 
 router = APIRouter()
 
@@ -33,7 +35,14 @@ async def learn_conversation(websocket: WebSocket):
                     audio_bytes = base64.b64decode(audio_base64)
 
                     # Transcribe directly as English
-                    transcribed_text = stt.transcribe_audio_bytes(audio_bytes, language_code="en-US")
+                    # transcribed_text = stt.transcribe_audio_bytes(audio_bytes, language_code="en-US")
+
+                    
+                    # Transcribe directly as English
+                    transcribed_text = stt.transcribe_audio_bytes(audio_bytes, language_code="ur-PK")
+
+
+                    
                     print("🟡 Transcribed (English):", transcribed_text)
 
                     if not transcribed_text.strip():
@@ -44,7 +53,7 @@ async def learn_conversation(websocket: WebSocket):
                         })
                         continue
 
-                    translated = transcribed_text.strip()
+                    translated = translate_urdu_to_english(transcribed_text.strip())
 
                     ai_text = f"The English sentence is \"{translated}\". Can you repeat after me?"
 
