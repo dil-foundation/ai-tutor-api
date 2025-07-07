@@ -283,7 +283,7 @@ async def learn_conversation(websocket: WebSocket):
                             continue
                     # Now send full sentence audio...
                     
-                    # Send full sentence audio
+                    # Send full sentence audios
                     await safe_send_json(websocket, {
                         # "response": f"Now repeat the full sentence: {translated_en}",
                         "response": f"اب مکمل جملہ دہرائیں: {translated_en}.",
