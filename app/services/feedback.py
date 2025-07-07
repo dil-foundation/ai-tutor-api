@@ -106,15 +106,17 @@ def evaluate_response(expected: str, actual: str) -> dict:
         print("feedback: ",feedback["pronunciation_score"])
         score_str = feedback["pronunciation_score"].replace("%", "")
         score = int(score_str)
-        is_correct = score >= 70
+        is_correct = score >= 80
     except:
         score = 0
         is_correct = False
     
     # Add "Please try again" if score is less than 70%
     feedback_text = feedback["feedback"]
-    if score < 70:
+    if score < 80:
         feedback_text += " Please try again."
+    else:
+        feedback_text += " Lets try another sentence."
 
     print("is_correct: ",is_correct)
 

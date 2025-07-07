@@ -248,7 +248,7 @@ async def learn_conversation(websocket: WebSocket):
                         "english_sentence": translated_en,
                     })
                     
-                    full_sentence_audio = await synthesize_speech(f"Now repeat the full sentence: {translated_en}")
+                    full_sentence_audio = await synthesize_speech_bytes(f"Now repeat the full sentence: {translated_en}")
                     await websocket.send_bytes(full_sentence_audio)
 
                     # Start the feedback loop - keep trying until user gets it right
@@ -280,7 +280,7 @@ async def learn_conversation(websocket: WebSocket):
                                     })
                                     
                                     # Send the feedback audio
-                                    feedback_audio = await synthesize_speech(feedback_text)
+                                    feedback_audio = await synthesize_speech_bytes(feedback_text)
                                     await websocket.send_bytes(feedback_audio)
                                     
                                     # Break out of the feedback loop to get next sentence
@@ -294,7 +294,7 @@ async def learn_conversation(websocket: WebSocket):
                                         "is_true": False
                                     })
                                     
-                                    feedback_audio = await synthesize_speech(feedback_text)
+                                    feedback_audio = await synthesize_speech_bytes(feedback_text)
                                     await websocket.send_bytes(feedback_audio)
                                     
                                     # Continue the loop - wait for user to try again
