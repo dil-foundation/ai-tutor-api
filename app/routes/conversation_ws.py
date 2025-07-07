@@ -152,8 +152,6 @@
 
 #     except WebSocketDisconnect:
 #         print("Client disconnected") 
-
-
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from app.services.translation import translate_urdu_to_english
 from app.services.tts import synthesize_speech_bytes
@@ -166,6 +164,22 @@ from app.services.translation import translate_urdu_to_english
 
 
 router = APIRouter()
+
+async def safe_send_json(websocket: WebSocket, data: dict):
+    """Safely send JSON data to WebSocket with error handling"""
+    try:
+        await websocket.send_json(data)
+    except Exception as e:
+        print(f"Failed to send JSON message: {e}")
+        raise
+
+async def safe_send_bytes(websocket: WebSocket, data: bytes):
+    """Safely send binary data to WebSocket with error handling"""
+    try:
+        await websocket.send_bytes(data)
+    except Exception as e:
+        print(f"Failed to send binary data: {e}")
+        raise
 
 @router.websocket("/ws/learn")
 async def learn_conversation(websocket: WebSocket):
@@ -180,11 +194,12 @@ async def learn_conversation(websocket: WebSocket):
                 audio_base64 = message.get("audio_base64")
                 filename = message.get("filename", "audio.wav")
             except Exception:
-                await websocket.send_json({
+                # Don't return, just continue to next iteration
+                await safe_send_json(websocket, {
                     "response": "Invalid JSON format.",
                     "step": "error"
                 })
-                return
+                continue
 
             if audio_base64:
                 try:
@@ -203,7 +218,7 @@ async def learn_conversation(websocket: WebSocket):
 
                     if not transcribed_text.strip():
                         print("🟡 No speech detected")
-                        await websocket.send_json({
+                        await safe_send_json(websocket, {
                             "response": "No speech detected. Please try again.",
                             "step": "no_speech"
                         })
@@ -211,14 +226,41 @@ async def learn_conversation(websocket: WebSocket):
 
                     translated = translate_urdu_to_english(transcribed_text.strip())
 
-                    ai_text = f"The English sentence is \"{translated}\". Can you repeat after me?"
-
                     translated_ur = transcribed_text.strip()  # Urdu the user said
                     translated_en = translate_urdu_to_english(translated_ur)  # English
 
-                    words = translated_en.split()  # ["The", "weather", "is", "nice", "today."]
+                    you_said_text = f"آپ نے کہا: {translated_ur} اب میرے بعد دہرائیں۔"
+                    
+                    you_said_audio = await synthesize_speech_bytes(you_said_text)
 
-                    await websocket.send_json({
+                    ai_text = f"The English sentence is \"{translated}\". Can you repeat after me?"
+                    
+                    words = translated_en.split()  # ["The", "weather", "is", "nice", "today."]
+                   
+                    # First send the "you said" audio
+                    await safe_send_json(websocket, {
+                        "response": you_said_text,
+                        "step": "you_said_audio",
+                        "english_sentence": translated_en,
+                        "urdu_sentence": translated_ur,
+                        "words": words
+                    })
+
+                    # Send the "you said" audio
+                    await safe_send_bytes(websocket, you_said_audio)
+
+                    # Wait for frontend to finish playing "you said" audio
+                    while True:
+                        next_msg = await websocket.receive_text()
+                        try:
+                            next_data = json.loads(next_msg)
+                            if next_data.get("type") == "you_said_complete":
+                                break
+                        except Exception:
+                            continue
+
+                    # Now send the repeat_prompt step
+                    await safe_send_json(websocket, {
                         "response": ai_text,
                         "step": "repeat_prompt",
                         "english_sentence": translated_en,
@@ -242,14 +284,17 @@ async def learn_conversation(websocket: WebSocket):
                     # Now send full sentence audio...
                     
                     # Send full sentence audio
-                    await websocket.send_json({
-                        "response": f"Now repeat the full sentence: {translated_en}",
+                    await safe_send_json(websocket, {
+                        # "response": f"Now repeat the full sentence: {translated_en}",
+                        "response": f"اب مکمل جملہ دہرائیں: {translated_en}.",
                         "step": "full_sentence_audio",
                         "english_sentence": translated_en,
                     })
                     
-                    full_sentence_audio = await synthesize_speech_bytes(f"Now repeat the full sentence: {translated_en}")
-                    await websocket.send_bytes(full_sentence_audio)
+                    # full_sentence_audio = await synthesize_speech_bytes(f"Now repeat the full sentence: {translated_en}")
+                    
+                    full_sentence_audio = await synthesize_speech_bytes(f"اب مکمل جملہ دہرائیں: {translated_en}.")
+                    await safe_send_bytes(websocket, full_sentence_audio)
 
                     # Start the feedback loop - keep trying until user gets it right
                     while True:
@@ -273,7 +318,7 @@ async def learn_conversation(websocket: WebSocket):
                                 if feedback["is_correct"]:
                                     # User got it right - send feedback text and audio, then move to next sentence
                                     feedback_text = feedback["feedback_text"]
-                                    await websocket.send_json({
+                                    await safe_send_json(websocket, {
                                         "response": feedback_text,
                                         "step": "await_next",
                                         "is_true": True
@@ -281,52 +326,61 @@ async def learn_conversation(websocket: WebSocket):
                                     
                                     # Send the feedback audio
                                     feedback_audio = await synthesize_speech_bytes(feedback_text)
-                                    await websocket.send_bytes(feedback_audio)
+                                    await safe_send_bytes(websocket, feedback_audio)
                                     
                                     # Break out of the feedback loop to get next sentence
                                     break
                                 else:
                                     # User got it wrong - provide feedback and try again
                                     feedback_text = feedback["feedback_text"]
-                                    await websocket.send_json({
+                                    await safe_send_json(websocket, {
                                         "response": feedback_text,
                                         "step": "feedback_step",
                                         "is_true": False
                                     })
                                     
                                     feedback_audio = await synthesize_speech_bytes(feedback_text)
-                                    await websocket.send_bytes(feedback_audio)
+                                    await safe_send_bytes(websocket, feedback_audio)
                                     
                                     # Continue the loop - wait for user to try again
                                     # The frontend will send another audio after feedback audio finishes
                                     continue
 
                             else:
-                                await websocket.send_json({
+                                await safe_send_json(websocket, {
                                     "response": "No valid audio found in user response.",
                                     "step": "error"
                                 })
-                                break
+                                # Don't break, continue to next iteration
+                                continue
 
                         except Exception as e:
                             print("❌ Error processing user repeat audio:", str(e))
-                            await websocket.send_json({
+                            await safe_send_json(websocket, {
                                 "response": "Failed to process your repeat audio.",
                                 "step": "error"
                             })
-                            break
+                            # Don't break, continue to next iteration
+                            continue
 
                 except Exception as e:
                     print("❌ Error in audio decoding/transcription:", str(e))
-                    await websocket.send_json({
+                    await safe_send_json(websocket, {
                         "response": "Failed to process the audio.",
                         "step": "error"
                     })
+                    # Don't break, continue to next iteration
+                    continue
             else:
-                await websocket.send_json({
+                await safe_send_json(websocket, {
                     "response": "No valid audio_base64 found.",
                     "step": "error"
                 })
+                # Don't break, continue to next iteration
+                continue
 
     except WebSocketDisconnect:
-        print("Client disconnected") 
+        print("Client disconnected")
+    except Exception as e:
+        print(f"Unexpected error in WebSocket handler: {e}")
+        # Don't try to send anything here as the connection might be closed 
