@@ -15,11 +15,12 @@ async def synthesize_speech_bytes(text: str) -> bytes:
 
     audio_bytes = client.text_to_speech.convert(
         voice_id=ELEVEN_VOICE_ID,
-        model_id="eleven_multilingual_v1",
+        model_id="eleven_multilingual_v2",
         text=text,
         voice_settings={
             "stability": 0.7,
-            "similarity_boost": 0.8
+            "similarity_boost": 0.8,
+            "speed": 0.8
         }
     )
     return audio_bytes
