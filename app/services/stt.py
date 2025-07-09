@@ -1,8 +1,78 @@
+from elevenlabs import ElevenLabs
 from google.cloud import speech
 from pydub import AudioSegment
 import base64
 import io
 from fastapi import HTTPException
+
+# 🔑 ElevenLabs API key
+api_key = "sk_203fa18d86896ec84470ae44d993aa4728dba6973595bca6"
+
+# 🌟 Initialize ElevenLabs client
+elevenlabs = ElevenLabs(api_key=api_key)
+
+
+def transcribe_audio_bytes_eng(audio_bytes: bytes) -> dict:
+    """
+    Transcribe audio using ElevenLabs STT with language detection
+    Returns a dictionary with transcription and language info
+    """
+    try:
+        # Allow pydub to auto-detect format
+        audio_segment = AudioSegment.from_file(io.BytesIO(audio_bytes))
+        mono_audio_segment = audio_segment.set_channels(1)
+        # Set sample width to 2 bytes (16-bit) for better compatibility
+        mono_audio_segment = mono_audio_segment.set_sample_width(2)
+
+        buffer = io.BytesIO()
+        # Export as MP3 for ElevenLabs API
+        mono_audio_segment.export(buffer, format="mp3")
+        mono_audio_bytes = buffer.getvalue()
+
+    except Exception as e:
+        print(f"❌ Pydub Error converting audio: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Failed to process audio file: {str(e)}")
+
+    try:
+        # Create BytesIO object for ElevenLabs
+        audio_data = io.BytesIO(mono_audio_bytes)
+        
+        # 🎯 Transcribe with ElevenLabs
+        transcription = elevenlabs.speech_to_text.convert(
+            file=audio_data,
+            model_id="scribe_v1",          
+            tag_audio_events=True,         
+            diarize=True                  
+        )
+
+        # Extract language information
+        detected_language = transcription.language_code
+        language_confidence = transcription.language_probability
+        transcribed_text = transcription.text
+
+        print(f"✅ ElevenLabs Transcription Result:")
+        print(f"Detected Language: {detected_language}")
+        print(f"Language Confidence: {language_confidence:.2%}")
+        print(f"Transcription: {transcribed_text}")
+
+        # Return structured response with language detection
+        return {
+            "text": transcribed_text,
+            "language_code": detected_language,
+            "language_confidence": language_confidence,
+            "is_english": detected_language.lower() in ["en", "en-us", "en-gb", "english","eng","tam"]
+        }
+        
+    except Exception as e:
+        print(f"❌ ElevenLabs STT Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Speech-to-text service error: {str(e)}")
+
+def is_english_input(transcription_result: dict) -> bool:
+    """
+    Check if the detected language is English
+    """
+    return transcription_result.get("is_english", False)
+
 
 def transcribe_audio_bytes(audio_bytes: bytes, language_code: str = "ur-PK") -> str:
     try:
