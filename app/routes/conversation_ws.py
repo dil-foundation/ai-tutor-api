@@ -226,6 +226,8 @@ async def learn_conversation(websocket: WebSocket):
 
                     translated = translate_urdu_to_english(transcribed_text.strip())
 
+                    print("Translated english sentence: ",translated)
+
                     translated_ur = transcribed_text.strip()  # Urdu the user said
                     translated_en = translate_urdu_to_english(translated_ur)  # English
 
@@ -331,20 +333,49 @@ async def learn_conversation(websocket: WebSocket):
                                     # Break out of the feedback loop to get next sentence
                                     break
                                 else:
-                                    # User got it wrong - provide feedback and try again
                                     feedback_text = feedback["feedback_text"]
                                     await safe_send_json(websocket, {
                                         "response": feedback_text,
                                         "step": "feedback_step",
                                         "is_true": False
                                     })
-                                    
                                     feedback_audio = await synthesize_speech_bytes(feedback_text)
                                     await safe_send_bytes(websocket, feedback_audio)
-                                    
-                                    # Continue the loop - wait for user to try again
-                                    # The frontend will send another audio after feedback audio finishes
-                                    continue
+
+                                    # ✅ wait for frontend to send feedback_complete
+                                    while True:
+                                        next_msg = await websocket.receive_text()
+                                        try:
+                                            if json.loads(next_msg).get("type") == "feedback_complete":
+                                                break
+                                        except:
+                                            continue
+
+                                    # 🔷 send word_by_word again
+                                    await safe_send_json(websocket, {
+                                        "response": f"Let's practice word-by-word: {translated_en}",
+                                        "step": "word_by_word",
+                                        "english_sentence": translated_en,
+                                        "urdu_sentence": translated_ur,
+                                        "words": words
+                                    })
+
+                                    # wait for word_by_word_complete
+                                    while True:
+                                        next_msg = await websocket.receive_text()
+                                        try:
+                                            if json.loads(next_msg).get("type") == "word_by_word_complete":
+                                                break
+                                        except: continue
+
+                                    # then send full_sentence_audio again
+                                    await safe_send_json(websocket, {
+                                        "response": f"اب مکمل جملہ دہرائیں: {translated_en}.",
+                                        "step": "full_sentence_audio",
+                                        "english_sentence": translated_en,
+                                    })
+                                    full_sentence_audio = await synthesize_speech_bytes(f"اب مکمل جملہ دہرائیں: {translated_en}.")
+                                    await safe_send_bytes(websocket, full_sentence_audio)
 
                             else:
                                 await safe_send_json(websocket, {
