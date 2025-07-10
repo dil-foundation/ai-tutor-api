@@ -4,12 +4,10 @@ from pydub import AudioSegment
 import base64
 import io
 from fastapi import HTTPException
+from app.config import ELEVEN_API_KEY
+from elevenlabs import ElevenLabs
 
-# 🔑 ElevenLabs API key
-api_key = "sk_203fa18d86896ec84470ae44d993aa4728dba6973595bca6"
-
-# 🌟 Initialize ElevenLabs client
-elevenlabs = ElevenLabs(api_key=api_key)
+elevenlabs = ElevenLabs(api_key=ELEVEN_API_KEY)
 
 
 def transcribe_audio_bytes_eng(audio_bytes: bytes) -> dict:
