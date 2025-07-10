@@ -9,6 +9,33 @@ from elevenlabs.client import ElevenLabs
 # Create a reusable ElevenLabs client instance
 client = ElevenLabs(api_key=ELEVEN_API_KEY)
 
+def synthesize_speech_with_elevenlabs_exercises(text: str):
+    print(f"🔑 Using API Key: {ELEVEN_API_KEY[:6]}...")
+    print(f"🗣️ Voice ID: {ELEVEN_VOICE_ID}")
+
+    # Get audio bytes
+    audio_bytes = client.text_to_speech.convert(
+        voice_id=ELEVEN_VOICE_ID,
+        model_id="eleven_multilingual_v2",
+        text=text,
+        voice_settings={
+            "stability": 0.7,
+            "similarity_boost": 0.8,
+            "speed": 0.8
+        }
+    )
+
+    # Wrap in BytesIO and prepare response
+    audio_stream = BytesIO(audio_bytes)
+    audio_stream.seek(0)
+
+    return StreamingResponse(
+        content=audio_stream,
+        media_type="audio/wav",  # or "audio/mpeg" if ElevenLabs gives mp3
+        headers={"Content-Disposition": 'inline; filename="output.wav"'}
+    )
+
+
 async def synthesize_speech_bytes(text: str) -> bytes:
     print(f"🔑 Using API Key: {ELEVEN_API_KEY[:6]}...")
     print(f"🗣️ Voice ID: {ELEVEN_VOICE_ID}")
