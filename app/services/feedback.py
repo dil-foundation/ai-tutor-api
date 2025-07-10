@@ -51,7 +51,7 @@ Remember: Only pronunciation & speaking matter. Feedback must be in Urdu, polite
             temperature=0.7
         )
 
-        output = response.choices[0].message.content.strip()
+        output = response.choices[0].message.content.strip() if response.choices[0].message.content else ""
         print("GPT raw output:\n", output)
 
         # Robust parsing
