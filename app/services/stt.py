@@ -6,9 +6,9 @@ import io
 from fastapi import HTTPException
 from app.config import ELEVEN_API_KEY
 from elevenlabs import ElevenLabs
-
+#api key
 elevenlabs = ElevenLabs(api_key=ELEVEN_API_KEY)
-
+ 
 
 def transcribe_audio_bytes_eng(audio_bytes: bytes) -> dict:
     """
