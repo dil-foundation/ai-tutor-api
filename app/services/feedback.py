@@ -1,5 +1,6 @@
 from openai import OpenAI
 from app.config import OPENAI_API_KEY
+import json
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 
@@ -118,3 +119,51 @@ def evaluate_response(expected: str, actual: str) -> dict:
         "pronunciation_score": feedback["pronunciation_score"],
         "tone_intonation": feedback["tone_intonation"]
     }
+
+def evaluate_response_ex1_stage1(expected_phrase: str, user_response: str) -> dict:
+    """
+    Evaluate the student's response to the expected phrase, returning:
+    - 1-line feedback
+    - overall score
+    - is_correct: True if score >= 80 else False
+    """
+    prompt = f"""
+You are an expert English language evaluator for a language-learning app.  
+Your task is to assess a student's spoken response compared to an expected phrase.
+
+Inputs:
+- Expected phrase: "{expected_phrase}"
+- Student's response: "{user_response}"
+
+🎯 Criteria:
+- Accuracy: Does the student's response match or convey the same meaning as the expected phrase?
+- Grammar & Fluency: Is it grammatically correct and natural?
+- Relevance: Does it appropriately respond to the expected phrase's intent?
+
+🎯 Output:
+- A JSON object in the following format:
+{{
+  "feedback": "1-line constructive feedback.",
+  "overall_score": [integer 0-100],
+  "is_correct": [true if score >=80, else false]
+}}
+
+Guidelines:
+✅ If the student's response is perfectly correct or very good (close in meaning & form to expected), give a score ≥ 80 and set `is_correct: true`.
+✅ If response is poor, irrelevant, or incorrect, give < 80 and set `is_correct: false`.
+✅ Feedback should clearly explain why the response was good or how to improve — but only 1 line.
+
+Respond ONLY with the JSON object, no extra text.
+"""
+
+    response = client.chat.completions.create(
+        model="gpt-4",
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.3
+    )
+
+    # Extract the content string from the response object
+    json_content = response.choices[0].message.content.strip()
+
+    # Parse JSON content into Python dict
+    return json.loads(json_content)

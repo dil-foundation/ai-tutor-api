@@ -81,3 +81,36 @@ async def synthesize_speech(text: str) -> bytes:
     )
 
     return response.audio_content  # This is bytes
+
+
+async def synthesize_speech_exercises(text: str) -> bytes:
+    """
+    Main TTS function that uses ElevenLabs instead of Google TTS
+    This function maintains the same interface as before but uses ElevenLabs
+    """
+    print(f"🔄 Starting ElevenLabs TTS for text: '{text}'")
+    try:
+        print(f"🔑 Using ElevenLabs API Key: {ELEVEN_API_KEY[:6]}...")
+        print(f"🗣️ Using ElevenLabs Voice ID: {ELEVEN_VOICE_ID}")
+        print(f"📝 Text to synthesize: '{text}'")
+
+        # Use ElevenLabs instead of Google TTS
+        audio_generator = client.text_to_speech.convert(
+            voice_id=ELEVEN_VOICE_ID,
+            model_id="eleven_multilingual_v2",
+            text=text,
+            voice_settings={
+                "stability": 0.7,
+                "similarity_boost": 0.8,
+                "speed": 0.8
+            }
+        )
+        
+        # Convert generator to bytes
+        audio_bytes = b''.join(audio_generator)
+        print(f"✅ ElevenLabs TTS successful, audio size: {len(audio_bytes)} bytes")
+
+        return audio_bytes  # Return bytes for compatibility
+    except Exception as e:
+        print(f"❌ ElevenLabs TTS error: {str(e)}")
+        raise e
