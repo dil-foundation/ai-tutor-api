@@ -1,6 +1,7 @@
 from openai import OpenAI
 from app.config import OPENAI_API_KEY
 import json
+import re
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 
@@ -26,9 +27,9 @@ Do NOT comment on spelling, punctuation, or written grammar.
 
 Respond in **exactly 3 lines**, in this strict format:
 
-1️⃣ **Pronunciation score:** <percentage>%  
-2️⃣ **Tone & Intonation:** بہترین / اچھا / درمیانہ / کمزور  
-3️⃣ **Feedback:** <2–3 short Urdu sentences giving warm, encouraging guidance. Use simple, everyday words like دوبارہ، بہتر، زبردست, etc.>
+Pronunciation score:<percentage>%
+Tone & Intonation:بہترین / اچھا / درمیانہ / کمزور  
+Feedback: <2-3 short Urdu sentences giving warm, encouraging guidance. Use simple, everyday words like دوبارہ، بہتر، زبردست, etc.>
 
 📋 **Scoring Guide** (internal logic — no need to output this):  
 - **70–85%** → Celebrate their success  
@@ -57,7 +58,7 @@ Remember:
         output = response.choices[0].message.content.strip() if response.choices[0].message.content else ""
         print("GPT raw output:\n", output)
 
-        # Robust parsing
+        # Robust parsing s
         result = {}
         lines = [line for line in output.split("\n") if ":" in line]
         for line in lines:
@@ -97,6 +98,10 @@ def evaluate_response(expected: str, actual: str) -> dict:
         "tone_intonation": str
     }
     """
+    print("evaluate_response: ")
+    print("Actual: ",actual)
+    print("Expected: ",expected)
+    print("================================")
     feedback = get_fluency_feedback(actual, expected)
 
     try:
