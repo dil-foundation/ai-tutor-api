@@ -58,7 +58,7 @@ Remember:
         output = response.choices[0].message.content.strip() if response.choices[0].message.content else ""
         print("GPT raw output:\n", output)
 
-        # Robust parsing
+        # Robust parsing s
         result = {}
         lines = [line for line in output.split("\n") if ":" in line]
         for line in lines:
