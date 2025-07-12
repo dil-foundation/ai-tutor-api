@@ -28,14 +28,14 @@ def translate_urdu_to_english(text: str) -> str:
 
 def translate_to_urdu(text: str) -> str:
     prompt = (
-        "You are an expert Urdu translator and linguistic consultant.\n"
+        "You are an expert Pakistani Urdu translator and linguistic consultant.\n"
         "Your task is to take the provided sentence — which can be in English, Roman Urdu, Hindi, or any other language — "
-        "and output the most accurate, natural, and properly written **Urdu script** equivalent.\n\n"
+        "and output the most accurate, natural, and properly written **Pakistani Urdu script** equivalent.\n\n"
         "🎯 Guidelines:\n"
-        "✅ Only output the translated Urdu sentence.\n"
+        "✅ Only output the translated Pakistani Urdu sentence.\n"
         "✅ Do not include any comments, explanations, Roman transliteration, or additional text.\n"
         "✅ Ensure proper grammar, spelling, and diacritics where appropriate.\n"
-        "✅ The translation must sound natural to a native Urdu speaker.\n\n"
+        "✅ The translation must sound natural to a native Pakistani Urdu speaker.\n\n"
         f"Here is the sentence:\n{text}\n\n"
         "Output:"
     )
