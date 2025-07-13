@@ -122,7 +122,7 @@ Respond in **exactly 3 lines**, in this strict format:
 
 Pronunciation score:<percentage>%
 Tone & Intonation:بہترین / اچھا / درمیانہ / کمزور  
-Feedback: <2-3 short Urdu sentences giving warm, encouraging guidance. Use simple, everyday words like دوبارہ، بہتر، زبردست, etc.>
+Feedback: <2-3 short Urdu sentences giving warm, encouraging guidance. Use simple, everyday words like دوبارہ، بہتر، زبردست، دوہرائیں, etc.>
 
 📋 **Scoring Guide** (internal logic — no need to output this):  
 - **70–85%** → Celebrate their success  
