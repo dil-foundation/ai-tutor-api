@@ -52,7 +52,7 @@ Remember:
 
     try:
         response = client.chat.completions.create(
-            model="gpt-4",
+            model="gpt-4o",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.7
         )
@@ -137,7 +137,7 @@ Remember:
 
     try:
         response = client.chat.completions.create(
-            model="gpt-4",
+            model="gpt-4o",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.7
         )
@@ -291,7 +291,7 @@ Respond ONLY with the JSON object, no extra text.
 """
 
     response = client.chat.completions.create(
-        model="gpt-4",
+        model="gpt-4o",
         messages=[{"role": "user", "content": prompt}],
         temperature=0.3
     )
