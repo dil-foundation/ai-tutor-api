@@ -171,7 +171,7 @@ Remember:
         return {
             "pronunciation_score": "0%",
             "tone_intonation": "کمزور",
-            "feedback": "آئیے دوبارہ کوشش کرتے ہیں۔ جملہ صاف صاف بولیں۔"
+            "feedback": "آئیے دوبارہ کوشش کرتے ہیں۔ جملہ صاف صاف بولیں۔"                    
         }
 
 
