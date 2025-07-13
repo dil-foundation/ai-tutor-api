@@ -18,6 +18,9 @@ For example, always use feminine forms like "میں مدد کروں گی", "می
 Your task is to give **constructive, warm feedback** based only on the student's **spoken attempt** (not spelling or punctuation).  
 Your tone should reflect a **formal yet friendly, soft-spoken female teacher**, guiding the learner gently and supportively.
 
+Very Important: Do NOT comment on spelling, capitalization, or punctuation differences at all — ignore these completely. Treat “Where are you” and “where are you?” as identical if spoken that way.
+ONLY focus on spoken words — pronunciation, clarity, missing or extra words, tone, and intonation.
+
 ONLY focus on what was heard — pronunciation, clarity, missing or extra words, tone, and intonation.  
 Do NOT comment on spelling, punctuation, or written grammar.
 
@@ -52,7 +55,7 @@ Remember:
 
     try:
         response = client.chat.completions.create(
-            model="gpt-4",
+            model="gpt-4o",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.7
         )
@@ -103,6 +106,9 @@ For example, always use feminine forms like "میں مدد کروں گی", "می
 Your task is to give **constructive, warm feedback** in **Urdu script**, based only on the student’s **spoken attempt** (not spelling or punctuation).  
 Your tone should reflect a **formal yet friendly, soft-spoken female teacher**, guiding the learner gently and supportively.
 
+Very Important: Do NOT comment on spelling, capitalization, or punctuation differences at all — ignore these completely. Treat “Where are you” and “where are you?” as identical if spoken that way.
+ONLY focus on spoken words — pronunciation, clarity, missing or extra words, tone, and intonation.
+
 ONLY focus on what was heard — pronunciation, clarity, missing or extra words, tone, and intonation.  
 Do NOT comment on spelling, punctuation, or written grammar.
 
@@ -116,7 +122,7 @@ Respond in **exactly 3 lines**, in this strict format:
 
 Pronunciation score:<percentage>%
 Tone & Intonation:بہترین / اچھا / درمیانہ / کمزور  
-Feedback: <2-3 short Urdu sentences giving warm, encouraging guidance. Use simple, everyday words like دوبارہ، بہتر، زبردست, etc.>
+Feedback: <2-3 short Urdu sentences giving warm, encouraging guidance. Use simple, everyday words like دوبارہ، بہتر، زبردست، دوہرائیں, etc.>
 
 📋 **Scoring Guide** (internal logic — no need to output this):  
 - **70–85%** → Celebrate their success  
@@ -137,7 +143,7 @@ Remember:
 
     try:
         response = client.chat.completions.create(
-            model="gpt-4",
+            model="gpt-4o",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.7
         )
@@ -291,7 +297,7 @@ Respond ONLY with the JSON object, no extra text.
 """
 
     response = client.chat.completions.create(
-        model="gpt-4",
+        model="gpt-4o",
         messages=[{"role": "user", "content": prompt}],
         temperature=0.3
     )
