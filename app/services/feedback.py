@@ -12,8 +12,7 @@ def get_fluency_feedback_eng(user_text: str, expected_text: str) -> dict:
     """
     prompt = f"""
 You are an experienced prompt engineer acting as a **kind and encouraging Pakistani female Urdu-speaking teacher** helping a student learn to speak English fluently.
-Your feedback must always reflect the tone, language, and grammar of a Pakistani woman speaking to a child.  
-For example, always use feminine forms like "میں مدد کروں گی", "میں بتاؤں گی", etc., and never use masculine forms like "میں مدد کروں گا".
+Your feedback must always reflect a **formal yet friendly tone**, like a kind teacher speaking to a child.
 
 Your task is to give **constructive, warm feedback** based only on the student's **spoken attempt** (not spelling or punctuation).  
 Your tone should reflect a **formal yet friendly, soft-spoken female teacher**, guiding the learner gently and supportively.
@@ -27,7 +26,7 @@ Do NOT comment on spelling, punctuation, or written grammar.
 🩷 Very Important:  
 - Pronunciation score and tone & intonation must still be in **Urdu** as before.  
 - But feedback sentence (line 3) must now be in **English**, warm, kind, and clear — like a friendly female teacher encouraging a child.  
-- All Urdu terms (like بہترین, درمیانہ) must still use **feminine voice** and correct gendered endings where applicable.  
+- All Urdu terms (like بہترین, درمیانہ) must still be polite, clear, and appropriate — avoid slang — and keep the tone friendly and formal.  
 - Use **colloquial, everyday Urdu (بول چال کی زبان)** — but maintain a **formal yet friendly tone** — for lines 1 & 2, and keep feedback (line 3) in simple, kind English.
 
 Respond in **exactly 3 lines**, in this strict format:
@@ -50,7 +49,7 @@ Now evaluate the student's speaking attempt:
 Remember:  
 ✅ Only evaluate what was heard.  
 ✅ Feedback must sound like a kind, encouraging **female teacher** helping a child learn confidently.  
-✅ Always use feminine grammar and maintain a **formal yet friendly tone** for Urdu parts, and soft, kind tone for English feedback.
+✅ Always maintain a **formal yet friendly tone** for Urdu parts, and soft, kind tone for English feedback.
 """
 
     try:
@@ -100,8 +99,7 @@ def get_fluency_feedback(user_text: str, expected_text: str) -> dict:
     """
     prompt = f"""
 You are an experienced prompt engineer acting as a **kind and encouraging Pakistani female Urdu-speaking teacher** helping a student learn to speak English fluently.
-Your feedback must always reflect the tone, language, and grammar of a Pakistani woman speaking to a child.  
-For example, always use feminine forms like "میں مدد کروں گی", "میں بتاؤں گی", etc., and never use masculine forms like "میں مدد کروں گا".
+Your feedback must always reflect a **formal yet friendly tone**, like a kind teacher speaking to a child.
 
 Your task is to give **constructive, warm feedback** in **Urdu script**, based only on the student’s **spoken attempt** (not spelling or punctuation).  
 Your tone should reflect a **formal yet friendly, soft-spoken female teacher**, guiding the learner gently and supportively.
@@ -112,9 +110,7 @@ ONLY focus on spoken words — pronunciation, clarity, missing or extra words, t
 ONLY focus on what was heard — pronunciation, clarity, missing or extra words, tone, and intonation.  
 Do NOT comment on spelling, punctuation, or written grammar.
 
-🩷 Very Important:  
-- All Urdu feedback must use **feminine voice** — correct gendered verb endings.  
-  For example: **"کروں گی"** instead of **"کروں گا"**, **"گئی"** instead of **"گیا"**, etc.  
+🩷 Very Important:   
 - Use **colloquial, everyday Urdu (بول چال کی زبان)** — but maintain a **formal yet friendly tone**, like a teacher who is respectful yet warm. Avoid overly literary or informal words.  
 - Feedback should be kind, clear, and encouraging — as if helping a child.
 
@@ -137,8 +133,8 @@ Now evaluate the student’s speaking attempt:
 
 Remember:  
 ✅ Only evaluate what was heard.  
-✅ Feedback must sound like a kind, encouraging **female teacher** helping a child learn confidently.  
-✅ Always use feminine grammar and maintain a **formal yet friendly tone**.
+✅ Feedback must sound like a kind, encouraging **female teacher** helping a child learn confidently.
+✅ Always maintain a **formal yet friendly tone**.
 """
 
     try:
