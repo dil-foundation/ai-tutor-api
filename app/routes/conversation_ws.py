@@ -202,7 +202,7 @@ async def learn_conversation(websocket: WebSocket):
             if language_mode == "english":
                 you_said_text = f'You said: {transcribed_urdu}. Now repeat after me.'
             else:
-                you_said_text = f"آپ نے کہا: {transcribed_urdu} اب میرے بعد دہرائیں۔"
+                you_said_text = f"آپ نے کہا: {transcribed_urdu} اب میرے بعد دوہرائیں۔"
             tts_task = synthesize_speech_bytes(you_said_text)
             words = translated_en.split()
 
@@ -257,7 +257,7 @@ async def learn_conversation(websocket: WebSocket):
             else:
                 urdu_prompt = "\u200Fاب مکمل جملہ دہرائیں: "
                 english_text = f"\u200E{translated_en}."
-                full_sentence_text = f"اب مکمل جملہ دہرائیں: {translated_en}."
+                full_sentence_text = f"اب مکمل جملہ دوہرائیں: {translated_en}."
             full_sentence_audio_task = synthesize_speech_bytes(full_sentence_text)
             await safe_send_json(websocket, {
                 "response": full_sentence_text,
