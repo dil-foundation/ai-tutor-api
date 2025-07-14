@@ -173,7 +173,7 @@ Remember:
         return {
             "pronunciation_score": "0%",
             "tone_intonation": "کمزور",
-            "feedback": "آئیے دوبارہ کوشش کرتے ہیں۔ جملہ صاف صاف بولیں۔"                    
+            "feedback": "آئیے دوبارہ کوشش کرتے ہیں۔ صاف صاف بولیں۔"                  
         }
 
 
@@ -205,7 +205,7 @@ def evaluate_response(expected: str, actual: str) -> dict:
     if score < 80:
         feedback_text += " دوبارہ کوشش کریں۔"
     else:
-        feedback_text += " شاباش، اگلا جملہ آزمائیں۔"
+        feedback_text += " شاباش، آگے بڑھیں۔"
 
     print("✅ is_correct: ", is_correct)
 
