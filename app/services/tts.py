@@ -40,7 +40,7 @@ async def synthesize_speech_bytes(text: str) -> bytes:
     print(f"🔑 Using API Key: {ELEVEN_API_KEY[:6]}...")
     print(f"🗣️ Voice ID: {ELEVEN_VOICE_ID}")
 
-    audio_bytes = client.text_to_speech.convert(
+    audio_chunks = client.text_to_speech.convert(
         voice_id=ELEVEN_VOICE_ID,
         model_id="eleven_multilingual_v2",
         text=text,
@@ -50,6 +50,8 @@ async def synthesize_speech_bytes(text: str) -> bytes:
             "speed": 0.8
         }
     )
+    # If it's a normal (not async) generator:
+    audio_bytes = b"".join(audio_chunks)
     return audio_bytes
 
 async def synthesize_speech_with_elevenlabs(text: str):

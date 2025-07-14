@@ -335,11 +335,13 @@ async def learn_conversation(websocket: WebSocket):
                     await safe_send_bytes(websocket, feedback_audio)
                     break
                 # if not correct:
-                if feedback_text in tts_cache:
-                    feedback_audio = tts_cache[feedback_text]
-                else:
-                    feedback_audio = await synthesize_speech_bytes(feedback_text)
-                    tts_cache[feedback_text] = feedback_audio
+                # if feedback_text in tts_cache:
+                #     feedback_audio = tts_cache[feedback_text]
+                # else:
+                #     feedback_audio = await synthesize_speech_bytes(feedback_text)
+                #     tts_cache[feedback_text] = feedback_audio
+                feedback_audio = await synthesize_speech_bytes(feedback_text)
+                tts_cache[feedback_text] = feedback_audio
                 profiler.mark("🔁 Feedback (retry) TTS completed")
                 await safe_send_json(websocket, {
                     "response": feedback_text,
@@ -387,7 +389,12 @@ async def learn_conversation(websocket: WebSocket):
                     "step": "full_sentence_audio",
                     "english_sentence": translated_en
                 })
-                await safe_send_bytes(websocket, full_sentence_audio)
+                try:
+                    print("Type of audio to send:", type(full_sentence_audio))  # Should be <class 'bytes'>
+                    await safe_send_bytes(websocket, full_sentence_audio)
+                    print("Full sentence audio sent successfully")
+                except Exception as e:
+                    print("Error sending full sentence audio:", e)
             profiler.summary()
     except WebSocketDisconnect:
         print("Client disconnected")
