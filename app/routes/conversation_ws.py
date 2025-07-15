@@ -258,9 +258,7 @@ async def learn_conversation(websocket: WebSocket):
             if language_mode == "english":
                 full_sentence_text = f"Now repeat the full sentence: {translated_en}."
             else:
-                urdu_prompt = "\u200Fاب مکمل جملہ دہرائیں: "
-                english_text = f"\u200E{translated_en}."
-                full_sentence_text = f"اب دہرائیں:{translated_en}."
+                full_sentence_text = f"اب دوہرائیں:{translated_en}."
             full_sentence_audio_task = synthesize_speech_bytes(full_sentence_text)
             await safe_send_json(websocket, {
                 "response": full_sentence_text,
