@@ -202,7 +202,8 @@ async def learn_conversation(websocket: WebSocket):
             if language_mode == "english":
                 you_said_text = f'You said: {transcribed_urdu}. Now repeat after me.'
             else:
-                you_said_text = f"آپ نے کہا: {transcribed_urdu} اب میرے بعد دوہرائیں۔"
+                you_said_text = f"آپ نے کہا، {transcribed_urdu}۔ اب میرے بعد دوہرائیں۔"
+
             tts_task = synthesize_speech_bytes(you_said_text)
             words = translated_en.split()
 
@@ -230,10 +231,12 @@ async def learn_conversation(websocket: WebSocket):
             profiler.mark("✅ Frontend played you_said")
 
             # Send repeat prompt
+            # Send repeat prompt
             if language_mode == "english":
                 ai_text = f'The English sentence is "{translated_en}". Can you repeat after me?'
             else:
                 ai_text = f"انگریزی جملہ ہے: \"{translated_en}\"۔ میرے بعد دہرائیں۔"
+
             await safe_send_json(websocket, {
                 "response": ai_text,
                 "step": "repeat_prompt",
@@ -335,13 +338,13 @@ async def learn_conversation(websocket: WebSocket):
                     await safe_send_bytes(websocket, feedback_audio)
                     break
                 # if not correct:
-                # if feedback_text in tts_cache:
-                #     feedback_audio = tts_cache[feedback_text]
-                # else:
-                #     feedback_audio = await synthesize_speech_bytes(feedback_text)
-                #     tts_cache[feedback_text] = feedback_audio
-                feedback_audio = await synthesize_speech_bytes(feedback_text)
-                tts_cache[feedback_text] = feedback_audio
+                if feedback_text in tts_cache:
+                    feedback_audio = tts_cache[feedback_text]
+                else:
+                    feedback_audio = await synthesize_speech_bytes(feedback_text)
+                    tts_cache[feedback_text] = feedback_audio
+                # feedback_audio = await synthesize_speech_bytes(feedback_text)
+                # tts_cache[feedback_text] = feedback_audio
                 profiler.mark("🔁 Feedback (retry) TTS completed")
                 await safe_send_json(websocket, {
                     "response": feedback_text,
