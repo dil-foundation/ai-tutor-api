@@ -203,10 +203,14 @@ def evaluate_response(expected: str, actual: str) -> dict:
         is_correct = False
 
     feedback_text = feedback["feedback"]
-    if score < 80:
+    if score < 80 and "دوبارہ" not in feedback_text:
         feedback_text += " دوبارہ کوشش کریں۔"
-    else:
-        feedback_text += " شاباش، آگے بڑھیں۔"
+    elif score >= 80:
+        if "شاباش" not in feedback_text:
+            feedback_text += " شاباش!"
+        if "آگے بڑھیں" not in feedback_text:
+            feedback_text += " آگے بڑھیں۔"
+
 
     print("✅ is_correct: ", is_correct)
 
@@ -243,10 +247,14 @@ def evaluate_response_eng(expected: str, actual: str) -> dict:
 
     feedback_text = feedback["feedback"]
     
-    if score < 80:
-        feedback_text +="Let's try again. Speak the sentence clearly."
-    else:
-        feedback_text +="Great job! Let's try the next sentence."
+    if score < 80 and "try again" not in feedback_text.lower():
+        feedback_text += " Let's try again. Speak the sentence clearly."
+    elif score >= 80:
+        if "great job" not in feedback_text.lower():
+            feedback_text += " Great job!"
+        if "let's try the next sentence" not in feedback_text.lower():
+            feedback_text += " Let's try the next sentence."
+
     
     print("✅ is_correct: ", is_correct)
 
