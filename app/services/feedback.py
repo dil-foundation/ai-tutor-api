@@ -135,6 +135,7 @@ Remember:
 ✅ Only evaluate what was heard.  
 ✅ Feedback must sound like a kind, encouraging **female teacher** helping a child learn confidently.
 ✅ Always maintain a **formal yet friendly tone**.
+🗣️ Pronunciation Note: When pronouncing Urdu words, ensure all letters are clearly articulated — especially meem (م) in words like جُملہ. Avoid skipping or blending sounds unnaturally. Prioritize accurate phonetic Urdu pronunciation for learners.
 """
 
     try:
