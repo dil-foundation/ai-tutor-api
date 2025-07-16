@@ -292,12 +292,17 @@ async def learn_conversation(websocket: WebSocket):
                 )
                 
                 # Parallel STT and feedback evaluation
-                user_transcription = await asyncio.get_event_loop().run_in_executor(
+                user_transcription_result = await asyncio.get_event_loop().run_in_executor(
                     thread_pool,
-                    stt.transcribe_audio_bytes,
-                    user_audio_bytes,
-                    "en-US"
+                    stt.transcribe_audio_bytes_user_repeat,
+                    user_audio_bytes
                 )
+
+                # Extract only the cleaned transcription text
+                user_transcription = user_transcription_result["text"]
+
+                print("user_transcription from elevenlab: ",user_transcription)
+                
                 profiler.mark("🎤 User repeat STT completed")
                 if language_mode == "english":
                     feedback = await asyncio.get_event_loop().run_in_executor(
