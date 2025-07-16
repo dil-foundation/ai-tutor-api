@@ -379,7 +379,7 @@ async def learn_conversation(websocket: WebSocket):
                 if language_mode == "english":
                     full_sentence_text = f"Now repeat the full sentence: {translated_en}."
                 else:
-                    full_sentence_text = f"اب دہرائیں:{translated_en}."
+                    full_sentence_text = f"اب دوہرائیں:{translated_en}."
                 if full_sentence_text in tts_cache:
                     full_sentence_audio = tts_cache[full_sentence_text]
                 else:
