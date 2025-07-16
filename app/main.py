@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import text
 from app.routes import conversation_ws
+# from app.routes import conversation_ws,conversation_ws_2
 
 from app.routes import user
 from app.routes import translator
@@ -48,6 +49,7 @@ app.include_router(question_answer_wh.router,prefix="/api", tags=["Stage 2 - Exe
 app.include_router(roleplay_simulation.router,prefix="/api", tags=["Stage 2 - Exercise 3 (Roleplay Simulation)"])
 app.include_router(gpt_quiz_parser.router, prefix="/api/quiz")
 app.include_router(conversation_ws.router, prefix="/api")
+# app.include_router(conversation_ws_2.router)
 
 @app.post("/tts")
 async def tts_generate_audio(data: TextRequest):
