@@ -302,6 +302,14 @@ async def learn_conversation(websocket: WebSocket):
                 user_transcription = user_transcription_result["text"]
 
                 print("user_transcription from elevenlab: ",user_transcription)
+
+                # Check if user_transcription is null or empty
+                if not user_transcription or not user_transcription.strip():
+                    await safe_send_json(websocket, {
+                        "response": "No speech detected." if language_mode == "english" else "کوئی آواز نہیں ملی۔",
+                        "step": "no_speech"
+                    })
+                    continue
                 
                 profiler.mark("🎤 User repeat STT completed")
                 if language_mode == "english":
