@@ -315,7 +315,7 @@ Your task is to compare the student's response with the expected phrase and retu
     )
 
     # Extract the response
-    raw_content = response.choices[0].message.content.strip()
+    raw_content = response.choices[0].message.content.strip() if response.choices[0].message.content else ""
     print(f"🔍 [FEEDBACK] Raw GPT response: {raw_content}")
 
     # Try to extract JSON object even if GPT adds comments

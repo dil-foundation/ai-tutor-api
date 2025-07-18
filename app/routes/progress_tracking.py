@@ -24,6 +24,11 @@ class UserProgressRequest(BaseModel):
 class InitializeProgressRequest(BaseModel):
     user_id: str
 
+class GetCurrentTopicRequest(BaseModel):
+    user_id: str
+    stage_id: int
+    exercise_id: int
+
 class ProgressResponse(BaseModel):
     success: bool
     data: Optional[dict] = None
@@ -182,6 +187,39 @@ async def check_content_unlocks(user_id: str):
     except Exception as e:
         print(f"❌ [API] Error in check_content_unlocks: {str(e)}")
         logger.error(f"Error in check_content_unlocks: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+@router.post("/get-current-topic", response_model=ProgressResponse)
+async def get_current_topic_for_exercise(request: GetCurrentTopicRequest):
+    """Get the current topic_id for a specific exercise"""
+    print(f"🔄 [API] POST /get-current-topic called")
+    print(f"📝 [API] Request data: {request}")
+    
+    try:
+        print(f"🔄 [API] Getting current topic for user: {request.user_id}, stage: {request.stage_id}, exercise: {request.exercise_id}")
+        
+        result = await progress_tracker.get_current_topic_for_exercise(
+            user_id=request.user_id,
+            stage_id=request.stage_id,
+            exercise_id=request.exercise_id
+        )
+        
+        print(f"📊 [API] Get current topic result: {result}")
+        
+        if result["success"]:
+            print(f"✅ [API] Current topic retrieved successfully")
+            return ProgressResponse(
+                success=True,
+                data=result,
+                message="Current topic retrieved successfully"
+            )
+        else:
+            print(f"❌ [API] Get current topic failed: {result.get('error')}")
+            raise HTTPException(status_code=500, detail=result.get("error", "Failed to get current topic"))
+            
+    except Exception as e:
+        print(f"❌ [API] Error in get_current_topic_for_exercise: {str(e)}")
+        logger.error(f"Error in get_current_topic_for_exercise: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @router.get("/health")

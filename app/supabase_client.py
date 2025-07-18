@@ -181,7 +181,7 @@ class SupabaseProgressTracker:
             
             # Update exercise progress
             print(f"🔄 [TOPIC] Updating exercise progress...")
-            await self._update_exercise_progress(user_id, stage_id, exercise_id, score, urdu_used, time_spent_seconds)
+            await self._update_exercise_progress(user_id, stage_id, exercise_id, score, urdu_used, time_spent_seconds, topic_id)
             
             # Update user progress summary
             print(f"🔄 [TOPIC] Updating user progress summary...")
@@ -197,7 +197,7 @@ class SupabaseProgressTracker:
             return {"success": False, "error": str(e)}
     
     async def _update_exercise_progress(self, user_id: str, stage_id: int, exercise_id: int, 
-                                      score: float, urdu_used: bool, time_spent_seconds: int):
+                                      score: float, urdu_used: bool, time_spent_seconds: int, topic_id: int = None):
         """Update exercise-level progress metrics"""
         print(f"🔄 [EXERCISE] Updating exercise progress for user {user_id}, stage {stage_id}, exercise {exercise_id}")
         try:
@@ -207,7 +207,38 @@ class SupabaseProgressTracker:
             
             if not current.data:
                 print(f"⚠️ [EXERCISE] No exercise progress found for user {user_id}, stage {stage_id}, exercise {exercise_id}")
-                logger.warning(f"No exercise progress found for user {user_id}, stage {stage_id}, exercise {exercise_id}")
+                print(f"🆕 [EXERCISE] Creating new exercise progress record...")
+                
+                # Create new exercise progress record
+                current_timestamp = datetime.now().isoformat()
+                
+                # Determine initial topic_id based on completion
+                initial_topic_id = topic_id or 1
+                if score >= 80 and topic_id:
+                    # If topic was completed successfully, start with next topic
+                    initial_topic_id = topic_id + 1
+                
+                new_exercise_data = {
+                    "user_id": user_id,
+                    "stage_id": stage_id,
+                    "exercise_id": exercise_id,
+                    "current_topic_id": initial_topic_id,
+                    "attempts": 1,
+                    "scores": [score],
+                    "last_5_scores": [score],
+                    "average_score": score,
+                    "urdu_used": [urdu_used],
+                    "time_spent_minutes": int(time_spent_seconds / 60),
+                    "best_score": score,
+                    "total_score": score,
+                    "mature": score >= 80,
+                    "started_at": current_timestamp,
+                    "last_attempt_at": current_timestamp
+                }
+                
+                print(f"📝 [EXERCISE] Creating new exercise progress: {new_exercise_data}")
+                create_result = self.client.table('ai_tutor_user_exercise_progress').insert(new_exercise_data).execute()
+                print(f"✅ [EXERCISE] New exercise progress created: {create_result.data[0] if create_result.data else 'No data'}")
                 return
             
             exercise_data = current.data[0]
@@ -229,7 +260,7 @@ class SupabaseProgressTracker:
             average_score = total_score / len(scores) if scores else 0
             best_score = max(scores) if scores else 0
             # Convert to integer for database compatibility
-            time_spent_minutes = int(exercise_data.get('total_time_minutes', 0) + (time_spent_seconds / 60))
+            time_spent_minutes = int(exercise_data.get('time_spent_minutes', 0) + (time_spent_seconds / 60))
             
             print(f"📊 [EXERCISE] Calculated metrics:")
             print(f"   - Total score: {total_score}")
@@ -253,14 +284,35 @@ class SupabaseProgressTracker:
             current_timestamp = datetime.now().isoformat()
             
             update_data = {
-                "total_attempts": len(scores),
+                "attempts": len(scores),
                 "scores": scores,
+                "last_5_scores": last_5_scores,
                 "average_score": average_score,
                 "urdu_used": urdu_used_array,
-                "total_time_minutes": time_spent_minutes,
-                "best_score": best_score
+                "time_spent_minutes": time_spent_minutes,
+                "best_score": best_score,
+                "total_score": total_score,
+                "mature": mature,
+                "last_attempt_at": current_timestamp
             }
             
+            # Update current_topic_id based on topic completion
+            current_topic_id = exercise_data.get('current_topic_id', 1)
+            
+            # Check if this topic was completed successfully (score >= 80)
+            topic_completed = score >= 80
+            
+            if topic_completed:
+                # Increment topic_id for next topic when current topic is completed
+                next_topic_id = current_topic_id + 1
+                update_data["current_topic_id"] = next_topic_id
+                print(f"🎉 [EXERCISE] Topic {current_topic_id} completed! Moving to topic {next_topic_id}")
+            elif topic_id and topic_id > current_topic_id:
+                # Update topic_id if user is working on a higher topic
+                update_data["current_topic_id"] = topic_id
+                print(f"📝 [EXERCISE] Updated current_topic_id to {topic_id}")
+            
+            # Check if exercise is completed (3 consecutive scores >= 80)
             if completed and not exercise_data.get('completed'):
                 update_data["completed"] = True
                 update_data["completed_at"] = current_timestamp
@@ -380,6 +432,37 @@ class SupabaseProgressTracker:
         except Exception as e:
             print(f"❌ [GET] Error getting user progress for {user_id}: {str(e)}")
             logger.error(f"Error getting user progress for {user_id}: {str(e)}")
+            return {"success": False, "error": str(e)}
+    
+    async def get_current_topic_for_exercise(self, user_id: str, stage_id: int, exercise_id: int) -> dict:
+        """Get the current topic_id for a specific exercise"""
+        print(f"🔄 [TOPIC] Getting current topic for user {user_id}, stage {stage_id}, exercise {exercise_id}")
+        try:
+            # Get exercise progress
+            print(f"🔍 [TOPIC] Fetching exercise progress...")
+            exercise_progress = self.client.table('ai_tutor_user_exercise_progress').select('*').eq('user_id', user_id).eq('stage_id', stage_id).eq('exercise_id', exercise_id).execute()
+            
+            if not exercise_progress.data:
+                print(f"🆕 [TOPIC] No exercise progress found, starting with topic 1")
+                return {"success": True, "current_topic_id": 1, "is_new_exercise": True}
+            
+            exercise_data = exercise_progress.data[0]
+            current_topic_id = exercise_data.get('current_topic_id', 1)
+            is_completed = exercise_data.get('completed_at') is not None
+            
+            print(f"📊 [TOPIC] Current topic_id: {current_topic_id}, Exercise completed: {is_completed}")
+            
+            return {
+                "success": True, 
+                "current_topic_id": current_topic_id, 
+                "is_new_exercise": False,
+                "is_completed": is_completed,
+                "exercise_data": exercise_data
+            }
+            
+        except Exception as e:
+            print(f"❌ [TOPIC] Error getting current topic: {str(e)}")
+            logger.error(f"Error getting current topic: {str(e)}")
             return {"success": False, "error": str(e)}
     
     async def check_and_unlock_content(self, user_id: str) -> dict:
