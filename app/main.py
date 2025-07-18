@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import text
 from app.routes import conversation_ws
+from app.routes import progress_tracking
 # from app.routes import conversation_ws,conversation_ws_2
 
 from app.routes import user
@@ -50,6 +51,7 @@ app.include_router(roleplay_simulation.router,prefix="/api", tags=["Stage 2 - Ex
 app.include_router(gpt_quiz_parser.router, prefix="/api/quiz")
 app.include_router(conversation_ws.router, prefix="/api")
 # app.include_router(conversation_ws_2.router)
+app.include_router(progress_tracking.router, prefix="/api/progress")
 
 @app.post("/tts")
 async def tts_generate_audio(data: TextRequest):
@@ -61,18 +63,7 @@ async def tts_generate_audio(data: TextRequest):
 
     return StreamingResponse(audio_buffer, media_type="audio/mpeg")
 
-@app.get("/api/healthcheck")
-async def health_check():
-    return {"status": "ok"}
 
-@app.get("/api/db-check")
-def db_check(db: Session = Depends(get_db)):
-    try:
-        result = db.execute(text("SELECT 1"))
-        row = result.fetchone()
-        if row and row[0] == 1:
-            return {"db_status": "ok", "result": row[0]}
-        else:
-            return {"db_status": "error", "detail": "Query did not return 1"}
-    except Exception as e:
-        return {"db_status": "error", "detail": str(e)}
+@app.get("/health")
+async def root_health_check():
+    return {"status": "healthy", "service": "ai_tutor_backend"}

@@ -290,8 +290,10 @@ Inputs:
 - A JSON object in the following format:
 {{
   "feedback": "1-line constructive feedback.",
-  "overall_score": [integer 0-100],
-  "is_correct": [true if score >=80, else false]
+  "score": integer between 0 and 100,
+  "is_correct": true if score >= 80, else false,
+  "urdu_used": false, 
+  "completed": true if score >= 80, else false
 }}
 
 Guidelines:
@@ -310,6 +312,21 @@ Respond ONLY with the JSON object, no extra text.
 
     # Extract the content string from the response object
     json_content = response.choices[0].message.content.strip()
+    print(f"🔍 [FEEDBACK] Raw GPT response: {json_content}")
 
-    # Parse JSON content into Python dict
-    return json.loads(json_content)
+    try:
+        # Parse JSON content into Python dict
+        result = json.loads(json_content)
+        print(f"✅ [FEEDBACK] Parsed evaluation result: {result}")
+        return result
+    except json.JSONDecodeError as e:
+        print(f"❌ [FEEDBACK] JSON parsing error: {e}")
+        print(f"❌ [FEEDBACK] Raw content: {json_content}")
+        # Return a fallback response
+        return {
+            "feedback": "Good attempt! Let's try again.",
+            "score": 50,
+            "is_correct": False,
+            "urdu_used": False,
+            "completed": False
+        }
