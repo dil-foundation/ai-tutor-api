@@ -268,40 +268,44 @@ def evaluate_response_eng(expected: str, actual: str) -> dict:
 
 def evaluate_response_ex1_stage1(expected_phrase: str, user_response: str) -> dict:
     """
-    Evaluate the student's response to the expected phrase, returning:
-    - 1-line feedback
-    - overall score
-    - is_correct: True if score >= 80 else False
+    Evaluate the student's response to the expected phrase.
+    Returns a structured JSON:
+    {
+      "feedback": "...",
+      "score": int 0-100,
+      "is_correct": bool,
+      "urdu_used": bool,
+      "completed": bool
+    }
     """
+
     prompt = f"""
-You are an expert English language evaluator for a language-learning app.  
-Your task is to assess a student's spoken response compared to an expected phrase.
+You are an expert English evaluator for a language learning app.
 
-Inputs:
-- Expected phrase: "{expected_phrase}"
-- Student's response: "{user_response}"
+Your task is to compare the student's response with the expected phrase and return feedback in JSON format only.
 
-🎯 Criteria:
-- Accuracy: Does the student's response match or convey the same meaning as the expected phrase?
-- Grammar & Fluency: Is it grammatically correct and natural?
-- Relevance: Does it appropriately respond to the expected phrase's intent?
+📥 Inputs:
+- Expected: "{expected_phrase}"
+- Student: "{user_response}"
 
-🎯 Output:
-- A JSON object in the following format:
+🎯 Evaluate on:
+- Accuracy (match in meaning/form)
+- Grammar & fluency
+- Relevance
+
+🎯 Output JSON format:
 {{
-  "feedback": "1-line constructive feedback.",
-  "score": integer between 0 and 100,
-  "is_correct": true if score >= 80, else false,
-  "urdu_used": false, 
-  "completed": true if score >= 80, else false
+  "feedback": "Constructive 1-line feedback",
+  "score": integer (0–100),
+  "is_correct": true if score >= 80 else false,
+  "urdu_used": false,
+  "completed": true if score >= 80 else false
 }}
 
-Guidelines:
-✅ If the student's response is perfectly correct or very good (close in meaning & form to expected), give a score ≥ 80 and set `is_correct: true`.
-✅ If response is poor, irrelevant, or incorrect, give < 80 and set `is_correct: false`.
-✅ Feedback should clearly explain why the response was good or how to improve — but only 1 line.
-
-Respond ONLY with the JSON object, no extra text.
+📌 Rules:
+- Respond ONLY with valid JSON (no commentary or explanation).
+- Score ≥ 80 → is_correct: true, completed: true
+- Feedback must be helpful and 1 line only.
 """
 
     response = client.chat.completions.create(
@@ -310,21 +314,32 @@ Respond ONLY with the JSON object, no extra text.
         temperature=0.3
     )
 
-    # Extract the content string from the response object
-    json_content = response.choices[0].message.content.strip()
-    print(f"🔍 [FEEDBACK] Raw GPT response: {json_content}")
+    # Extract the response
+    raw_content = response.choices[0].message.content.strip()
+    print(f"🔍 [FEEDBACK] Raw GPT response: {raw_content}")
 
+    # Try to extract JSON object even if GPT adds comments
     try:
-        # Parse JSON content into Python dict
-        result = json.loads(json_content)
-        print(f"✅ [FEEDBACK] Parsed evaluation result: {result}")
+        # Use regex to extract JSON part only
+        json_match = re.search(r"\{.*\}", raw_content, re.DOTALL)
+        json_str = json_match.group(0) if json_match else raw_content
+        result = json.loads(json_str)
+
+        # Validation fallback
+        required_keys = {"feedback", "score", "is_correct", "urdu_used", "completed"}
+        if not required_keys.issubset(result.keys()):
+            raise ValueError("Missing keys in GPT response")
+
+        print(f"✅ [FEEDBACK] Parsed result: {result}")
         return result
-    except json.JSONDecodeError as e:
-        print(f"❌ [FEEDBACK] JSON parsing error: {e}")
-        print(f"❌ [FEEDBACK] Raw content: {json_content}")
-        # Return a fallback response
+
+    except Exception as e:
+        print(f"❌ [FEEDBACK] Error: {e}")
+        print(f"❌ [FEEDBACK] Raw content: {raw_content}")
+
+        # Fallback default response
         return {
-            "feedback": "Good attempt! Let's try again.",
+            "feedback": "Good try, but let's improve the accuracy.",
             "score": 50,
             "is_correct": False,
             "urdu_used": False,

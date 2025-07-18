@@ -133,29 +133,51 @@ class SupabaseProgressTracker:
         print(f"📊 [TOPIC] Metrics: score={score}, urdu_used={urdu_used}, time_spent={time_spent_seconds}s, completed={completed}")
         
         try:
-            # Get next attempt number
-            print(f"🔍 [TOPIC] Getting attempt number for topic {topic_id}...")
-            attempts = self.client.table('ai_tutor_user_topic_progress').select('attempt_num').eq('user_id', user_id).eq('stage_id', stage_id).eq('exercise_id', exercise_id).eq('topic_id', topic_id).execute()
+            # Check if topic attempt already exists for this user and topic
+            print(f"🔍 [TOPIC] Checking if topic attempt already exists for user {user_id}, topic {topic_id}...")
+            existing_attempt = self.client.table('ai_tutor_user_topic_progress').select('*').eq('user_id', user_id).eq('stage_id', stage_id).eq('exercise_id', exercise_id).eq('topic_id', topic_id).execute()
             
-            attempt_num = len(attempts.data) + 1
-            print(f"📝 [TOPIC] Attempt number: {attempt_num} (previous attempts: {len(attempts.data)})")
-            
-            # Record topic progress
-            topic_progress = {
-                "user_id": user_id,
-                "stage_id": stage_id,
-                "exercise_id": exercise_id,
-                "topic_id": topic_id,
-                "attempt_num": attempt_num,
-                "score": score,
-                "urdu_used": urdu_used,
-                "completed": completed,
-                "total_time_seconds": time_spent_seconds
-            }
-            
-            print(f"📝 [TOPIC] Creating topic progress record: {topic_progress}")
-            result = self.client.table('ai_tutor_user_topic_progress').insert(topic_progress).execute()
-            print(f"✅ [TOPIC] Topic progress recorded: {result.data[0] if result.data else 'No data'}")
+            if existing_attempt.data:
+                # Topic attempt exists - update the existing record
+                existing_record = existing_attempt.data[0]
+                current_attempt_num = existing_record.get('attempt_num', 1)
+                new_attempt_num = current_attempt_num + 1
+                
+                print(f"📝 [TOPIC] Topic attempt exists. Current attempt: {current_attempt_num}, new attempt: {new_attempt_num}")
+                print(f"📊 [TOPIC] Existing record: {existing_record}")
+                
+                # Prepare update data
+                update_data = {
+                    "attempt_num": new_attempt_num,
+                    "score": score,
+                    "urdu_used": urdu_used,
+                    "completed": completed,
+                    "total_time_seconds": time_spent_seconds
+                }
+                
+                print(f"📝 [TOPIC] Updating existing topic progress record: {update_data}")
+                result = self.client.table('ai_tutor_user_topic_progress').update(update_data).eq('user_id', user_id).eq('stage_id', stage_id).eq('exercise_id', exercise_id).eq('topic_id', topic_id).execute()
+                print(f"✅ [TOPIC] Topic progress updated: {result.data[0] if result.data else 'No data'}")
+                
+            else:
+                # Topic attempt doesn't exist - insert new record
+                print(f"📝 [TOPIC] No existing topic attempt found. Creating new record with attempt_num=1")
+                
+                topic_progress = {
+                    "user_id": user_id,
+                    "stage_id": stage_id,
+                    "exercise_id": exercise_id,
+                    "topic_id": topic_id,
+                    "attempt_num": 1,  # First attempt
+                    "score": score,
+                    "urdu_used": urdu_used,
+                    "completed": completed,
+                    "total_time_seconds": time_spent_seconds
+                }
+                
+                print(f"📝 [TOPIC] Creating new topic progress record: {topic_progress}")
+                result = self.client.table('ai_tutor_user_topic_progress').insert(topic_progress).execute()
+                print(f"✅ [TOPIC] Topic progress created: {result.data[0] if result.data else 'No data'}")
             
             # Update exercise progress
             print(f"🔄 [TOPIC] Updating exercise progress...")
