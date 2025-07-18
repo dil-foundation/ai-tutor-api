@@ -6,8 +6,8 @@ from dotenv import load_dotenv
 import logging
 
 # Load environment variables
-# load_dotenv(override=True)
-load_dotenv()
+load_dotenv(override=True)
+# load_dotenv()
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -206,13 +206,14 @@ class SupabaseProgressTracker:
             total_score = sum(scores)
             average_score = total_score / len(scores) if scores else 0
             best_score = max(scores) if scores else 0
-            time_spent_minutes = exercise_data.get('time_spent_minutes', 0) + (time_spent_seconds / 60)
+            # Convert to integer for database compatibility
+            time_spent_minutes = int(exercise_data.get('total_time_minutes', 0) + (time_spent_seconds / 60))
             
             print(f"📊 [EXERCISE] Calculated metrics:")
             print(f"   - Total score: {total_score}")
             print(f"   - Average score: {average_score:.2f}")
             print(f"   - Best score: {best_score}")
-            print(f"   - Time spent: {time_spent_minutes:.2f} minutes")
+            print(f"   - Time spent: {time_spent_minutes} minutes")
             
             # Check if exercise is mature (average score >= 80)
             mature = average_score >= 80
@@ -230,16 +231,12 @@ class SupabaseProgressTracker:
             current_timestamp = datetime.now().isoformat()
             
             update_data = {
-                "attempts": len(scores),
+                "total_attempts": len(scores),
                 "scores": scores,
-                "last_5_scores": last_5_scores,
                 "average_score": average_score,
                 "urdu_used": urdu_used_array,
-                "mature": mature,
-                "total_score": total_score,
-                "best_score": best_score,
-                "time_spent_minutes": time_spent_minutes,
-                "last_attempt_at": current_timestamp
+                "total_time_minutes": time_spent_minutes,
+                "best_score": best_score
             }
             
             if completed and not exercise_data.get('completed'):
@@ -278,27 +275,30 @@ class SupabaseProgressTracker:
             current_date = date.today().isoformat()
             current_timestamp = datetime.now().isoformat()
             
+            # Convert to integer for database compatibility
+            total_time_spent_minutes = int(summary.get('total_time_spent_minutes', 0) + (time_spent_seconds / 60))
+            
             update_data = {
                 "current_stage": stage_id,
                 "current_exercise": exercise_id,
                 "topic_id": topic_id,
-                "total_time_spent_minutes": summary.get('total_time_spent_minutes', 0) + (time_spent_seconds / 60),
+                "total_time_spent_minutes": total_time_spent_minutes,
                 "last_activity_date": current_date,
                 "updated_at": current_timestamp
             }
             
             print(f"📝 [SUMMARY] Updating current position: stage={stage_id}, exercise={exercise_id}, topic={topic_id}")
             
-            # Calculate total exercises completed
+            # Calculate total exercises completed - use completed_at IS NOT NULL instead of completed column
             print(f"🔍 [SUMMARY] Calculating total exercises completed...")
-            completed_exercises = self.client.table('ai_tutor_user_exercise_progress').select('*').eq('user_id', user_id).eq('completed', True).execute()
+            completed_exercises = self.client.table('ai_tutor_user_exercise_progress').select('*').eq('user_id', user_id).not_.is_('completed_at', 'null').execute()
             update_data["total_exercises_completed"] = len(completed_exercises.data)
             print(f"📊 [SUMMARY] Total exercises completed: {len(completed_exercises.data)}")
             
             # Calculate overall progress percentage
             total_stages = 6
             print(f"🔍 [SUMMARY] Calculating overall progress percentage...")
-            completed_stages = self.client.table('ai_tutor_user_stage_progress').select('*').eq('user_id', user_id).eq('completed', True).execute()
+            completed_stages = self.client.table('ai_tutor_user_stage_progress').select('*').eq('user_id', user_id).not_.is_('completed_at', 'null').execute()
             overall_progress = (len(completed_stages.data) / total_stages) * 100
             update_data["overall_progress_percentage"] = overall_progress
             print(f"📊 [SUMMARY] Overall progress: {overall_progress:.2f}% ({len(completed_stages.data)}/{total_stages} stages)")
@@ -364,9 +364,9 @@ class SupabaseProgressTracker:
         """Check if user should unlock new content based on progress"""
         print(f"🔄 [UNLOCK] Checking content unlocks for user {user_id}")
         try:
-            # Get current exercise progress
+            # Get current exercise progress - use completed_at IS NOT NULL instead of completed column
             print(f"🔍 [UNLOCK] Fetching completed exercises...")
-            current_exercise = self.client.table('ai_tutor_user_exercise_progress').select('*').eq('user_id', user_id).eq('completed', True).execute()
+            current_exercise = self.client.table('ai_tutor_user_exercise_progress').select('*').eq('user_id', user_id).not_.is_('completed_at', 'null').execute()
             print(f"📊 [UNLOCK] Found {len(current_exercise.data)} completed exercises")
             
             unlocked_content = []
@@ -408,7 +408,7 @@ class SupabaseProgressTracker:
                 # Check if next stage should be unlocked (if all exercises in current stage are completed)
                 if exercise_id == 3:  # Last exercise in stage
                     print(f"🔍 [UNLOCK] Checking if stage {stage_id + 1} should be unlocked...")
-                    all_exercises_completed = self.client.table('ai_tutor_user_exercise_progress').select('*').eq('user_id', user_id).eq('stage_id', stage_id).eq('completed', True).execute()
+                    all_exercises_completed = self.client.table('ai_tutor_user_exercise_progress').select('*').eq('user_id', user_id).eq('stage_id', stage_id).not_.is_('completed_at', 'null').execute()
                     
                     if len(all_exercises_completed.data) == 3:  # All exercises completed
                         next_stage_id = stage_id + 1
