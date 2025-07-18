@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 import logging
 
 # Load environment variables
+# load_dotenv(override=True)
 load_dotenv()
 
 # Configure logging
@@ -15,6 +16,8 @@ logger = logging.getLogger(__name__)
 # Supabase configuration
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
+
+print("SUPABASE_URL: ",SUPABASE_URL)
 
 if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
     logger.error("Missing Supabase environment variables")
