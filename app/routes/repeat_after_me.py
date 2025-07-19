@@ -30,7 +30,7 @@ def get_phrase_by_id(phrase_id: int):
             for phrase in phrases:
                 if phrase['id'] == phrase_id:
                     print(f"✅ [PHRASE] Found phrase: {phrase['phrase']}")
-                    return phrase['phrase']
+                    return phrase  # Return the full phrase object
             print(f"❌ [PHRASE] Phrase with ID {phrase_id} not found")
             return None
     except Exception as e:
@@ -57,12 +57,16 @@ async def get_phrase(phrase_id: int):
     """Get a specific phrase by ID"""
     print(f"🔄 [API] GET /phrases/{phrase_id} endpoint called")
     try:
-        phrase = get_phrase_by_id(phrase_id)
-        if not phrase:
+        phrase_data = get_phrase_by_id(phrase_id)
+        if not phrase_data:
             print(f"❌ [API] Phrase {phrase_id} not found")
             raise HTTPException(status_code=404, detail="Phrase not found")
-        print(f"✅ [API] Returning phrase: {phrase}")
-        return {"id": phrase_id, "phrase": phrase}
+        print(f"✅ [API] Returning phrase: {phrase_data['phrase']}")
+        return {
+            "id": phrase_data['id'], 
+            "phrase": phrase_data['phrase'],
+            "urdu_meaning": phrase_data['urdu_meaning']
+        }
     except HTTPException:
         raise
     except Exception as e:
@@ -83,13 +87,14 @@ and returns the generated audio file as the response.
 async def repeat_after_me(phrase_id: int):
     print(f"🔄 [API] POST /repeat-after-me/{phrase_id} endpoint called")
     try:
-        phrase = get_phrase_by_id(phrase_id)
-        if not phrase:
+        phrase_data = get_phrase_by_id(phrase_id)
+        if not phrase_data:
             print(f"❌ [API] Phrase {phrase_id} not found")
             raise HTTPException(status_code=404, detail="Phrase not found")
 
-        print(f"🎤 [API] Converting phrase to speech: '{phrase}'")
-        audio_content = await synthesize_speech_exercises(phrase)
+        phrase_text = phrase_data['phrase']
+        print(f"🎤 [API] Converting phrase to speech: '{phrase_text}'")
+        audio_content = await synthesize_speech_exercises(phrase_text)
         print(f"✅ [API] Audio content generated, size: {len(audio_content)} bytes")
         
         # Convert to base64 for React Native compatibility
@@ -125,11 +130,12 @@ async def evaluate_audio(request: AudioEvaluationRequest):
     
     try:
         # Get the expected phrase
-        expected_phrase = get_phrase_by_id(request.phrase_id)
-        if not expected_phrase:
+        phrase_data = get_phrase_by_id(request.phrase_id)
+        if not phrase_data:
             print(f"❌ [API] Phrase {request.phrase_id} not found")
             raise HTTPException(status_code=404, detail="Phrase not found")
 
+        expected_phrase = phrase_data['phrase']
         print(f"✅ [API] Expected phrase: '{expected_phrase}'")
 
         # Decode base64 audio
