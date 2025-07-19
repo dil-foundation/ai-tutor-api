@@ -1,27 +1,227 @@
 [
-  { "id": 1, "question": "Hi!", "expected_answer": "Hello!" },
-  { "id": 2, "question": "How are you?", "expected_answer": "I'm fine." },
-  { "id": 3, "question": "What's your name?", "expected_answer": "I'm Ali." },
-  { "id": 4, "question": "Are you a boy?", "expected_answer": "Yes, I am." },
-  { "id": 5, "question": "Are you a student?", "expected_answer": "Yes, I am." },
-  { "id": 6, "question": "Do you go to school?", "expected_answer": "Yes, I do." },
-  { "id": 7, "question": "Which class are you in?", "expected_answer": "Class five." },
-  { "id": 8, "question": "Do you like your school?", "expected_answer": "Yes, I do." },
-  { "id": 9, "question": "Who is your best friend?", "expected_answer": "My best friend is Sara." },
-  { "id": 10, "question": "What do you like to eat?", "expected_answer": "I like rice." },
-  { "id": 11, "question": "Do you like fruits?", "expected_answer": "Yes, I do." },
-  { "id": 12, "question": "Which fruit do you like?", "expected_answer": "I like mangoes." },
-  { "id": 13, "question": "What is your favorite color?", "expected_answer": "Blue." },
-  { "id": 14, "question": "Do you like drawing?", "expected_answer": "Yes, I do." },
-  { "id": 15, "question": "What do you draw?", "expected_answer": "I draw houses." },
-  { "id": 16, "question": "Can you swim?", "expected_answer": "Yes, I can." },
-  { "id": 17, "question": "Do you like animals?", "expected_answer": "Yes, I do." },
-  { "id": 18, "question": "What is your favorite animal?", "expected_answer": "A cat." },
-  { "id": 19, "question": "Do you have a pet?", "expected_answer": "Yes, a cat." },
-  { "id": 20, "question": "What is your cat’s name?", "expected_answer": "Its name is Snowy." },
-  { "id": 21, "question": "Do you watch TV?", "expected_answer": "Yes, I do." },
-  { "id": 22, "question": "What do you watch?", "expected_answer": "Cartoons." },
-  { "id": 23, "question": "Do you like music?", "expected_answer": "Yes, I do." },
-  { "id": 24, "question": "What song do you like?", "expected_answer": "ABC Song." },
-  { "id": 25, "question": "Do you sing songs?", "expected_answer": "Yes, I do." }
-]
+    {
+      "id": 1,
+      "question": "Hi!",
+      "question_urdu": "ہیلو!",
+      "expected_answers": ["Hello!", "Hi!", "Hey!", "Good morning!", "Good afternoon!"],
+      "expected_answers_urdu": ["ہیلو!", "ہائے!", "ہائے!", "صبح بخیر!", "دوپہر بخیر!"],
+      "category": "greetings",
+      "difficulty": "beginner"
+    },
+    {
+      "id": 2,
+      "question": "How are you?",
+      "question_urdu": "آپ کیسے ہیں؟",
+      "expected_answers": ["I'm fine.", "I'm good.", "I'm well.", "Fine, thank you.", "Good, thanks."],
+      "expected_answers_urdu": ["میں ٹھیک ہوں۔", "میں اچھا ہوں۔", "میں ٹھیک ہوں۔", "ٹھیک، شکریہ۔", "اچھا، شکریہ۔"],
+      "category": "greetings",
+      "difficulty": "beginner"
+    },
+    {
+      "id": 3,
+      "question": "What's your name?",
+      "question_urdu": "آپ کا نام کیا ہے؟",
+      "expected_answers": ["My name is Ali.", "I'm Ali.", "Ali.", "My name's Ali."],
+      "expected_answers_urdu": ["میرا نام علی ہے۔", "میں علی ہوں۔", "علی۔", "میرا نام علی ہے۔"],
+      "category": "introduction",
+      "difficulty": "beginner"
+    },
+    {
+      "id": 4,
+      "question": "Where are you from?",
+      "question_urdu": "آپ کہاں سے ہیں؟",
+      "expected_answers": ["I'm from Pakistan.", "Pakistan.", "I come from Pakistan.", "I'm Pakistani."],
+      "expected_answers_urdu": ["میں پاکستان سے ہوں۔", "پاکستان۔", "میں پاکستان سے آیا ہوں۔", "میں پاکستانی ہوں۔"],
+      "category": "introduction",
+      "difficulty": "beginner"
+    },
+    {
+      "id": 5,
+      "question": "Do you speak English?",
+      "question_urdu": "کیا آپ انگریزی بولتے ہیں؟",
+      "expected_answers": ["Yes, I do.", "Yes, I speak English.", "A little.", "I'm learning."],
+      "expected_answers_urdu": ["ہاں، میں بولتا ہوں۔", "ہاں، میں انگریزی بولتا ہوں۔", "تھوڑی۔", "میں سیکھ رہا ہوں۔"],
+      "category": "language",
+      "difficulty": "beginner"
+    },
+    {
+      "id": 6,
+      "question": "What do you do?",
+      "question_urdu": "آپ کیا کرتے ہیں؟",
+      "expected_answers": ["I'm a student.", "I study.", "I work.", "I'm working."],
+      "expected_answers_urdu": ["میں طالب علم ہوں۔", "میں پڑھتا ہوں۔", "میں کام کرتا ہوں۔", "میں کام کر رہا ہوں۔"],
+      "category": "occupation",
+      "difficulty": "beginner"
+    },
+    {
+      "id": 7,
+      "question": "How old are you?",
+      "question_urdu": "آپ کی عمر کیا ہے؟",
+      "expected_answers": ["I'm twenty.", "Twenty.", "I'm 20.", "Twenty years old."],
+      "expected_answers_urdu": ["میں بیس سال کا ہوں۔", "بیس۔", "میں 20 کا ہوں۔", "بیس سال کا۔"],
+      "category": "personal",
+      "difficulty": "beginner"
+    },
+    {
+      "id": 8,
+      "question": "What time is it?",
+      "question_urdu": "کتنا بجے ہیں؟",
+      "expected_answers": ["I don't know.", "I'm not sure.", "Let me check.", "I don't have a watch."],
+      "expected_answers_urdu": ["میں نہیں جانتا۔", "میں یقین سے نہیں کہہ سکتا۔", "مجھے دیکھنے دو۔", "میرے پاس گھڑی نہیں ہے۔"],
+      "category": "time",
+      "difficulty": "beginner"
+    },
+    {
+      "id": 9,
+      "question": "Are you hungry?",
+      "question_urdu": "کیا آپ بھوکے ہیں؟",
+      "expected_answers": ["Yes, I am.", "No, I'm not.", "A little.", "Very hungry."],
+      "expected_answers_urdu": ["ہاں، میں ہوں۔", "نہیں، میں نہیں۔", "تھوڑی۔", "بہت بھوک۔"],
+      "category": "daily_life",
+      "difficulty": "beginner"
+    },
+    {
+      "id": 10,
+      "question": "Do you like music?",
+      "question_urdu": "کیا آپ کو موسیقی پسند ہے؟",
+      "expected_answers": ["Yes, I do.", "No, I don't.", "I love music.", "It's okay."],
+      "expected_answers_urdu": ["ہاں، مجھے پسند ہے۔", "نہیں، مجھے پسند نہیں۔", "مجھے موسیقی بہت پسند ہے۔", "ٹھیک ہے۔"],
+      "category": "preferences",
+      "difficulty": "beginner"
+    },
+    {
+      "id": 11,
+      "question": "What's your favorite color?",
+      "question_urdu": "آپ کا پسندیدہ رنگ کیا ہے؟",
+      "expected_answers": ["Blue.", "I like blue.", "My favorite is blue.", "Blue is my favorite."],
+      "expected_answers_urdu": ["نیلا۔", "مجھے نیلا پسند ہے۔", "میرا پسندیدہ نیلا ہے۔", "نیلا میرا پسندیدہ ہے۔"],
+      "category": "preferences",
+      "difficulty": "beginner"
+    },
+    {
+      "id": 12,
+      "question": "Can you help me?",
+      "question_urdu": "کیا آپ میری مدد کر سکتے ہیں؟",
+      "expected_answers": ["Yes, of course.", "Sure.", "I'll try.", "What do you need?"],
+      "expected_answers_urdu": ["ہاں، بالکل۔", "یقیناً۔", "میں کوشش کروں گا۔", "آپ کو کیا چاہیے؟"],
+      "category": "help",
+      "difficulty": "beginner"
+    },
+    {
+      "id": 13,
+      "question": "Do you understand?",
+      "question_urdu": "کیا آپ سمجھتے ہیں؟",
+      "expected_answers": ["Yes, I do.", "No, I don't.", "A little.", "Not completely."],
+      "expected_answers_urdu": ["ہاں، میں سمجھتا ہوں۔", "نہیں، میں نہیں سمجھتا۔", "تھوڑا۔", "مکمل طور پر نہیں۔"],
+      "category": "communication",
+      "difficulty": "beginner"
+    },
+    {
+      "id": 14,
+      "question": "Is it raining?",
+      "question_urdu": "کیا بارش ہو رہی ہے؟",
+      "expected_answers": ["Yes, it is.", "No, it's not.", "I don't know.", "Let me check."],
+      "expected_answers_urdu": ["ہاں، ہو رہی ہے۔", "نہیں، نہیں ہو رہی۔", "میں نہیں جانتا۔", "مجھے دیکھنے دو۔"],
+      "category": "weather",
+      "difficulty": "beginner"
+    },
+    {
+      "id": 15,
+      "question": "Do you have brothers?",
+      "question_urdu": "کیا آپ کے بھائی ہیں؟",
+      "expected_answers": ["Yes, I do.", "No, I don't.", "I have one brother.", "Two brothers."],
+      "expected_answers_urdu": ["ہاں، میرے ہیں۔", "نہیں، میرے نہیں۔", "میرا ایک بھائی ہے۔", "دو بھائی۔"],
+      "category": "family",
+      "difficulty": "beginner"
+    },
+    {
+      "id": 16,
+      "question": "What do you like to eat?",
+      "question_urdu": "آپ کیا کھانا پسند کرتے ہیں؟",
+      "expected_answers": ["Rice.", "I like rice.", "Biryani.", "I love biryani."],
+      "expected_answers_urdu": ["چاول۔", "مجھے چاول پسند ہیں۔", "بریانی۔", "مجھے بریانی بہت پسند ہے۔"],
+      "category": "food",
+      "difficulty": "beginner"
+    },
+    {
+      "id": 17,
+      "question": "Are you tired?",
+      "question_urdu": "کیا آپ تھکے ہوئے ہیں؟",
+      "expected_answers": ["Yes, I am.", "No, I'm not.", "A little.", "Very tired."],
+      "expected_answers_urdu": ["ہاں، میں ہوں۔", "نہیں، میں نہیں۔", "تھوڑا۔", "بہت تھکا۔"],
+      "category": "daily_life",
+      "difficulty": "beginner"
+    },
+    {
+      "id": 18,
+      "question": "Do you play sports?",
+      "question_urdu": "کیا آپ کھیل کھیلتے ہیں؟",
+      "expected_answers": ["Yes, I do.", "No, I don't.", "Cricket.", "I play cricket."],
+      "expected_answers_urdu": ["ہاں، میں کھیلتا ہوں۔", "نہیں، میں نہیں کھیلتا۔", "کرکٹ۔", "میں کرکٹ کھیلتا ہوں۔"],
+      "category": "activities",
+      "difficulty": "beginner"
+    },
+    {
+      "id": 19,
+      "question": "What's the weather like?",
+      "question_urdu": "موسم کیسا ہے؟",
+      "expected_answers": ["It's nice.", "It's hot.", "It's cold.", "It's raining."],
+      "expected_answers_urdu": ["اچھا ہے۔", "گرم ہے۔", "ٹھنڈا ہے۔", "بارش ہو رہی ہے۔"],
+      "category": "weather",
+      "difficulty": "beginner"
+    },
+    {
+      "id": 20,
+      "question": "Do you watch movies?",
+      "question_urdu": "کیا آپ فلمیں دیکھتے ہیں؟",
+      "expected_answers": ["Yes, I do.", "No, I don't.", "Sometimes.", "I love movies."],
+      "expected_answers_urdu": ["ہاں، میں دیکھتا ہوں۔", "نہیں، میں نہیں دیکھتا۔", "کبھی کبھی۔", "مجھے فلمیں بہت پسند ہیں۔"],
+      "category": "entertainment",
+      "difficulty": "beginner"
+    },
+    {
+      "id": 21,
+      "question": "What's your phone number?",
+      "question_urdu": "آپ کا فون نمبر کیا ہے؟",
+      "expected_answers": ["I don't know.", "I'm not sure.", "Let me check.", "I don't remember."],
+      "expected_answers_urdu": ["میں نہیں جانتا۔", "میں یقین سے نہیں کہہ سکتا۔", "مجھے دیکھنے دو۔", "مجھے یاد نہیں۔"],
+      "category": "personal",
+      "difficulty": "beginner"
+    },
+    {
+      "id": 22,
+      "question": "Do you drive?",
+      "question_urdu": "کیا آپ گاڑی چلاتے ہیں؟",
+      "expected_answers": ["Yes, I do.", "No, I don't.", "I'm learning.", "Not yet."],
+      "expected_answers_urdu": ["ہاں، میں چلاتا ہوں۔", "نہیں، میں نہیں چلاتا۔", "میں سیکھ رہا ہوں۔", "ابھی نہیں۔"],
+      "category": "transportation",
+      "difficulty": "beginner"
+    },
+    {
+      "id": 23,
+      "question": "What's your favorite subject?",
+      "question_urdu": "آپ کا پسندیدہ مضمون کیا ہے؟",
+      "expected_answers": ["English.", "Math.", "Science.", "I like English."],
+      "expected_answers_urdu": ["انگریزی۔", "ریاضی۔", "سائنس۔", "مجھے انگریزی پسند ہے۔"],
+      "category": "education",
+      "difficulty": "beginner"
+    },
+    {
+      "id": 24,
+      "question": "Do you have pets?",
+      "question_urdu": "کیا آپ کے پاس پالتو جانور ہیں؟",
+      "expected_answers": ["Yes, I do.", "No, I don't.", "A dog.", "I have a cat."],
+      "expected_answers_urdu": ["ہاں، میرے پاس ہیں۔", "نہیں، میرے پاس نہیں۔", "ایک کتا۔", "میرے پاس ایک بلی ہے۔"],
+      "category": "personal",
+      "difficulty": "beginner"
+    },
+    {
+      "id": 25,
+      "question": "What do you want to do?",
+      "question_urdu": "آپ کیا کرنا چاہتے ہیں؟",
+      "expected_answers": ["I want to learn.", "I want to study.", "I want to work.", "I want to travel."],
+      "expected_answers_urdu": ["میں سیکھنا چاہتا ہوں۔", "میں پڑھنا چاہتا ہوں۔", "میں کام کرنا چاہتا ہوں۔", "میں سفر کرنا چاہتا ہوں۔"],
+      "category": "goals",
+      "difficulty": "beginner"
+    }
+  ]
