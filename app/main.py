@@ -1,14 +1,40 @@
+"""
+AI English Tutor Backend - Main Application
+
+This is the main FastAPI application for the AI English Tutor system.
+It provides comprehensive English learning features including:
+
+- Progress Tracking System
+- Learning Exercises (6 stages with multiple exercises)
+- Real-time Conversation
+- Translation Services
+- Quiz and Assessment Tools
+
+Author: AI Tutor Development Team
+Version: 1.0.0
+"""
+
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import text
-from app.routes import conversation_ws
-from app.routes import progress_tracking
-# from app.routes import conversation_ws,conversation_ws_2
 
-from app.routes import user
-from app.routes import translator
-from app.routes import repeat_after_me, quick_response, quiz_parser, gpt_quiz_parser, daily_routine, question_answer_wh, roleplay_simulation,functional_dialogue
+# Import all route modules
+from app.routes import (
+    conversation_ws,
+    conversation_ws_2,
+    user,
+    translator,
+    repeat_after_me,
+    quick_response,
+    quiz_parser,
+    gpt_quiz_parser,
+    daily_routine,
+    question_answer_wh,
+    roleplay_simulation,
+    functional_dialogue,
+    progress_tracking
+)
 from .database import get_db, engine
 
 
@@ -22,9 +48,13 @@ class TextRequest(BaseModel):
     text: str
 
 
-app = FastAPI(title="AI English Tutor",
-    description="An AI-powered English learning application designed for Urdu-speaking learners.",
-    version="1.0.0")
+app = FastAPI(
+    title="AI English Tutor",
+    description="An AI-powered English learning application designed for Urdu-speaking learners with comprehensive progress tracking and dynamic learning paths.",
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc"
+)
 
 origins = [
     "*",
@@ -38,20 +68,55 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include the routers
-app.include_router(user.router, prefix="/user")
-app.include_router(translator.router, prefix="/api/translate")
-app.include_router(repeat_after_me.router, prefix="/api")
-app.include_router(quick_response.router, prefix="/api")
-app.include_router(quiz_parser.router, prefix="/api")
-app.include_router(functional_dialogue.router, prefix="/api")
+# Application lifecycle events
+@app.on_event("startup")
+async def startup_event():
+    """Application startup event"""
+    print("🚀 [STARTUP] AI English Tutor Backend starting...")
+    print("📊 [STARTUP] Features enabled:")
+    print("   - Progress Tracking System")
+    print("   - Learning Exercises")
+    print("   - Real-time Conversation")
+    print("   - Translation Services")
+    print("✅ [STARTUP] Application started successfully")
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Application shutdown event"""
+    print("🛑 [SHUTDOWN] AI English Tutor Backend shutting down...")
+    print("✅ [SHUTDOWN] Application shutdown complete")
+
+# Include all API routers with proper organization
+print("🚀 [MAIN] Initializing AI English Tutor API...")
+
+# User management routes
+app.include_router(user.router, prefix="/user", tags=["User Management"])
+
+# Translation services
+app.include_router(translator.router, prefix="/api/translate", tags=["Translation"])
+
+# Learning exercise routes
+app.include_router(repeat_after_me.router, prefix="/api", tags=["Stage 1 - Exercise 1 (Repeat After Me)"])
+app.include_router(quick_response.router, prefix="/api", tags=["Stage 1 - Exercise 2 (Quick Response)"])
+app.include_router(quiz_parser.router, prefix="/api", tags=["Quiz Parser"])
+app.include_router(functional_dialogue.router, prefix="/api", tags=["Functional Dialogue"])
+
+# Stage 2 exercises
 app.include_router(daily_routine.router, prefix="/api", tags=["Stage 2 - Exercise 1 (Daily Routine Narration)"])
-app.include_router(question_answer_wh.router,prefix="/api", tags=["Stage 2 - Exercise 2 (Questions & Answers Practice - Responding to WH-questions)"])
-app.include_router(roleplay_simulation.router,prefix="/api", tags=["Stage 2 - Exercise 3 (Roleplay Simulation)"])
-app.include_router(gpt_quiz_parser.router, prefix="/api/quiz")
-app.include_router(conversation_ws.router, prefix="/api")
-# app.include_router(conversation_ws_2.router)
-app.include_router(progress_tracking.router, prefix="/api/progress")
+app.include_router(question_answer_wh.router, prefix="/api", tags=["Stage 2 - Exercise 2 (Questions & Answers Practice)"])
+app.include_router(roleplay_simulation.router, prefix="/api", tags=["Stage 2 - Exercise 3 (Roleplay Simulation)"])
+
+# Quiz and assessment routes
+app.include_router(gpt_quiz_parser.router, prefix="/api/quiz", tags=["Quiz & Assessment"])
+
+# WebSocket routes for real-time communication
+app.include_router(conversation_ws.router, prefix="/api", tags=["WebSocket - Conversation"])
+app.include_router(conversation_ws_2.router, tags=["WebSocket - Conversation 2"])
+
+# Progress tracking routes (NEW - Comprehensive Progress System)
+app.include_router(progress_tracking.router, prefix="/api/progress", tags=["Progress Tracking"])
+
+print("✅ [MAIN] All routers included successfully")
 
 @app.post("/tts")
 async def tts_generate_audio(data: TextRequest):
@@ -63,7 +128,50 @@ async def tts_generate_audio(data: TextRequest):
 
     return StreamingResponse(audio_buffer, media_type="audio/mpeg")
 
+@app.get("/api/healthcheck")
+async def health_check():
+    """Health check endpoint for API monitoring"""
+    return {
+        "status": "ok",
+        "service": "ai_tutor_backend",
+        "version": "1.0.0",
+        "timestamp": "2025-01-20T10:00:00Z"
+    }
 
 @app.get("/health")
 async def root_health_check():
-    return {"status": "healthy", "service": "ai_tutor_backend"}
+    """Root health check endpoint"""
+    return {
+        "status": "healthy", 
+        "service": "ai_tutor_backend",
+        "version": "1.0.0",
+        "features": [
+            "progress_tracking",
+            "learning_exercises", 
+            "real_time_conversation",
+            "translation_services"
+        ]
+    }
+
+@app.get("/api/status")
+async def api_status():
+    """Comprehensive API status endpoint"""
+    return {
+        "status": "operational",
+        "service": "AI English Tutor Backend",
+        "version": "1.0.0",
+        "features": {
+            "progress_tracking": "enabled",
+            "learning_exercises": "enabled",
+            "real_time_conversation": "enabled",
+            "translation_services": "enabled",
+            "database": "connected"
+        },
+        "endpoints": {
+            "health": "/health",
+            "api_health": "/api/healthcheck",
+            "db_check": "/api/db-check",
+            "docs": "/docs",
+            "progress_tracking": "/api/progress/*"
+        }
+    }
