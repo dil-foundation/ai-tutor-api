@@ -6,7 +6,7 @@ import os
 import base64
 from io import BytesIO
 from app.services.tts import synthesize_speech,synthesize_speech_exercises
-from app.services.stt import transcribe_audio_bytes_eng
+from app.services.stt import transcribe_audio_bytes_eng_only
 from app.services.feedback import evaluate_response_ex1_stage1
 from app.supabase_client import progress_tracker
 router = APIRouter()
@@ -160,7 +160,7 @@ async def evaluate_audio(request: AudioEvaluationRequest):
         # Transcribe the audio
         try:
             print("🔄 [API] Transcribing audio...")
-            transcription_result = transcribe_audio_bytes_eng(audio_bytes)
+            transcription_result = transcribe_audio_bytes_eng_only(audio_bytes)
             user_text = transcription_result.get("text", "").strip()
             print(f"✅ [API] Transcription result: '{user_text}'")
             
