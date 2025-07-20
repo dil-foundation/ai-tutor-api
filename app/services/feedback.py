@@ -548,3 +548,127 @@ Your task is to evaluate the student's response against expected keywords and pr
             "keyword_matches": 0,
             "total_keywords": len(expected_keywords)
         }
+
+
+
+def evaluate_response_ex1_stage2(expected_keywords: list, user_response: str, phrase: str, example: str) -> dict:
+    """
+    Evaluate the student's response to daily routine narration prompts.
+    Returns a structured JSON:
+    {
+      "feedback": "...",
+      "score": int 0-100,
+      "is_correct": bool,
+      "urdu_used": bool,
+      "completed": bool,
+      "suggested_improvement": "...",
+      "keyword_matches": int,
+      "total_keywords": int,
+      "fluency_score": int,
+      "grammar_score": int
+    }
+    """
+
+    prompt = f"""
+You are an expert English evaluator for a language learning app specializing in daily routine narration exercises.
+
+Your task is to evaluate the student's response against expected keywords and provide comprehensive feedback.
+
+📥 Inputs:
+- Phrase: "{phrase}"
+- Example: "{example}"
+- Expected Keywords: {expected_keywords}
+- Student Response: "{user_response}"
+
+🎯 Evaluation Criteria:
+1. **Keyword Recognition**: How many expected keywords are present in the response?
+2. **Contextual Relevance**: Does the response appropriately address the daily routine question?
+3. **Grammar & Structure**: Is the response grammatically correct and well-structured?
+4. **Fluency & Naturalness**: Does the response sound natural and fluent?
+5. **Content Completeness**: Does the response provide sufficient detail about daily routines?
+
+🎯 Output JSON format:
+{{
+  "feedback": "Constructive 2-3 line feedback in English",
+  "score": integer (0–100),
+  "is_correct": true if score >= 75 else false,
+  "urdu_used": false (always false for this exercise),
+  "completed": true if score >= 75 else false,
+  "suggested_improvement": "One specific suggestion for improvement",
+  "keyword_matches": integer (number of keywords found),
+  "total_keywords": integer (total number of expected keywords),
+  "fluency_score": integer (0-100, based on naturalness and flow),
+  "grammar_score": integer (0-100, based on grammatical accuracy)
+}}
+
+📌 Scoring Guide:
+- 90-100: Excellent response with all keywords, perfect grammar, and natural fluency
+- 80-89: Very good response with most keywords and good grammar/fluency
+- 75-79: Good response with some keywords and acceptable grammar/fluency
+- 65-74: Fair response with few keywords and some grammar/fluency issues
+- 50-64: Poor response with minimal keywords and significant issues
+- 0-49: Very poor or irrelevant response
+
+📌 Keyword Matching Rules:
+- Count exact matches and close synonyms
+- Consider variations in word forms (e.g., "wake" matches "waking", "woke")
+- Ignore spelling errors if the word is recognizable
+- Focus on meaning over exact spelling
+- Consider context-specific usage
+
+📌 Grammar & Fluency Assessment:
+- Grammar Score: Evaluate sentence structure, verb tenses, articles, prepositions
+- Fluency Score: Assess natural flow, appropriate vocabulary, logical sequence
+- Consider typical daily routine vocabulary and expressions
+- Reward use of time expressions (first, then, after that, usually, etc.)
+
+📌 Rules:
+- Respond ONLY with valid JSON (no commentary or explanation).
+- Score ≥ 75 → is_correct: true, completed: true
+- Feedback must be encouraging and constructive.
+- Consider the context of daily routine questions.
+- Focus on practical communication over perfect grammar.
+- Reward natural, conversational responses.
+"""
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.3
+        )
+
+        # Extract the response
+        raw_content = response.choices[0].message.content.strip() if response.choices[0].message.content else ""
+        print(f"🔍 [FEEDBACK] Raw GPT response for ex1_stage2: {raw_content}")
+
+        # Try to extract JSON object even if GPT adds comments
+        json_match = re.search(r"\{.*\}", raw_content, re.DOTALL)
+        json_str = json_match.group(0) if json_match else raw_content
+        result = json.loads(json_str)
+
+        # Validation fallback
+        required_keys = {"feedback", "score", "is_correct", "urdu_used", "completed", "suggested_improvement", "keyword_matches", "total_keywords", "fluency_score", "grammar_score"}
+        if not required_keys.issubset(result.keys()):
+            raise ValueError("Missing keys in GPT response")
+
+        print(f"✅ [FEEDBACK] Parsed result for ex1_stage2: {result}")
+        return result
+
+    except Exception as e:
+        print(f"❌ [FEEDBACK] Error in ex1_stage2 evaluation: {e}")
+        print(f"❌ [FEEDBACK] Raw content: {raw_content}")
+
+        # Fallback default response
+        return {
+            "feedback": "Good effort! Try to include more details about your daily routine and use the suggested keywords.",
+            "score": 50,
+            "is_correct": False,
+            "urdu_used": False,
+            "completed": False,
+            "suggested_improvement": "Try to include more of the expected keywords in your response.",
+            "keyword_matches": 0,
+            "total_keywords": len(expected_keywords),
+            "fluency_score": 50,
+            "grammar_score": 50
+        }
