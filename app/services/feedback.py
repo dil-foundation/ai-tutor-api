@@ -440,3 +440,111 @@ Your task is to evaluate the student's response against multiple acceptable answ
             "completed": False,
             "suggested_improvement": "Try to match the expected answer more closely."
         }
+    
+
+
+def evaluate_response_ex3_stage1(expected_keywords: list, user_response: str, ai_prompt: str) -> dict:
+    """
+    Evaluate the student's response to listen and reply prompts.
+    Returns a structured JSON:
+    {
+      "feedback": "...",
+      "score": int 0-100,
+      "is_correct": bool,
+      "urdu_used": bool,
+      "completed": bool,
+      "suggested_improvement": "...",
+      "keyword_matches": int,
+      "total_keywords": int
+    }
+    """
+
+    prompt = f"""
+You are an expert English evaluator for a language learning app specializing in listen and reply exercises.
+
+Your task is to evaluate the student's response against expected keywords and provide constructive feedback.
+
+📥 Inputs:
+- AI Prompt: "{ai_prompt}"
+- Expected Keywords: {expected_keywords}
+- Student Response: "{user_response}"
+
+🎯 Evaluation Criteria:
+1. **Keyword Recognition**: How many expected keywords are present in the response?
+2. **Contextual Relevance**: Does the response appropriately address the AI's prompt?
+3. **Grammar & Fluency**: Is the response grammatically correct and natural?
+4. **Communication Effectiveness**: Can the response be understood clearly?
+
+🎯 Output JSON format:
+{{
+  "feedback": "Constructive 1-2 line feedback in English",
+  "score": integer (0–100),
+  "is_correct": true if score >= 70 else false,
+  "urdu_used": false (always false for this exercise),
+  "completed": true if score >= 70 else false,
+  "suggested_improvement": "One specific suggestion for improvement",
+  "keyword_matches": integer (number of keywords found),
+  "total_keywords": integer (total number of expected keywords)
+}}
+
+📌 Scoring Guide:
+- 90-100: Perfect response with all or most keywords and excellent communication
+- 80-89: Very good response with most keywords and good communication
+- 70-79: Good response with some keywords and acceptable communication
+- 60-69: Fair response with few keywords and some communication issues
+- 50-59: Poor response with minimal keywords and communication problems
+- 0-49: Very poor or irrelevant response
+
+📌 Keyword Matching Rules:
+- Count exact matches and close synonyms
+- Consider variations in word forms (e.g., "speak" matches "speaking")
+- Ignore spelling errors if the word is recognizable
+- Focus on meaning over exact spelling
+
+📌 Rules:
+- Respond ONLY with valid JSON (no commentary or explanation).
+- Score ≥ 70 → is_correct: true, completed: true
+- Feedback must be encouraging and constructive.
+- Consider the context of the AI prompt when evaluating relevance.
+- Focus on communication effectiveness over perfect grammar.
+"""
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.3
+        )
+
+        # Extract the response
+        raw_content = response.choices[0].message.content.strip() if response.choices[0].message.content else ""
+        print(f"🔍 [FEEDBACK] Raw GPT response for ex3: {raw_content}")
+
+        # Try to extract JSON object even if GPT adds comments
+        json_match = re.search(r"\{.*\}", raw_content, re.DOTALL)
+        json_str = json_match.group(0) if json_match else raw_content
+        result = json.loads(json_str)
+
+        # Validation fallback
+        required_keys = {"feedback", "score", "is_correct", "urdu_used", "completed", "suggested_improvement", "keyword_matches", "total_keywords"}
+        if not required_keys.issubset(result.keys()):
+            raise ValueError("Missing keys in GPT response")
+
+        print(f"✅ [FEEDBACK] Parsed result for ex3: {result}")
+        return result
+
+    except Exception as e:
+        print(f"❌ [FEEDBACK] Error in ex3 evaluation: {e}")
+        print(f"❌ [FEEDBACK] Raw content: {raw_content}")
+
+        # Fallback default response
+        return {
+            "feedback": "Good effort! Let's practice more to improve your response.",
+            "score": 50,
+            "is_correct": False,
+            "urdu_used": False,
+            "completed": False,
+            "suggested_improvement": "Try to include more of the expected keywords in your response.",
+            "keyword_matches": 0,
+            "total_keywords": len(expected_keywords)
+        }

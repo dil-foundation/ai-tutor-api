@@ -27,6 +27,7 @@ from app.routes import (
     translator,
     repeat_after_me,
     quick_response,
+    listen_and_reply,
     quiz_parser,
     gpt_quiz_parser,
     daily_routine,
@@ -98,6 +99,7 @@ app.include_router(translator.router, prefix="/api/translate", tags=["Translatio
 # Learning exercise routes
 app.include_router(repeat_after_me.router, prefix="/api", tags=["Stage 1 - Exercise 1 (Repeat After Me)"])
 app.include_router(quick_response.router, prefix="/api", tags=["Stage 1 - Exercise 2 (Quick Response)"])
+app.include_router(listen_and_reply.router, prefix="/api", tags=["Stage 1 - Exercise 3 (Listen and Reply)"])
 app.include_router(quiz_parser.router, prefix="/api", tags=["Quiz Parser"])
 app.include_router(functional_dialogue.router, prefix="/api", tags=["Functional Dialogue"])
 
