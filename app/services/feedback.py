@@ -672,3 +672,125 @@ Your task is to evaluate the student's response against expected keywords and pr
             "fluency_score": 50,
             "grammar_score": 50
         }
+
+
+
+def evaluate_response_ex2_stage2(expected_answers: list, user_response: str, question: str, question_urdu: str) -> dict:
+    """
+    Evaluate the student's response to quick answer prompts in Stage 2.
+    Returns a structured JSON:
+    {
+      "feedback": "...",
+      "score": int 0-100,
+      "is_correct": bool,
+      "urdu_used": bool,
+      "completed": bool,
+      "suggested_improvement": "...",
+      "answer_accuracy": int,
+      "grammar_score": int,
+      "fluency_score": int
+    }
+    """
+
+    prompt = f"""
+You are an expert English evaluator for a language learning app specializing in quick answer exercises for Stage 2 learners.
+
+Your task is to evaluate the student's response against multiple acceptable answers and provide comprehensive feedback.
+
+📥 Inputs:
+- Question: "{question}"
+- Question (Urdu): "{question_urdu}"
+- Expected Answers: {expected_answers}
+- Student Response: "{user_response}"
+
+🎯 Evaluation Criteria:
+1. **Answer Accuracy**: Does the response match any of the expected answers in meaning and content?
+2. **Grammar & Structure**: Is the response grammatically correct and well-structured?
+3. **Fluency & Naturalness**: Does the response sound natural and conversational?
+4. **Relevance**: Does the response appropriately answer the question asked?
+5. **Completeness**: Does the response provide sufficient information?
+
+🎯 Output JSON format:
+{{
+  "feedback": "Constructive 2-3 line feedback in English",
+  "score": integer (0–100),
+  "is_correct": true if score >= 75 else false,
+  "urdu_used": false (always false for this exercise),
+  "completed": true if score >= 75 else false,
+  "suggested_improvement": "One specific suggestion for improvement",
+  "answer_accuracy": integer (0-100, based on how well the answer matches expected responses),
+  "grammar_score": integer (0-100, based on grammatical accuracy),
+  "fluency_score": integer (0-100, based on naturalness and flow)
+}}
+
+📌 Scoring Guide:
+- 90-100: Excellent response that perfectly matches expected answers with natural fluency
+- 80-89: Very good response with minor variations but excellent communication
+- 75-79: Good response that effectively communicates the intended meaning
+- 65-74: Fair response with some errors but generally understandable
+- 50-64: Poor response with significant errors or lack of relevance
+- 0-49: Very poor or irrelevant response
+
+📌 Answer Matching Rules:
+- Accept variations in wording while maintaining the same meaning
+- Consider synonyms and alternative expressions
+- Allow for personal variations (e.g., different cities, preferences)
+- Focus on communication effectiveness over exact word matching
+- Consider cultural context and personal experiences
+
+📌 Grammar & Fluency Assessment:
+- Grammar Score: Evaluate sentence structure, verb tenses, articles, prepositions
+- Fluency Score: Assess natural flow, appropriate vocabulary, conversational tone
+- Consider typical question-answer patterns in English
+- Reward natural, everyday language use
+
+📌 Rules:
+- Respond ONLY with valid JSON (no commentary or explanation).
+- Score ≥ 75 → is_correct: true, completed: true
+- Feedback must be encouraging and constructive.
+- Consider the context of the question when evaluating relevance.
+- Focus on practical communication over perfect grammar.
+- Reward natural, conversational responses that effectively answer the question.
+- Consider cultural and personal variations in responses.
+"""
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.3
+        )
+
+        # Extract the response
+        raw_content = response.choices[0].message.content.strip() if response.choices[0].message.content else ""
+        print(f"🔍 [FEEDBACK] Raw GPT response for ex2_stage2: {raw_content}")
+
+        # Try to extract JSON object even if GPT adds comments
+        json_match = re.search(r"\{.*\}", raw_content, re.DOTALL)
+        json_str = json_match.group(0) if json_match else raw_content
+        result = json.loads(json_str)
+
+        # Validation fallback
+        required_keys = {"feedback", "score", "is_correct", "urdu_used", "completed", "suggested_improvement", "answer_accuracy", "grammar_score", "fluency_score"}
+        if not required_keys.issubset(result.keys()):
+            raise ValueError("Missing keys in GPT response")
+
+        print(f"✅ [FEEDBACK] Parsed result for ex2_stage2: {result}")
+        return result
+
+    except Exception as e:
+        print(f"❌ [FEEDBACK] Error in ex2_stage2 evaluation: {e}")
+        print(f"❌ [FEEDBACK] Raw content: {raw_content}")
+
+        # Fallback default response
+        return {
+            "feedback": "Good effort! Try to answer the question more completely and naturally.",
+            "score": 50,
+            "is_correct": False,
+            "urdu_used": False,
+            "completed": False,
+            "suggested_improvement": "Try to match the expected answer format more closely.",
+            "answer_accuracy": 50,
+            "grammar_score": 50,
+            "fluency_score": 50
+        }
