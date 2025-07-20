@@ -794,3 +794,178 @@ Your task is to evaluate the student's response against multiple acceptable answ
             "grammar_score": 50,
             "fluency_score": 50
         }
+    
+
+def evaluate_response_ex3_stage2(conversation_history: list, scenario_context: str, expected_keywords: list, ai_character: str) -> dict:
+    """
+    Evaluate roleplay simulation conversation for Stage 2, Exercise 3
+    Uses GPT-4o to analyze conversation quality, keyword usage, and learning progress
+    """
+    try:
+        # Format conversation history for analysis
+        conversation_text = ""
+        user_messages = []
+        
+        for message in conversation_history:
+            if message.get("role") == "user":
+                user_messages.append(message.get("content", ""))
+                conversation_text += f"User: {message.get('content', '')}\n"
+            elif message.get("role") == "assistant":
+                conversation_text += f"AI ({ai_character}): {message.get('content', '')}\n"
+        
+        # Create comprehensive evaluation prompt
+        evaluation_prompt = f"""
+You are an expert English language tutor evaluating a roleplay simulation conversation. 
+The student is practicing English through a realistic scenario: {scenario_context}
+
+CONVERSATION HISTORY:
+{conversation_text}
+
+EVALUATION CRITERIA:
+1. **Conversation Flow**: Natural dialogue progression, appropriate responses
+2. **Keyword Usage**: Student should use expected keywords: {', '.join(expected_keywords)}
+3. **Grammar & Fluency**: Correct sentence structure, natural expression
+4. **Cultural Appropriateness**: Responses fit the scenario context
+5. **Learning Engagement**: Active participation, meaningful interaction
+
+EXPECTED KEYWORDS: {expected_keywords}
+AI CHARACTER: {ai_character}
+SCENARIO: {scenario_context}
+
+Please provide a detailed evaluation in the following JSON format:
+{{
+    "overall_score": <score_0_100>,
+    "is_correct": <true_if_score_above_70>,
+    "completed": <true_if_conversation_has_natural_ending>,
+    "conversation_flow_score": <score_0_100>,
+    "keyword_usage_score": <score_0_100>,
+    "grammar_fluency_score": <score_0_100>,
+    "cultural_appropriateness_score": <score_0_100>,
+    "engagement_score": <score_0_100>,
+    "keyword_matches": <list_of_used_keywords>,
+    "total_keywords_expected": <number>,
+    "keywords_used_count": <number>,
+    "grammar_errors": <list_of_grammar_issues>,
+    "fluency_issues": <list_of_fluency_problems>,
+    "strengths": <list_of_positive_aspects>,
+    "areas_for_improvement": <list_of_improvement_suggestions>,
+    "suggested_improvement": <specific_improvement_advice>,
+    "conversation_quality": <"excellent"|"good"|"fair"|"needs_improvement">,
+    "learning_progress": <"significant"|"moderate"|"minimal"|"none">,
+    "recommendations": <list_of_next_steps>
+}}
+
+Focus on:
+- Natural conversation flow and appropriate responses
+- Usage of expected keywords in context
+- Grammar accuracy and fluency
+- Cultural appropriateness for the scenario
+- Overall learning engagement and progress
+"""
+
+        print(f"🔄 [FEEDBACK] Evaluating roleplay conversation for scenario: {scenario_context}")
+        print(f"📊 [FEEDBACK] Conversation length: {len(conversation_history)} messages")
+        print(f"🎯 [FEEDBACK] Expected keywords: {expected_keywords}")
+        
+        # Call OpenAI GPT-4o
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are an expert English language tutor specializing in roleplay simulations and conversation evaluation. Provide detailed, constructive feedback in the exact JSON format requested."
+                },
+                {
+                    "role": "user", 
+                    "content": evaluation_prompt
+                }
+            ],
+            temperature=0.3,
+            max_tokens=2000
+        )
+
+        # Parse the response
+        evaluation_text = response.choices[0].message.content.strip()
+        print(f"✅ [FEEDBACK] Raw evaluation response received: {len(evaluation_text)} characters")
+        
+        # Extract JSON from response
+        try:
+            # Find JSON content in the response
+            start_idx = evaluation_text.find('{')
+            end_idx = evaluation_text.rfind('}') + 1
+            
+            if start_idx != -1 and end_idx != 0:
+                json_content = evaluation_text[start_idx:end_idx]
+                evaluation = json.loads(json_content)
+            else:
+                raise ValueError("No JSON content found in response")
+                
+        except json.JSONDecodeError as e:
+            print(f"❌ [FEEDBACK] JSON parsing error: {str(e)}")
+            print(f"📝 [FEEDBACK] Raw response: {evaluation_text}")
+            
+            # Fallback evaluation
+            evaluation = {
+                "overall_score": 60,
+                "is_correct": False,
+                "completed": len(conversation_history) >= 4,
+                "conversation_flow_score": 60,
+                "keyword_usage_score": 50,
+                "grammar_fluency_score": 60,
+                "cultural_appropriateness_score": 70,
+                "engagement_score": 65,
+                "keyword_matches": [],
+                "total_keywords_expected": len(expected_keywords),
+                "keywords_used_count": 0,
+                "grammar_errors": ["Evaluation parsing error"],
+                "fluency_issues": ["Unable to analyze"],
+                "strengths": ["Conversation attempted"],
+                "areas_for_improvement": ["Please try again"],
+                "suggested_improvement": "Please try the roleplay again for better evaluation.",
+                "conversation_quality": "needs_improvement",
+                "learning_progress": "minimal",
+                "recommendations": ["Retry the conversation"]
+            }
+
+        # Validate and normalize scores
+        # The original code had a validate_and_normalize_evaluation function,
+        # but it was not defined in the provided context.
+        # Assuming a simple validation and normalization for now.
+        evaluation["overall_score"] = min(100, max(0, evaluation.get("overall_score", 0)))
+        evaluation["conversation_flow_score"] = min(100, max(0, evaluation.get("conversation_flow_score", 0)))
+        evaluation["keyword_usage_score"] = min(100, max(0, evaluation.get("keyword_usage_score", 0)))
+        evaluation["grammar_fluency_score"] = min(100, max(0, evaluation.get("grammar_fluency_score", 0)))
+        evaluation["cultural_appropriateness_score"] = min(100, max(0, evaluation.get("cultural_appropriateness_score", 0)))
+        evaluation["engagement_score"] = min(100, max(0, evaluation.get("engagement_score", 0)))
+
+        print(f"✅ [FEEDBACK] Evaluation completed successfully")
+        print(f"📊 [FEEDBACK] Overall score: {evaluation.get('overall_score', 0)}")
+        print(f"🎯 [FEEDBACK] Keywords used: {evaluation.get('keywords_used_count', 0)}/{evaluation.get('total_keywords_expected', 0)}")
+        print(f"✅ [FEEDBACK] Is correct: {evaluation.get('is_correct', False)}")
+        print(f"🏁 [FEEDBACK] Completed: {evaluation.get('completed', False)}")
+        
+        return evaluation
+
+    except Exception as e:
+        print(f"❌ [FEEDBACK] Error in evaluate_response_ex3_stage2: {str(e)}")
+        return {
+            "overall_score": 50,
+            "is_correct": False,
+            "completed": False,
+            "conversation_flow_score": 50,
+            "keyword_usage_score": 50,
+            "grammar_fluency_score": 50,
+            "cultural_appropriateness_score": 50,
+            "engagement_score": 50,
+            "keyword_matches": [],
+            "total_keywords_expected": len(expected_keywords),
+            "keywords_used_count": 0,
+            "grammar_errors": [f"Evaluation error: {str(e)}"],
+            "fluency_issues": ["Unable to evaluate"],
+            "strengths": ["Attempted conversation"],
+            "areas_for_improvement": ["System error occurred"],
+            "suggested_improvement": "Please try again later.",
+            "conversation_quality": "needs_improvement",
+            "learning_progress": "none",
+            "recommendations": ["Retry after system restart"]
+        }

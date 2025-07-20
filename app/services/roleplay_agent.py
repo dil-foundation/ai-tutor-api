@@ -1,119 +1,219 @@
-from openai import OpenAI
 import json
-from app.redis_client import redis
-from uuid import uuid4
+import uuid
+from typing import Dict, List, Optional, Tuple
+from openai import OpenAI
 from app.config import OPENAI_API_KEY
+from app.redis_client import redis
+import base64
+from app.services.tts import synthesize_speech_exercises
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 
-SCENARIO_FILE = "app/data/roleplay_scenarios.json"
-
-def get_scenario_by_id(scenario_id: int):
-    with open(SCENARIO_FILE, 'r', encoding='utf-8') as f:
-        scenarios = json.load(f)
-    return next((s for s in scenarios if s["id"] == scenario_id), None)
-
-def create_session(scenario):
-    session_id = str(uuid4())
-    session_data = {
-        "session_id": session_id,
-        "history": [{"role": "system", "content": scenario["initial_prompt"]}],
-        "chat_status": "progress"
-    }
-    redis.set(session_id, json.dumps(session_data), ex=3600)
-    return session_id, scenario["initial_prompt"]
-
-def check_chat_ended_via_gpt(history: list) -> bool:
-    """
-    Ask OpenAI to determine if the conversation is naturally ended.
-    """
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4",
-            messages=[
-                {"role": "system", "content": "You are a conversation monitor. Answer only 'yes' or 'no'."},
-                {"role": "user", "content": f"Given this conversation history: {history}, has the conversation naturally ended? Answer 'yes' or 'no'."}
+class RoleplayAgent:
+    def __init__(self):
+        self.scenarios = self._load_scenarios()
+    
+    def _load_scenarios(self) -> Dict:
+        """Load roleplay scenarios from JSON file"""
+        try:
+            with open('app/data/roleplay_simulation.json', 'r', encoding='utf-8') as f:
+                scenarios = json.load(f)
+                return {scenario['id']: scenario for scenario in scenarios}
+        except Exception as e:
+            print(f"❌ [ROLEPLAY] Error loading scenarios: {str(e)}")
+            return {}
+    
+    def get_scenario_by_id(self, scenario_id: int) -> Optional[Dict]:
+        """Get scenario by ID"""
+        return self.scenarios.get(scenario_id)
+    
+    def get_all_scenarios(self) -> List[Dict]:
+        """Get all available scenarios"""
+        return list(self.scenarios.values())
+    
+    def create_session(self, scenario: Dict) -> Tuple[str, str]:
+        """Create a new roleplay session and return session ID and initial prompt"""
+        session_id = f"roleplay_{uuid.uuid4().hex}"
+        
+        # Create initial conversation state
+        initial_state = {
+            "scenario_id": scenario["id"],
+            "scenario_context": scenario["scenario_context"],
+            "ai_character": scenario["ai_character"],
+            "expected_keywords": scenario["expected_keywords"],
+            "conversation_flow": scenario["conversation_flow"],
+            "cultural_context": scenario["cultural_context"],
+            "history": [
+                {
+                    "role": "assistant",
+                    "content": scenario["initial_prompt"],
+                    "timestamp": "initial"
+                }
             ],
-            temperature=0
-        )
-        decision = response.choices[0].message.content.strip().lower()
-        return "yes" in decision
-    except Exception as e:
-        print(f"[❌ GPT Check Error]: {e}")
-        return False
-
-
-def update_session(session_id: str, user_input: str):
-    session_data_json = redis.get(session_id)
-    if not session_data_json:
-        return None, None, "Session not found"
-
-    session_data = json.loads(session_data_json)
-    history = session_data.get("history", [])
-    chat_status = session_data.get("chat_status", "progress")
-
-    if chat_status == "end":
-        return None, "end", "Chat has already ended."
-
-    # Append user input
-    history.append({"role": "user", "content": user_input})
-
-    # Call OpenAI to get assistant response
-    response = client.chat.completions.create(
-        model="gpt-4",
-        messages=history,
-        temperature=0.7
-    )
-
-    ai_response = response.choices[0].message.content
-    history.append({"role": "assistant", "content": ai_response})
-
-    # ✅ Use GPT to check if the chat has ended
-    is_ended = check_chat_ended_via_gpt(history)
-
-    # Update session data
-    session_data["history"] = history
-    session_data["chat_status"] = "end" if is_ended else "progress"
-
-    redis.set(session_id, json.dumps(session_data), ex=3600)
-
-    return ai_response, session_data["chat_status"], None
-
-def evaluate_conversation(history: list):
-    try:
-        evaluation_prompt = f"""
-You are an English tutor evaluating a conversation between a student and an AI assistant. 
-Give a score out of 100 based on fluency, grammar, vocabulary, and politeness. 
-Provide feedback, suggestions (as a list), and remarks to help the student improve.
-
-Conversation history:
-{json.dumps(history, indent=2)}
-
-Return JSON like:
-{{
-  "score": "85%",
-  "feedback": "Try using full sentences and saying thank you.",
-  "suggestions": ["Fluency", "Politeness"],
-  "remarks": "Good effort. Use more varied vocabulary."
-}}
-        """
-
-        response = client.chat.completions.create(
-            model="gpt-4",
-            messages=[
-                {"role": "system", "content": "You are a strict but kind English language evaluator."},
-                {"role": "user", "content": evaluation_prompt}
-            ],
-            temperature=0.3
-        )
-        eval_json = response.choices[0].message.content.strip()
-        return json.loads(eval_json)
-    except Exception as e:
-        print(f"[❌ Evaluation Error]: {e}")
-        return {
-            "score": "0%",
-            "feedback": "Evaluation failed.",
-            "suggestions": [],
-            "remarks": "Please try again later."
+            "current_turn": "user",
+            "session_started": True
         }
+        
+        # Store in Redis
+        redis.setex(session_id, 3600, json.dumps(initial_state))  # 1 hour expiry
+        
+        print(f"✅ [ROLEPLAY] Created session {session_id} for scenario {scenario['id']}")
+        return session_id, scenario["initial_prompt"]
+    
+    def update_session(self, session_id: str, user_input: str) -> Tuple[str, str, Optional[str]]:
+        """Update session with user input and return AI response"""
+        try:
+            # Get session data from Redis
+            session_data_json = redis.get(session_id)
+            if not session_data_json:
+                return "", "error", "Session not found"
+            
+            session_data = json.loads(session_data_json)
+            scenario = self.get_scenario_by_id(session_data["scenario_id"])
+            if not scenario:
+                return "", "error", "Scenario not found"
+            
+            # Add user message to history
+            session_data["history"].append({
+                "role": "user",
+                "content": user_input,
+                "timestamp": "user_input"
+            })
+            
+            # Generate AI response
+            ai_response = self._generate_ai_response(session_data, user_input, scenario)
+            
+            # Add AI response to history
+            session_data["history"].append({
+                "role": "assistant",
+                "content": ai_response,
+                "timestamp": "ai_response"
+            })
+            
+            # Check if conversation should end
+            conversation_status = self._check_conversation_end(session_data, ai_response)
+            
+            # Update session in Redis
+            redis.setex(session_id, 3600, json.dumps(session_data))
+            
+            print(f"✅ [ROLEPLAY] Updated session {session_id}, status: {conversation_status}")
+            return ai_response, conversation_status, None
+            
+        except Exception as e:
+            print(f"❌ [ROLEPLAY] Error updating session: {str(e)}")
+            return "", "error", str(e)
+    
+    def _generate_ai_response(self, session_data: Dict, user_input: str, scenario: Dict) -> str:
+        """Generate AI response based on scenario context and conversation history"""
+        try:
+            # Create context-aware prompt
+            prompt = f"""
+You are roleplaying as a {scenario['ai_character']} in a {scenario['scenario_context']} scenario.
+Cultural context: {scenario['cultural_context']}
+Conversation flow: {scenario['conversation_flow']}
 
+Your role: {scenario['ai_character']}
+Expected keywords for the student to use: {', '.join(scenario['expected_keywords'])}
+
+Previous conversation:
+{self._format_conversation_history(session_data['history'])}
+
+Student's latest response: "{user_input}"
+
+Respond naturally as the {scenario['ai_character']}, keeping the conversation flowing.
+Your response should:
+1. Be appropriate for the scenario and your character
+2. Encourage the student to use the expected keywords naturally
+3. Keep the conversation engaging and realistic
+4. Be 1-2 sentences maximum
+5. Maintain the cultural context of {scenario['cultural_context']}
+
+Respond as the {scenario['ai_character']}:
+"""
+            
+            response = client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": f"You are a {scenario['ai_character']} in a {scenario['scenario_context']} scenario. Stay in character and keep responses natural and engaging."
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                temperature=0.7,
+                max_tokens=150
+            )
+            
+            ai_response = response.choices[0].message.content.strip()
+            print(f"✅ [ROLEPLAY] Generated AI response: {ai_response}")
+            return ai_response
+            
+        except Exception as e:
+            print(f"❌ [ROLEPLAY] Error generating AI response: {str(e)}")
+            return "I'm sorry, could you please repeat that?"
+    
+    def _format_conversation_history(self, history: List[Dict]) -> str:
+        """Format conversation history for AI prompt"""
+        formatted = ""
+        for message in history[-6:]:  # Last 6 messages for context
+            role = "Student" if message["role"] == "user" else "AI"
+            formatted += f"{role}: {message['content']}\n"
+        return formatted
+    
+    def _check_conversation_end(self, session_data: Dict, ai_response: str) -> str:
+        """Check if the conversation should end naturally"""
+        # Simple logic: end after 8-12 exchanges or if AI indicates completion
+        message_count = len(session_data["history"])
+        
+        if message_count >= 20:  # Maximum conversation length
+            return "end"
+        
+        # Check if AI response indicates conversation completion
+        end_indicators = [
+            "thank you", "goodbye", "have a nice day", "see you", 
+            "that's all", "anything else", "is there anything else"
+        ]
+        
+        if any(indicator in ai_response.lower() for indicator in end_indicators):
+            return "end"
+        
+        return "continue"
+    
+    def get_session_history(self, session_id: str) -> Optional[List[Dict]]:
+        """Get conversation history for a session"""
+        try:
+            session_data_json = redis.get(session_id)
+            if not session_data_json:
+                return None
+            
+            session_data = json.loads(session_data_json)
+            return session_data.get("history", [])
+            
+        except Exception as e:
+            print(f"❌ [ROLEPLAY] Error getting session history: {str(e)}")
+            return None
+    
+    def delete_session(self, session_id: str) -> bool:
+        """Delete a session from Redis"""
+        try:
+            redis.delete(session_id)
+            print(f"✅ [ROLEPLAY] Deleted session {session_id}")
+            return True
+        except Exception as e:
+            print(f"❌ [ROLEPLAY] Error deleting session: {str(e)}")
+            return False
+    
+    async def generate_audio_for_response(self, text: str) -> Optional[bytes]:
+        """Generate audio for AI response"""
+        try:
+            audio_content = await synthesize_speech_exercises(text)
+            return audio_content
+        except Exception as e:
+            print(f"❌ [ROLEPLAY] Error generating audio: {str(e)}")
+            return None
+
+# Global instance
+roleplay_agent = RoleplayAgent() 
