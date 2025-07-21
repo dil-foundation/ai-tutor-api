@@ -211,6 +211,9 @@ def evaluate_response(expected: str, actual: str) -> dict:
             feedback_text += " شاباش!"
         if "آگے بڑھیں" not in feedback_text:
             feedback_text += " آگے بڑھیں۔"
+        # Add reminder to speak Urdu for next sentence
+        if "اردو میں کچھ کہیں" not in feedback_text:
+            feedback_text += " اگلے جملے کے لیے اردو میں کچھ کہیں۔"
 
 
     print("✅ is_correct: ", is_correct)
@@ -255,6 +258,9 @@ def evaluate_response_eng(expected: str, actual: str) -> dict:
             feedback_text += " Great job!"
         if "let's try the next sentence" not in feedback_text.lower():
             feedback_text += " Let's try the next sentence."
+        # Add reminder to speak Urdu for next sentence
+        if "please say something in urdu" not in feedback_text.lower():
+            feedback_text += " Please say something in Urdu"
 
     
     print("✅ is_correct: ", is_correct)
