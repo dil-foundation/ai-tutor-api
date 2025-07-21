@@ -1,27 +1,202 @@
 [
-  { "id": 1, "ai_prompt": "Hi! My name is Sarah. What is your name?", "expected_keywords": ["name"] },
-  { "id": 2, "ai_prompt": "Nice to meet you! Where are you from?", "expected_keywords": ["from", "city", "country"] },
-  { "id": 3, "ai_prompt": "How old are you?", "expected_keywords": ["years old", "age"] },
-  { "id": 4, "ai_prompt": "What do you do?", "expected_keywords": ["student", "work", "job"] },
-  { "id": 5, "ai_prompt": "What do you like to eat?", "expected_keywords": ["food", "mango", "rice", "pizza"] },
-  { "id": 6, "ai_prompt": "What is your favorite color?", "expected_keywords": ["color", "blue", "red", "green"] },
-  { "id": 7, "ai_prompt": "Do you have any brothers or sisters?", "expected_keywords": ["brother", "sister", "siblings"] },
-  { "id": 8, "ai_prompt": "What time do you wake up?", "expected_keywords": ["wake up", "morning", "6 AM", "7 o'clock"] },
-  { "id": 9, "ai_prompt": "What do you do after you wake up?", "expected_keywords": ["brush", "shower", "exercise"] },
-  { "id": 10, "ai_prompt": "Do you drink tea or coffee in the morning?", "expected_keywords": ["tea", "coffee", "morning"] },
-  { "id": 11, "ai_prompt": "What is your favorite animal?", "expected_keywords": ["animal", "dog", "cat", "tiger"] },
-  { "id": 12, "ai_prompt": "Can you name some fruits you like?", "expected_keywords": ["apple", "banana", "orange"] },
-  { "id": 13, "ai_prompt": "What do you do in your free time?", "expected_keywords": ["read", "play", "watch", "music"] },
-  { "id": 14, "ai_prompt": "Do you like watching movies?", "expected_keywords": ["movies", "yes", "no", "favorite"] },
-  { "id": 15, "ai_prompt": "Tell me about your best friend.", "expected_keywords": ["friend", "name", "kind", "helpful"] },
-  { "id": 16, "ai_prompt": "Which language do you speak at home?", "expected_keywords": ["Tamil", "Urdu", "Hindi", "English"] },
-  { "id": 17, "ai_prompt": "What do you do on weekends?", "expected_keywords": ["weekend", "home", "friends", "rest"] },
-  { "id": 18, "ai_prompt": "Can you describe your school or college?", "expected_keywords": ["school", "college", "classroom", "teacher"] },
-  { "id": 19, "ai_prompt": "What do you like to wear?", "expected_keywords": ["shirt", "dress", "jeans", "clothes"] },
-  { "id": 20, "ai_prompt": "What is your favorite season?", "expected_keywords": ["summer", "winter", "rainy", "spring"] },
-  { "id": 21, "ai_prompt": "Do you like to travel?", "expected_keywords": ["travel", "place", "city", "country"] },
-  { "id": 22, "ai_prompt": "What kind of music do you enjoy?", "expected_keywords": ["music", "pop", "classical", "songs"] },
-  { "id": 23, "ai_prompt": "What do you usually eat for breakfast?", "expected_keywords": ["bread", "idli", "eggs", "breakfast"] },
-  { "id": 24, "ai_prompt": "Do you like reading books?", "expected_keywords": ["books", "read", "favorite", "yes", "no"] },
-  { "id": 25, "ai_prompt": "Great! Let’s learn another sentence!", "expected_keywords": [] }
-]
+    {
+      "id": 1,
+      "ai_prompt": "Hi! My name is Sarah. What is your name?",
+      "ai_prompt_urdu": "ہیلو! میرا نام سارہ ہے۔ آپ کا نام کیا ہے؟",
+      "expected_keywords": ["name", "my", "is", "what"],
+      "expected_keywords_urdu": ["نام", "میرا", "ہے", "کیا"],
+      "category": "introduction",
+      "difficulty": "beginner",
+      "context": "First meeting scenario"
+    },
+    {
+      "id": 2,
+      "ai_prompt": "Nice to meet you! Where are you from?",
+      "ai_prompt_urdu": "آپ سے مل کر خوشی ہوئی! آپ کہاں سے ہیں؟",
+      "expected_keywords": ["from", "where", "country", "city"],
+      "expected_keywords_urdu": ["سے", "کہاں", "ملک", "شہر"],
+      "category": "introduction",
+      "difficulty": "beginner",
+      "context": "Getting to know someone"
+    },
+    {
+      "id": 3,
+      "ai_prompt": "How are you today? Are you feeling good?",
+      "ai_prompt_urdu": "آج آپ کیسے ہیں؟ کیا آپ اچھا محسوس کر رہے ہیں؟",
+      "expected_keywords": ["fine", "good", "well", "feeling", "today"],
+      "expected_keywords_urdu": ["ٹھیک", "اچھا", "محسوس", "آج"],
+      "category": "greetings",
+      "difficulty": "beginner",
+      "context": "Daily conversation"
+    },
+    {
+      "id": 4,
+      "ai_prompt": "Do you speak English? How long have you been learning?",
+      "ai_prompt_urdu": "کیا آپ انگریزی بولتے ہیں؟ آپ کتنی دیر سے سیکھ رہے ہیں؟",
+      "expected_keywords": ["speak", "English", "learning", "long", "time"],
+      "expected_keywords_urdu": ["بولتے", "انگریزی", "سیکھ", "دیر", "وقت"],
+      "category": "language",
+      "difficulty": "beginner",
+      "context": "Language learning discussion"
+    },
+    {
+      "id": 5,
+      "ai_prompt": "What do you do? Are you a student or do you work?",
+      "ai_prompt_urdu": "آپ کیا کرتے ہیں؟ کیا آپ طالب علم ہیں یا کام کرتے ہیں؟",
+      "expected_keywords": ["student", "work", "job", "study", "do"],
+      "expected_keywords_urdu": ["طالب علم", "کام", "نوکری", "پڑھائی", "کرتے"],
+      "category": "occupation",
+      "difficulty": "beginner",
+      "context": "Professional background"
+    },
+    {
+      "id": 6,
+      "ai_prompt": "How old are you? You look young!",
+      "ai_prompt_urdu": "آپ کی عمر کیا ہے؟ آپ جوان لگتے ہیں!",
+      "expected_keywords": ["old", "age", "years", "young", "twenty"],
+      "expected_keywords_urdu": ["عمر", "سال", "جوان", "بیس"],
+      "category": "personal",
+      "difficulty": "beginner",
+      "context": "Age discussion"
+    },
+    {
+      "id": 7,
+      "ai_prompt": "What time is it now? Do you have a watch?",
+      "ai_prompt_urdu": "اب کتنا بجے ہیں؟ کیا آپ کے پاس گھڑی ہے؟",
+      "expected_keywords": ["time", "watch", "clock", "now", "hour"],
+      "expected_keywords_urdu": ["وقت", "گھڑی", "اب", "بجے"],
+      "category": "time",
+      "difficulty": "beginner",
+      "context": "Time checking"
+    },
+    {
+      "id": 8,
+      "ai_prompt": "Are you hungry? Would you like to eat something?",
+      "ai_prompt_urdu": "کیا آپ بھوکے ہیں؟ کیا آپ کچھ کھانا چاہیں گے؟",
+      "expected_keywords": ["hungry", "eat", "food", "like", "something"],
+      "expected_keywords_urdu": ["بھوک", "کھانا", "کھانے", "چاہیں", "کچھ"],
+      "category": "daily_life",
+      "difficulty": "beginner",
+      "context": "Meal planning"
+    },
+    {
+      "id": 9,
+      "ai_prompt": "Do you like music? What kind of music do you prefer?",
+      "ai_prompt_urdu": "کیا آپ کو موسیقی پسند ہے؟ آپ کس قسم کی موسیقی پسند کرتے ہیں؟",
+      "expected_keywords": ["music", "like", "kind", "prefer", "songs"],
+      "expected_keywords_urdu": ["موسیقی", "پسند", "قسم", "ترجیح", "گانے"],
+      "category": "preferences",
+      "difficulty": "beginner",
+      "context": "Music discussion"
+    },
+    {
+      "id": 10,
+      "ai_prompt": "What's your favorite color? Why do you like it?",
+      "ai_prompt_urdu": "آپ کا پسندیدہ رنگ کیا ہے؟ آپ اسے کیوں پسند کرتے ہیں؟",
+      "expected_keywords": ["favorite", "color", "blue", "like", "why"],
+      "expected_keywords_urdu": ["پسندیدہ", "رنگ", "نیلا", "پسند", "کیوں"],
+      "category": "preferences",
+      "difficulty": "beginner",
+      "context": "Color preference"
+    },
+    {
+      "id": 11,
+      "ai_prompt": "Can you help me? I need some assistance.",
+      "ai_prompt_urdu": "کیا آپ میری مدد کر سکتے ہیں؟ مجھے کچھ مدد چاہیے۔",
+      "expected_keywords": ["help", "assistance", "need", "can", "sure"],
+      "expected_keywords_urdu": ["مدد", "سہولت", "چاہیے", "کر سکتے", "یقیناً"],
+      "category": "help",
+      "difficulty": "beginner",
+      "context": "Asking for help"
+    },
+    {
+      "id": 12,
+      "ai_prompt": "Do you understand what I'm saying? Should I speak slowly?",
+      "ai_prompt_urdu": "کیا آپ سمجھتے ہیں جو میں کہہ رہا ہوں؟ کیا میں آہستہ بولوں؟",
+      "expected_keywords": ["understand", "saying", "speak", "slowly", "clear"],
+      "expected_keywords_urdu": ["سمجھتے", "کہہ رہا", "بول", "آہستہ", "صاف"],
+      "category": "communication",
+      "difficulty": "beginner",
+      "context": "Clarification request"
+    },
+    {
+      "id": 13,
+      "ai_prompt": "Is it raining outside? Should we take an umbrella?",
+      "ai_prompt_urdu": "کیا باہر بارش ہو رہی ہے؟ کیا ہمیں چھتری لینی چاہیے؟",
+      "expected_keywords": ["raining", "outside", "umbrella", "weather", "wet"],
+      "expected_keywords_urdu": ["بارش", "باہر", "چھتری", "موسم", "گیلا"],
+      "category": "weather",
+      "difficulty": "beginner",
+      "context": "Weather discussion"
+    },
+    {
+      "id": 14,
+      "ai_prompt": "Do you have brothers and sisters? How many siblings do you have?",
+      "ai_prompt_urdu": "کیا آپ کے بھائی بہن ہیں؟ آپ کے کتنے بہن بھائی ہیں؟",
+      "expected_keywords": ["brothers", "sisters", "siblings", "family", "many"],
+      "expected_keywords_urdu": ["بھائی", "بہن", "بہن بھائی", "خاندان", "کتنے"],
+      "category": "family",
+      "difficulty": "beginner",
+      "context": "Family discussion"
+    },
+    {
+      "id": 15,
+      "ai_prompt": "What do you like to eat? Do you prefer Pakistani food?",
+      "ai_prompt_urdu": "آپ کیا کھانا پسند کرتے ہیں؟ کیا آپ پاکستانی کھانا پسند کرتے ہیں؟",
+      "expected_keywords": ["eat", "food", "Pakistani", "prefer", "like"],
+      "expected_keywords_urdu": ["کھانا", "کھانے", "پاکستانی", "پسند", "ترجیح"],
+      "category": "food",
+      "difficulty": "beginner",
+      "context": "Food preferences"
+    },
+    {
+      "id": 16,
+      "ai_prompt": "Are you tired? Would you like to rest for a while?",
+      "ai_prompt_urdu": "کیا آپ تھکے ہوئے ہیں؟ کیا آپ تھوڑی دیر آرام کرنا چاہیں گے؟",
+      "expected_keywords": ["tired", "rest", "sleep", "while", "feel"],
+      "expected_keywords_urdu": ["تھکے", "آرام", "نیند", "دیر", "محسوس"],
+      "category": "daily_life",
+      "difficulty": "beginner",
+      "context": "Rest and relaxation"
+    },
+    {
+      "id": 17,
+      "ai_prompt": "Do you play sports? What sports do you enjoy?",
+      "ai_prompt_urdu": "کیا آپ کھیل کھیلتے ہیں؟ آپ کون سے کھیل پسند کرتے ہیں؟",
+      "expected_keywords": ["play", "sports", "cricket", "enjoy", "games"],
+      "expected_keywords_urdu": ["کھیلتے", "کھیل", "کرکٹ", "پسند", "گیمز"],
+      "category": "activities",
+      "difficulty": "beginner",
+      "context": "Sports discussion"
+    },
+    {
+      "id": 18,
+      "ai_prompt": "What's the weather like today? Is it hot or cold?",
+      "ai_prompt_urdu": "آج موسم کیسا ہے؟ کیا گرم ہے یا ٹھنڈا؟",
+      "expected_keywords": ["weather", "today", "hot", "cold", "temperature"],
+      "expected_keywords_urdu": ["موسم", "آج", "گرم", "ٹھنڈا", "درجہ حرارت"],
+      "category": "weather",
+      "difficulty": "beginner",
+      "context": "Weather description"
+    },
+    {
+      "id": 19,
+      "ai_prompt": "Do you watch movies? What type of movies do you like?",
+      "ai_prompt_urdu": "کیا آپ فلمیں دیکھتے ہیں؟ آپ کس قسم کی فلمیں پسند کرتے ہیں؟",
+      "expected_keywords": ["watch", "movies", "type", "like", "films"],
+      "expected_keywords_urdu": ["دیکھتے", "فلمیں", "قسم", "پسند", "فلمز"],
+      "category": "entertainment",
+      "difficulty": "beginner",
+      "context": "Movie preferences"
+    },
+    {
+      "id": 20,
+      "ai_prompt": "What do you want to do in the future? Do you have any goals?",
+      "ai_prompt_urdu": "آپ مستقبل میں کیا کرنا چاہتے ہیں؟ کیا آپ کے کوئی اہداف ہیں؟",
+      "expected_keywords": ["future", "goals", "want", "do", "plans"],
+      "expected_keywords_urdu": ["مستقبل", "اہداف", "چاہتے", "کرنا", "منصوبے"],
+      "category": "goals",
+      "difficulty": "beginner",
+      "context": "Future planning"
+    }
+  ]

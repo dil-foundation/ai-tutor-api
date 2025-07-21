@@ -465,6 +465,32 @@ class SupabaseProgressTracker:
             logger.error(f"Error getting current topic: {str(e)}")
             return {"success": False, "error": str(e)}
     
+    async def get_user_topic_progress(self, user_id: str, stage_id: int, exercise_id: int) -> dict:
+        """Get user's topic progress for a specific stage and exercise"""
+        print(f"🔄 [TOPIC_PROGRESS] Getting topic progress for user {user_id}")
+        print(f"📊 [TOPIC_PROGRESS] Stage: {stage_id}, Exercise: {exercise_id}")
+        
+        try:
+            # Query the ai_tutor_user_topic_progress table
+            result = self.client.table('ai_tutor_user_topic_progress').select('*').eq('user_id', user_id).eq('stage_id', stage_id).eq('exercise_id', exercise_id).execute()
+            
+            print(f"📊 [TOPIC_PROGRESS] Found {len(result.data)} topic progress records")
+            
+            if result.data:
+                print(f"📋 [TOPIC_PROGRESS] Topic progress data: {result.data}")
+            else:
+                print(f"ℹ️ [TOPIC_PROGRESS] No topic progress found for user {user_id}, stage {stage_id}, exercise {exercise_id}")
+            
+            return {
+                "success": True,
+                "data": result.data
+            }
+            
+        except Exception as e:
+            print(f"❌ [TOPIC_PROGRESS] Error getting topic progress: {str(e)}")
+            logger.error(f"Error getting topic progress: {str(e)}")
+            return {"success": False, "error": str(e)}
+    
     async def check_and_unlock_content(self, user_id: str) -> dict:
         """Check if user should unlock new content based on progress"""
         print(f"🔄 [UNLOCK] Checking content unlocks for user {user_id}")

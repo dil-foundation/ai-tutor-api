@@ -7,102 +7,99 @@ import base64
 from io import BytesIO
 from app.services.tts import synthesize_speech, synthesize_speech_exercises
 from app.services.stt import transcribe_audio_bytes_eng_only
-from app.services.feedback import evaluate_response_ex1_stage2
+from app.services.feedback import evaluate_response_ex3_stage1
 from app.supabase_client import progress_tracker
 router = APIRouter()
 
-DAILY_ROUTINE_FILE = os.path.join(os.path.dirname(__file__), '..', 'data', 'daily_routine_narration.json')
+DIALOGUE_FILE = os.path.join(os.path.dirname(__file__), '..', 'data', 'functional_dialogue.json')
 
 class AudioEvaluationRequest(BaseModel):
     audio_base64: str
-    phrase_id: int
+    dialogue_id: int
     filename: str
     user_id: str
     time_spent_seconds: int
     urdu_used: bool
 
-def get_phrase_by_id(phrase_id: int):
-    print(f"🔍 [PHRASE] Looking for phrase with ID: {phrase_id}")
+def get_dialogue_by_id(dialogue_id: int):
+    print(f"🔍 [DIALOGUE] Looking for dialogue with ID: {dialogue_id}")
     try:
-        with open(DAILY_ROUTINE_FILE, 'r', encoding='utf-8') as f:
-            phrases = json.load(f)
-            print(f"📖 [PHRASE] Loaded {len(phrases)} phrases from file")
-            for phrase in phrases:
-                if phrase['id'] == phrase_id:
-                    print(f"✅ [PHRASE] Found phrase: {phrase['phrase']}")
-                    return phrase  # Return the full phrase object
-            print(f"❌ [PHRASE] Phrase with ID {phrase_id} not found")
+        with open(DIALOGUE_FILE, 'r', encoding='utf-8') as f:
+            dialogues = json.load(f)
+            print(f"📖 [DIALOGUE] Loaded {len(dialogues)} dialogues from file")
+            for dialogue in dialogues:
+                if dialogue['id'] == dialogue_id:
+                    print(f"✅ [DIALOGUE] Found dialogue: {dialogue['ai_prompt']}")
+                    return dialogue  # Return the full dialogue object
+            print(f"❌ [DIALOGUE] Dialogue with ID {dialogue_id} not found")
             return None
     except Exception as e:
-        print(f"❌ [PHRASE] Error reading phrase file: {str(e)}")
+        print(f"❌ [DIALOGUE] Error reading dialogue file: {str(e)}")
         return None
 
 
-@router.get("/daily-routine-phrases")
-async def get_all_phrases():
-    """Get all available phrases for Daily Routine exercise"""
-    print("🔄 [API] GET /daily-routine-phrases endpoint called")
+@router.get("/dialogues")
+async def get_all_dialogues():
+    """Get all available dialogues for Listen and Reply exercise"""
+    print("🔄 [API] GET /dialogues endpoint called")
     try:
-        print(f"📁 [API] Reading phrase file from: {DAILY_ROUTINE_FILE}")
-        with open(DAILY_ROUTINE_FILE, 'r', encoding='utf-8') as f:
-            phrases = json.load(f)
-        print(f"✅ [API] Successfully loaded {len(phrases)} phrases")
-        return {"phrases": phrases}
+        print(f"📁 [API] Reading dialogue file from: {DIALOGUE_FILE}")
+        with open(DIALOGUE_FILE, 'r', encoding='utf-8') as f:
+            dialogues = json.load(f)
+        print(f"✅ [API] Successfully loaded {len(dialogues)} dialogues")
+        return {"dialogues": dialogues}
     except Exception as e:
-        print(f"❌ [API] Error in get_all_phrases: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to load phrases: {str(e)}")
+        print(f"❌ [API] Error in get_all_dialogues: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to load dialogues: {str(e)}")
 
-@router.get("/daily-routine-phrases/{phrase_id}")
-async def get_phrase(phrase_id: int):
-    """Get a specific phrase by ID"""
-    print(f"🔄 [API] GET /daily-routine-phrases/{phrase_id} endpoint called")
+@router.get("/dialogues/{dialogue_id}")
+async def get_dialogue(dialogue_id: int):
+    """Get a specific dialogue by ID"""
+    print(f"🔄 [API] GET /dialogues/{dialogue_id} endpoint called")
     try:
-        phrase_data = get_phrase_by_id(phrase_id)
-        if not phrase_data:
-            print(f"❌ [API] Phrase {phrase_id} not found")
-            raise HTTPException(status_code=404, detail="Phrase not found")
-        print(f"✅ [API] Returning phrase: {phrase_data['phrase']}")
+        dialogue_data = get_dialogue_by_id(dialogue_id)
+        if not dialogue_data:
+            print(f"❌ [API] Dialogue {dialogue_id} not found")
+            raise HTTPException(status_code=404, detail="Dialogue not found")
+        print(f"✅ [API] Returning dialogue: {dialogue_data['ai_prompt']}")
         return {
-            "id": phrase_data['id'], 
-            "phrase": phrase_data['phrase'],
-            "phrase_urdu": phrase_data['phrase_urdu'],
-            "example": phrase_data['example'],
-            "example_urdu": phrase_data['example_urdu'],
-            "keywords": phrase_data['keywords'],
-            "keywords_urdu": phrase_data['keywords_urdu'],
-            "category": phrase_data['category'],
-            "difficulty": phrase_data['difficulty'],
-            "tense_focus": phrase_data['tense_focus'],
-            "sentence_structure": phrase_data['sentence_structure']
+            "id": dialogue_data['id'], 
+            "ai_prompt": dialogue_data['ai_prompt'],
+            "ai_prompt_urdu": dialogue_data['ai_prompt_urdu'],
+            "expected_keywords": dialogue_data['expected_keywords'],
+            "expected_keywords_urdu": dialogue_data['expected_keywords_urdu'],
+            "category": dialogue_data['category'],
+            "difficulty": dialogue_data['difficulty'],
+            "context": dialogue_data['context']
         }
     except HTTPException:
         raise
     except Exception as e:
-        print(f"❌ [API] Error in get_phrase: {str(e)}")
+        print(f"❌ [API] Error in get_dialogue: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
 @router.post(
-    "/daily-routine/{phrase_id}",
-    summary="Convert phrase to audio for Daily Routine Exercise",
+    "/listen-and-reply/{dialogue_id}",
+    summary="Convert dialogue prompt to audio for Listen and Reply Exercise",
     description="""
-This endpoint is part of Stage 2 - Exercise 1 (Daily Routine). 
-It takes a phrase ID from a predefined list, converts the corresponding phrase into speech (TTS),
+This endpoint is part of Stage 1 - Exercise 3 (Listen and Reply). 
+It takes a dialogue ID from a predefined list, converts the corresponding AI prompt into speech (TTS),
 and returns the generated audio file as the response.
 """,
-    tags=["Stage 2 - Exercise 1 (Daily Routine)"]
+    tags=["Stage 1 - Exercise 3 (Listen and Reply)"]
 )
-async def daily_routine(phrase_id: int):
-    print(f"🔄 [API] POST /daily-routine/{phrase_id} endpoint called")
+async def listen_and_reply(dialogue_id: int):
+    print(f"🔄 [API] POST /listen-and-reply/{dialogue_id} endpoint called")
     try:
-        phrase_data = get_phrase_by_id(phrase_id)
-        if not phrase_data:
-            print(f"❌ [API] Phrase {phrase_id} not found")
-            raise HTTPException(status_code=404, detail="Phrase not found")
+        dialogue_data = get_dialogue_by_id(dialogue_id)
+        if not dialogue_data:
+            print(f"❌ [API] Dialogue {dialogue_id} not found")
+            raise HTTPException(status_code=404, detail="Dialogue not found")
 
-        phrase_text = phrase_data['phrase']
-        print(f"🎤 [API] Converting phrase to speech: '{phrase_text}'")
-        audio_content = await synthesize_speech_exercises(phrase_text)
+        prompt_text = dialogue_data['ai_prompt']
+        print(f"🎤 [API] Converting dialogue to speech: '{prompt_text}'")
+        audio_content = await synthesize_speech_exercises(prompt_text)
         print(f"✅ [API] Audio content generated, size: {len(audio_content)} bytes")
         
         # Convert to base64 for React Native compatibility
@@ -114,41 +111,39 @@ async def daily_routine(phrase_id: int):
     except HTTPException:
         raise
     except Exception as e:
-        print(f"❌ [API] Error in daily_routine: {str(e)}")
+        print(f"❌ [API] Error in listen_and_reply: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
 @router.post(
-    "/evaluate-daily-routine",
+    "/evaluate-listen-reply",
     summary="Evaluate user's audio recording against expected keywords",
     description="""
-This endpoint evaluates the user's recorded audio against the expected keywords for daily routine phrases.
+This endpoint evaluates the user's recorded audio against the expected keywords for listen and reply dialogues.
 It performs speech-to-text conversion and provides feedback on the response quality.
 Also records progress tracking data in Supabase database.
 """,
-    tags=["Stage 2 - Exercise 1 (Daily Routine)"]
+    tags=["Stage 1 - Exercise 3 (Listen and Reply)"]
 )
-async def evaluate_daily_routine(request: AudioEvaluationRequest):
-    print(f"🔄 [API] POST /evaluate-daily-routine endpoint called")
-    print(f"📝 [API] Request details: phrase_id={request.phrase_id}, filename={request.filename}")
+async def evaluate_listen_reply(request: AudioEvaluationRequest):
+    print(f"🔄 [API] POST /evaluate-listen-reply endpoint called")
+    print(f"📝 [API] Request details: dialogue_id={request.dialogue_id}, filename={request.filename}")
     print(f"📊 [API] Audio data length: {len(request.audio_base64)} characters")
     print(f"👤 [API] User ID: {request.user_id}")
     print(f"⏱️ [API] Time spent: {request.time_spent_seconds} seconds")
     print(f"🌐 [API] Urdu used: {request.urdu_used}")
     
     try:
-        # Get the expected phrase and keywords
-        phrase_data = get_phrase_by_id(request.phrase_id)
-        if not phrase_data:
-            print(f"❌ [API] Phrase {request.phrase_id} not found")
-            raise HTTPException(status_code=404, detail="Phrase not found")
+        # Get the expected dialogue and keywords
+        dialogue_data = get_dialogue_by_id(request.dialogue_id)
+        if not dialogue_data:
+            print(f"❌ [API] Dialogue {request.dialogue_id} not found")
+            raise HTTPException(status_code=404, detail="Dialogue not found")
 
-        expected_keywords = phrase_data['keywords']
-        phrase_text = phrase_data['phrase']
-        example_text = phrase_data['example']
+        expected_keywords = dialogue_data['expected_keywords']
+        ai_prompt = dialogue_data['ai_prompt']
         print(f"✅ [API] Expected keywords: {expected_keywords}")
-        print(f"✅ [API] Phrase: '{phrase_text}'")
-        print(f"✅ [API] Example: '{example_text}'")
+        print(f"✅ [API] AI Prompt: '{ai_prompt}'")
 
         # Decode base64 audio
         try:
@@ -167,7 +162,7 @@ async def evaluate_daily_routine(request: AudioEvaluationRequest):
                 "error": "no_speech_detected",
                 "message": "No speech detected. Please try again.",
                 "expected_keywords": expected_keywords,
-                "phrase": phrase_text
+                "ai_prompt": ai_prompt
             }
 
         # Transcribe the audio
@@ -185,7 +180,7 @@ async def evaluate_daily_routine(request: AudioEvaluationRequest):
                     "error": "no_speech_detected",
                     "message": "No clear speech detected. Please speak more clearly.",
                     "expected_keywords": expected_keywords,
-                    "phrase": phrase_text
+                    "ai_prompt": ai_prompt
                 }
 
         except Exception as e:
@@ -195,13 +190,13 @@ async def evaluate_daily_routine(request: AudioEvaluationRequest):
                 "error": "transcription_failed",
                 "message": "Failed to process audio. Please try again.",
                 "expected_keywords": expected_keywords,
-                "phrase": phrase_text
+                "ai_prompt": ai_prompt
             }
 
         # Evaluate the response
         try:
             print(f"🔄 [API] Evaluating response: '{user_text}' vs expected keywords: {expected_keywords}")
-            evaluation = evaluate_response_ex1_stage2(expected_keywords, user_text, phrase_text, example_text)
+            evaluation = evaluate_response_ex3_stage1(expected_keywords, user_text, ai_prompt)
             print(f"✅ [API] Evaluation completed: {evaluation}")
             
             # Extract evaluation details for progress tracking
@@ -211,12 +206,9 @@ async def evaluate_daily_routine(request: AudioEvaluationRequest):
             suggested_improvement = evaluation.get("suggested_improvement", "")
             keyword_matches = evaluation.get("keyword_matches", 0)
             total_keywords = evaluation.get("total_keywords", len(expected_keywords))
-            fluency_score = evaluation.get("fluency_score", 0)
-            grammar_score = evaluation.get("grammar_score", 0)
             
             print(f"📊 [API] Evaluation details: score={score}, is_correct={is_correct}, completed={completed}")
             print(f"📊 [API] Keyword matches: {keyword_matches}/{total_keywords}")
-            print(f"📊 [API] Fluency score: {fluency_score}, Grammar score: {grammar_score}")
             
             # Validate evaluation data
             if not isinstance(score, (int, float)) or score < 0 or score > 100:
@@ -240,9 +232,9 @@ async def evaluate_daily_routine(request: AudioEvaluationRequest):
                     # Record the topic attempt
                     progress_result = await progress_tracker.record_topic_attempt(
                         user_id=request.user_id,
-                        stage_id=2,  # Stage 2
-                        exercise_id=1,  # Exercise 1 (Daily Routine)
-                        topic_id=request.phrase_id,
+                        stage_id=1,  # Stage 1
+                        exercise_id=3,  # Exercise 3 (Listen and Reply)
+                        topic_id=request.dialogue_id,
                         score=float(score),
                         urdu_used=request.urdu_used,
                         time_spent_seconds=time_spent,
@@ -271,7 +263,7 @@ async def evaluate_daily_routine(request: AudioEvaluationRequest):
             
             return {
                 "success": True,
-                "phrase": phrase_text,
+                "ai_prompt": ai_prompt,
                 "expected_keywords": expected_keywords,
                 "user_text": user_text,
                 "evaluation": evaluation,
@@ -279,9 +271,7 @@ async def evaluate_daily_routine(request: AudioEvaluationRequest):
                 "progress_recorded": progress_recorded,
                 "unlocked_content": unlocked_content,
                 "keyword_matches": keyword_matches,
-                "total_keywords": total_keywords,
-                "fluency_score": fluency_score,
-                "grammar_score": grammar_score
+                "total_keywords": total_keywords
             }
 
         except Exception as e:
@@ -291,12 +281,12 @@ async def evaluate_daily_routine(request: AudioEvaluationRequest):
                 "error": "evaluation_failed",
                 "message": "Failed to evaluate response. Please try again.",
                 "expected_keywords": expected_keywords,
-                "phrase": phrase_text,
+                "ai_prompt": ai_prompt,
                 "user_text": user_text
             }
 
     except HTTPException:
         raise
     except Exception as e:
-        print(f"❌ [API] Unexpected error in evaluate_daily_routine: {str(e)}")
+        print(f"❌ [API] Unexpected error in evaluate_listen_reply: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}") 
