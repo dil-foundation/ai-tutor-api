@@ -292,60 +292,60 @@ async def _process_progress_data_for_frontend(summary: dict, stages: list, exerc
                 'last_activity_date': date.today().isoformat()
             }
         
-        # Stage definitions with exercise names
+        # Stage definitions with exercise names and topic counts
         stage_definitions = {
             1: {
                 "name": "Stage 1 – A1 Beginner",
                 "subtitle": "Foundation Building",
                 "exercises": [
-                    "Repeat After Me",
-                    "Quick Response Prompts", 
-                    "Listen and Reply"
+                    {"name": "Repeat After Me", "topics": 10},
+                    {"name": "Quick Response Prompts", "topics": 8}, 
+                    {"name": "Listen and Reply", "topics": 12}
                 ]
             },
             2: {
                 "name": "Stage 2 – A2 Elementary",
                 "subtitle": "Daily Conversations",
                 "exercises": [
-                    "Daily Routine Narration",
-                    "Question & Answer Chat",
-                    "Roleplay Simulation – Food Order"
+                    {"name": "Daily Routine Narration", "topics": 15},
+                    {"name": "Question & Answer Chat", "topics": 12},
+                    {"name": "Roleplay Simulation – Food Order", "topics": 10}
                 ]
             },
             3: {
                 "name": "Stage 3 – B1 Intermediate",
                 "subtitle": "Storytelling & Dialogue",
                 "exercises": [
-                    "Storytelling Practice",
-                    "Group Dialogue",
-                    "Problem-Solving"
+                    {"name": "Storytelling Practice", "topics": 18},
+                    {"name": "Group Dialogue", "topics": 15},
+                    {"name": "Problem-Solving", "topics": 12}
                 ]
             },
             4: {
                 "name": "Stage 4 – B2 Upper Intermediate",
                 "subtitle": "Advanced Communication",
                 "exercises": [
-                    "Abstract Topic Monologue",
-                    "Mock Interview Practice",
-                    "News Summary Challenge"
+                    {"name": "Abstract Topic Monologue", "topics": 20},
+                    {"name": "Mock Interview Practice", "topics": 25},
+                    {"name": "News Summary Challenge", "topics": 15}
                 ]
             },
             5: {
                 "name": "Stage 5 – C1 Advanced",
                 "subtitle": "Critical Thinking & Presentations",
                 "exercises": [
-                    "Critical Thinking Dialogues",
-                    "Academic Presentations",
-                    "In-Depth Interview"
+                    {"name": "Critical Thinking Dialogues", "topics": 30},
+                    {"name": "Academic Presentations", "topics": 25},
+                    {"name": "In-Depth Interview", "topics": 20}
                 ]
             },
             6: {
                 "name": "Stage 6 – C2 Mastery",
                 "subtitle": "Mastery & Spontaneity",
                 "exercises": [
-                    "Spontaneous Speech",
-                    "Sensitive Scenario Roleplay",
-                    "Critical Opinion Builder"
+                    {"name": "Spontaneous Speech", "topics": 35},
+                    {"name": "Sensitive Scenario Roleplay", "topics": 30},
+                    {"name": "Critical Opinion Builder", "topics": 25}
                 ]
             }
         }
@@ -354,10 +354,14 @@ async def _process_progress_data_for_frontend(summary: dict, stages: list, exerc
         current_stage_id = summary.get('current_stage', 1)
         current_stage_info = stage_definitions.get(current_stage_id, stage_definitions[1])
         
-        # Calculate stage progress
+        # Calculate stage progress using professional logic
         processed_stages = []
         total_completed_stages = 0
         total_completed_exercises = 0
+        total_learning_units = 0
+        total_completed_units = 0
+        
+        print(f"🔄 [PROCESS] Calculating progress for {len(stage_definitions)} stages")
         
         for stage_id in range(1, 7):
             stage_info = stage_definitions[stage_id]
@@ -366,25 +370,42 @@ async def _process_progress_data_for_frontend(summary: dict, stages: list, exerc
             # Get exercises for this stage
             stage_exercises = []
             stage_completed_exercises = 0
+            stage_total_topics = 0
+            stage_completed_topics = 0
+            
+            print(f"📊 [PROCESS] Processing Stage {stage_id}: {stage_info['name']}")
             
             for exercise_id in range(1, 4):
                 exercise_data = next((e for e in exercises if e.get('stage_id') == stage_id and e.get('exercise_id') == exercise_id), None)
+                exercise_info = stage_info['exercises'][exercise_id - 1]
                 
-                exercise_name = stage_info['exercises'][exercise_id - 1]
+                exercise_name = exercise_info['name']
+                exercise_topics = exercise_info['topics']
                 exercise_status = "locked"
                 exercise_progress = 0
                 exercise_attempts = 0
+                exercise_completed_topics = 0
+                
+                stage_total_topics += exercise_topics
                 
                 if exercise_data:
                     exercise_attempts = exercise_data.get('attempts', 0)
-                    exercise_progress = exercise_data.get('average_score', 0)
+                    current_topic_id = exercise_data.get('current_topic_id', 1)
                     
+                    # Calculate exercise progress based on topics completed
                     if exercise_data.get('completed_at'):
                         exercise_status = "completed"
+                        exercise_completed_topics = exercise_topics
+                        exercise_progress = 100
                         stage_completed_exercises += 1
                         total_completed_exercises += 1
                     elif exercise_attempts > 0:
                         exercise_status = "in_progress"
+                        # Calculate progress based on topics completed
+                        exercise_completed_topics = min(current_topic_id - 1, exercise_topics)
+                        exercise_progress = (exercise_completed_topics / exercise_topics) * 100
+                    
+                    stage_completed_topics += exercise_completed_topics
                     
                     # Check if exercise is unlocked based on unlocks data
                     exercise_unlock = next((u for u in unlocks if u.get('stage_id') == stage_id and u.get('exercise_id') == exercise_id), None)
@@ -396,31 +417,31 @@ async def _process_progress_data_for_frontend(summary: dict, stages: list, exerc
                     "name": exercise_name,
                     "status": exercise_status,
                     "progress": exercise_progress,
-                    "attempts": exercise_attempts
+                    "attempts": exercise_attempts,
+                    "topics": exercise_topics,
+                    "completed_topics": exercise_completed_topics
                 })
             
-            # Calculate stage completion and progress
-            completed_exercises = sum(1 for e in stage_exercises if e['status'] == 'completed')
-            in_progress_exercises = sum(1 for e in stage_exercises if e['status'] == 'in_progress')
-            
-            # Calculate stage progress based on exercise completion and attempts
-            total_progress = 0
-            for exercise in stage_exercises:
-                if exercise['status'] == 'completed':
-                    total_progress += 100
-                elif exercise['status'] == 'in_progress':
-                    # Calculate progress based on attempts and scores
-                    progress = min(90, exercise['progress'])  # Cap at 90% until completed
-                    total_progress += progress
-            
-            stage_progress_percentage = total_progress / 3
-            stage_completed = completed_exercises == 3
+            # Calculate stage progress using professional logic
+            # Stage progress = (Completed topics in stage / Total topics in stage) * 100
+            stage_progress_percentage = (stage_completed_topics / stage_total_topics) * 100 if stage_total_topics > 0 else 0
+            stage_completed = stage_completed_exercises == 3
             
             if stage_completed:
                 total_completed_stages += 1
             
             # Check if stage should be unlocked (if any exercise is unlocked or in progress)
             stage_unlocked = any(e['status'] != 'locked' for e in stage_exercises)
+            
+            # Add to total learning units for overall progress calculation
+            total_learning_units += stage_total_topics
+            total_completed_units += stage_completed_topics
+            
+            print(f"📊 [PROCESS] Stage {stage_id} Progress:")
+            print(f"   - Total topics: {stage_total_topics}")
+            print(f"   - Completed topics: {stage_completed_topics}")
+            print(f"   - Progress: {stage_progress_percentage:.1f}%")
+            print(f"   - Completed exercises: {stage_completed_exercises}/3")
             
             processed_stages.append({
                 "stage_id": stage_id,
@@ -431,32 +452,24 @@ async def _process_progress_data_for_frontend(summary: dict, stages: list, exerc
                 "exercises": stage_exercises,
                 "started_at": stage_progress.get('started_at') if stage_progress else None,
                 "completed_at": stage_progress.get('completed_at') if stage_progress else None,
-                "unlocked": stage_unlocked
+                "unlocked": stage_unlocked,
+                "total_topics": stage_total_topics,
+                "completed_topics": stage_completed_topics
             })
         
-        # Calculate overall progress based on all stages and exercises
-        total_progress = 0
-        total_possible = 6 * 3  # 6 stages * 3 exercises each
-        
-        for stage in processed_stages:
-            for exercise in stage['exercises']:
-                if exercise['status'] == 'completed':
-                    total_progress += 100
-                elif exercise['status'] == 'in_progress':
-                    total_progress += exercise['progress']
-                # locked exercises contribute 0 to total progress
-        
-        overall_progress = (total_progress / total_possible) * 100
+        # Calculate overall progress using professional logic
+        # Overall progress = (Total completed learning units / Total learning units) * 100
+        overall_progress = (total_completed_units / total_learning_units) * 100 if total_learning_units > 0 else 0
         
         # Get current stage progress
         current_stage_data = next((s for s in processed_stages if s['stage_id'] == current_stage_id), processed_stages[0])
         current_stage_progress = current_stage_data['progress']
         
-        # Calculate current stage progress more accurately
-        if current_stage_data['exercises']:
-            stage_exercises = current_stage_data['exercises']
-            total_exercise_progress = sum(e['progress'] for e in stage_exercises)
-            current_stage_progress = total_exercise_progress / len(stage_exercises)
+        print(f"📊 [PROCESS] Overall Progress Calculation:")
+        print(f"   - Total learning units: {total_learning_units}")
+        print(f"   - Completed units: {total_completed_units}")
+        print(f"   - Overall progress: {overall_progress:.1f}%")
+        print(f"   - Current stage progress: {current_stage_progress:.1f}%")
         
         # Generate comprehensive achievements based on actual progress
         achievements = []
@@ -552,6 +565,16 @@ async def _process_progress_data_for_frontend(summary: dict, stages: list, exerc
                 "description": f"Reached {overall_progress:.0f}% overall progress"
             })
         
+        # Topic completion achievements
+        if total_completed_units >= 50:
+            achievements.append({
+                "name": "Topic Explorer",
+                "icon": "book",
+                "date": summary.get('last_activity_date', date.today().isoformat()),
+                "color": "#8E44AD",
+                "description": f"Completed {total_completed_units} learning topics"
+            })
+        
         # Generate realistic fluency trend based on actual progress
         fluency_trend = []
         base_score = 50
@@ -595,7 +618,9 @@ async def _process_progress_data_for_frontend(summary: dict, stages: list, exerc
             "fluency_trend": fluency_trend,
             "unlocked_content": unlocks,
             "total_completed_stages": total_completed_stages,
-            "total_completed_exercises": total_completed_exercises
+            "total_completed_exercises": total_completed_exercises,
+            "total_learning_units": total_learning_units,
+            "total_completed_units": total_completed_units
         }
         
         print(f"✅ [PROCESS] Progress data processed successfully")
@@ -607,6 +632,8 @@ async def _process_progress_data_for_frontend(summary: dict, stages: list, exerc
         print(f"   - Achievements count: {len(achievements)}")
         print(f"   - Completed stages: {total_completed_stages}")
         print(f"   - Completed exercises: {total_completed_exercises}")
+        print(f"   - Total learning units: {total_learning_units}")
+        print(f"   - Completed units: {total_completed_units}")
         
         return processed_data
         
@@ -632,7 +659,9 @@ async def _process_progress_data_for_frontend(summary: dict, stages: list, exerc
             "fluency_trend": [50, 50, 50, 50, 50, 50, 50],
             "unlocked_content": [],
             "total_completed_stages": 0,
-            "total_completed_exercises": 0
+            "total_completed_exercises": 0,
+            "total_learning_units": 0,
+            "total_completed_units": 0
         }
 
 @router.get("/health")
