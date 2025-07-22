@@ -123,7 +123,7 @@ async def learn_conversation(websocket: WebSocket):
             try:
                 message = json.loads(data)
                 audio_base64 = message.get("audio_base64")
-                language_mode = message.get("language_mode", "urdu")
+                language_mode = message.get("language_mode", "english")
                 print("language_mode: ", language_mode)
             except Exception:
                 await safe_send_json(websocket, {
