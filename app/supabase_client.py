@@ -1,13 +1,13 @@
 import os
 import asyncio
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from supabase import create_client, Client
 from dotenv import load_dotenv
 import logging
+from typing import Dict, List, Optional, Tuple
 
 # Load environment variables
 load_dotenv(override=True)
-# load_dotenv()
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -34,6 +34,198 @@ class SupabaseProgressTracker:
         print("🔧 [SUPABASE] Progress Tracker initialized")
         print(f"🔧 [SUPABASE] Connected to: {SUPABASE_URL}")
         logger.info("Supabase Progress Tracker initialized")
+    
+    async def _calculate_streak(self, user_id: str, current_date: date) -> Tuple[int, int]:
+        """
+        Calculate current streak and longest streak for a user
+        Returns: (current_streak, longest_streak)
+        """
+        try:
+            print(f"🔄 [STREAK] Calculating streak for user: {user_id}")
+            
+            # Get daily analytics for the last 30 days to calculate streak
+            thirty_days_ago = current_date - timedelta(days=30)
+            
+            daily_analytics = self.client.table('ai_tutor_daily_learning_analytics').select(
+                'date, total_time_minutes, exercises_completed'
+            ).eq('user_id', user_id).gte('date', thirty_days_ago.isoformat()).order('date', desc=False).execute()
+            
+            print(f"📊 [STREAK] Found {len(daily_analytics.data)} daily records")
+            
+            if not daily_analytics.data:
+                print(f"ℹ️ [STREAK] No daily analytics found, returning 0 streak")
+                return 0, 0
+            
+            # Create a set of active dates (where user had activity)
+            active_dates = set()
+            for record in daily_analytics.data:
+                if record.get('total_time_minutes', 0) > 0 or record.get('exercises_completed', 0) > 0:
+                    active_dates.add(record['date'])
+            
+            print(f"📊 [STREAK] Active dates: {sorted(active_dates)}")
+            
+            # Calculate current streak (consecutive days from today backwards)
+            current_streak = 0
+            check_date = current_date
+            
+            while check_date >= thirty_days_ago:
+                date_str = check_date.isoformat()
+                if date_str in active_dates:
+                    current_streak += 1
+                    check_date -= timedelta(days=1)
+                else:
+                    break
+            
+            print(f"📊 [STREAK] Current streak: {current_streak} days")
+            
+            # Calculate longest streak from historical data
+            longest_streak = 0
+            temp_streak = 0
+            
+            # Sort dates and check for consecutive sequences
+            sorted_dates = sorted(active_dates)
+            
+            for i, date_str in enumerate(sorted_dates):
+                current_date_obj = datetime.strptime(date_str, '%Y-%m-%d').date()
+                
+                if i == 0:
+                    temp_streak = 1
+                else:
+                    prev_date_obj = datetime.strptime(sorted_dates[i-1], '%Y-%m-%d').date()
+                    if (current_date_obj - prev_date_obj).days == 1:
+                        temp_streak += 1
+                    else:
+                        longest_streak = max(longest_streak, temp_streak)
+                        temp_streak = 1
+            
+            # Check the last streak
+            longest_streak = max(longest_streak, temp_streak)
+            
+            print(f"📊 [STREAK] Longest streak: {longest_streak} days")
+            return current_streak, longest_streak
+            
+        except Exception as e:
+            print(f"❌ [STREAK] Error calculating streak: {str(e)}")
+            logger.error(f"Error calculating streak for user {user_id}: {str(e)}")
+            return 0, 0
+    
+    async def _update_daily_analytics(self, user_id: str, time_spent_seconds: int, 
+                                    score: float, urdu_used: bool, completed: bool) -> None:
+        """
+        Update daily learning analytics for the user
+        """
+        try:
+            current_date = date.today().isoformat()
+            time_spent_minutes = int(time_spent_seconds / 60)
+            
+            print(f"🔄 [DAILY] Updating daily analytics for user: {user_id}, date: {current_date}")
+            
+            # Get existing daily analytics for today
+            existing = self.client.table('ai_tutor_daily_learning_analytics').select('*').eq('user_id', user_id).eq('date', current_date).execute()
+            
+            if existing.data:
+                # Update existing record
+                current_record = existing.data[0]
+                current_time = current_record.get('total_time_minutes', 0) + time_spent_minutes
+                current_exercises = current_record.get('exercises_completed', 0) + (1 if completed else 0)
+                
+                # Calculate new average score
+                current_avg = current_record.get('average_score', 0)
+                current_count = current_record.get('exercises_completed', 0)
+                new_count = current_count + 1
+                new_avg = ((current_avg * current_count) + score) / new_count if new_count > 0 else score
+                
+                # Calculate Urdu usage percentage
+                current_urdu_count = current_record.get('urdu_usage_count', 0) + (1 if urdu_used else 0)
+                urdu_percentage = (current_urdu_count / new_count) * 100 if new_count > 0 else 0
+                
+                update_data = {
+                    'total_time_minutes': current_time,
+                    'exercises_completed': current_exercises,
+                    'average_score': round(new_avg, 2),
+                    'urdu_usage_percentage': round(urdu_percentage, 2),
+                    'urdu_usage_count': current_urdu_count,
+                    'updated_at': datetime.now().isoformat()
+                }
+                
+                self.client.table('ai_tutor_daily_learning_analytics').update(update_data).eq('user_id', user_id).eq('date', current_date).execute()
+                print(f"✅ [DAILY] Updated existing daily analytics")
+                
+            else:
+                # Create new record
+                new_record = {
+                    'user_id': user_id,
+                    'date': current_date,
+                    'total_time_minutes': time_spent_minutes,
+                    'exercises_completed': 1 if completed else 0,
+                    'average_score': score,
+                    'urdu_usage_percentage': 100 if urdu_used else 0,
+                    'urdu_usage_count': 1 if urdu_used else 0,
+                    'created_at': datetime.now().isoformat(),
+                    'updated_at': datetime.now().isoformat()
+                }
+                
+                self.client.table('ai_tutor_daily_learning_analytics').insert(new_record).execute()
+                print(f"✅ [DAILY] Created new daily analytics record")
+                
+        except Exception as e:
+            print(f"❌ [DAILY] Error updating daily analytics: {str(e)}")
+            logger.error(f"Error updating daily analytics for user {user_id}: {str(e)}")
+    
+    async def _calculate_session_metrics(self, user_id: str) -> Dict[str, float]:
+        """
+        Calculate session duration metrics
+        Returns: average_session_duration, weekly_hours, monthly_hours
+        """
+        try:
+            print(f"🔄 [SESSION] Calculating session metrics for user: {user_id}")
+            
+            # Get daily analytics for the last 30 days
+            thirty_days_ago = date.today() - timedelta(days=30)
+            daily_analytics = self.client.table('ai_tutor_daily_learning_analytics').select(
+                'date, total_time_minutes, exercises_completed'
+            ).eq('user_id', user_id).gte('date', thirty_days_ago.isoformat()).execute()
+            
+            if not daily_analytics.data:
+                return {
+                    'average_session_duration': 0.0,
+                    'weekly_learning_hours': 0.0,
+                    'monthly_learning_hours': 0.0
+                }
+            
+            # Calculate average session duration
+            total_sessions = sum(1 for record in daily_analytics.data if record.get('exercises_completed', 0) > 0)
+            total_time_minutes = sum(record.get('total_time_minutes', 0) for record in daily_analytics.data)
+            
+            average_session_duration = total_time_minutes / total_sessions if total_sessions > 0 else 0.0
+            
+            # Calculate weekly hours (last 7 days)
+            seven_days_ago = date.today() - timedelta(days=7)
+            weekly_data = [r for r in daily_analytics.data if r['date'] >= seven_days_ago.isoformat()]
+            weekly_hours = sum(r.get('total_time_minutes', 0) for r in weekly_data) / 60.0
+            
+            # Calculate monthly hours (last 30 days)
+            monthly_hours = total_time_minutes / 60.0
+            
+            print(f"📊 [SESSION] Metrics calculated:")
+            print(f"   - Average session: {average_session_duration:.2f} minutes")
+            print(f"   - Weekly hours: {weekly_hours:.2f}")
+            print(f"   - Monthly hours: {monthly_hours:.2f}")
+            
+            return {
+                'average_session_duration': round(average_session_duration, 2),
+                'weekly_learning_hours': round(weekly_hours, 2),
+                'monthly_learning_hours': round(monthly_hours, 2)
+            }
+            
+        except Exception as e:
+            print(f"❌ [SESSION] Error calculating session metrics: {str(e)}")
+            logger.error(f"Error calculating session metrics for user {user_id}: {str(e)}")
+            return {
+                'average_session_duration': 0.0,
+                'weekly_learning_hours': 0.0,
+                'monthly_learning_hours': 0.0
+            }
     
     async def initialize_user_progress(self, user_id: str) -> dict:
         """Initialize user progress when they first start using the app"""
@@ -133,6 +325,26 @@ class SupabaseProgressTracker:
         print(f"📊 [TOPIC] Metrics: score={score}, urdu_used={urdu_used}, time_spent={time_spent_seconds}s, completed={completed}")
         
         try:
+            # Validate input parameters
+            if not user_id or not user_id.strip():
+                raise ValueError("User ID is required")
+            
+            if not (1 <= stage_id <= 6):
+                raise ValueError(f"Invalid stage_id: {stage_id}. Must be between 1 and 6")
+            
+            if not (1 <= exercise_id <= 3):
+                raise ValueError(f"Invalid exercise_id: {exercise_id}. Must be between 1 and 3")
+            
+            if not (1 <= topic_id <= 100):  # Reasonable topic range
+                raise ValueError(f"Invalid topic_id: {topic_id}. Must be between 1 and 100")
+            
+            if not (0 <= score <= 100):
+                raise ValueError(f"Invalid score: {score}. Must be between 0 and 100")
+            
+            if not (1 <= time_spent_seconds <= 3600):  # Max 1 hour per attempt
+                print(f"⚠️ [TOPIC] Time spent {time_spent_seconds}s exceeds normal range, capping at 3600s")
+                time_spent_seconds = min(time_spent_seconds, 3600)
+            
             # Check if topic attempt already exists for this user and topic
             print(f"🔍 [TOPIC] Checking if topic attempt already exists for user {user_id}, topic {topic_id}...")
             existing_attempt = self.client.table('ai_tutor_user_topic_progress').select('*').eq('user_id', user_id).eq('stage_id', stage_id).eq('exercise_id', exercise_id).eq('topic_id', topic_id).execute()
@@ -178,6 +390,9 @@ class SupabaseProgressTracker:
                 print(f"📝 [TOPIC] Creating new topic progress record: {topic_progress}")
                 result = self.client.table('ai_tutor_user_topic_progress').insert(topic_progress).execute()
                 print(f"✅ [TOPIC] Topic progress created: {result.data[0] if result.data else 'No data'}")
+            
+            # Update daily analytics
+            await self._update_daily_analytics(user_id, time_spent_seconds, score, urdu_used, completed)
             
             # Update exercise progress
             print(f"🔄 [TOPIC] Updating exercise progress...")
@@ -346,7 +561,7 @@ class SupabaseProgressTracker:
             print(f"📊 [SUMMARY] Current summary: {summary}")
             
             # Update current position
-            current_date = date.today().isoformat()
+            current_date = date.today()
             current_timestamp = datetime.now().isoformat()
             
             # Convert to integer for database compatibility
@@ -357,7 +572,7 @@ class SupabaseProgressTracker:
                 "current_exercise": exercise_id,
                 "topic_id": topic_id,
                 "total_time_spent_minutes": total_time_spent_minutes,
-                "last_activity_date": current_date,
+                "last_activity_date": current_date.isoformat(),
                 "updated_at": current_timestamp
             }
             
@@ -377,10 +592,16 @@ class SupabaseProgressTracker:
             update_data["overall_progress_percentage"] = overall_progress
             print(f"📊 [SUMMARY] Overall progress: {overall_progress:.2f}% ({len(completed_stages.data)}/{total_stages} stages)")
             
-            # Update streak (simplified - you might want more sophisticated streak logic)
-            # For now, just increment if user is active today
-            update_data["streak_days"] = summary.get('streak_days', 0) + 1
-            print(f"📊 [SUMMARY] Updated streak: {update_data['streak_days']} days")
+            # Calculate proper streak
+            current_streak, longest_streak = await self._calculate_streak(user_id, current_date)
+            update_data["streak_days"] = current_streak
+            update_data["longest_streak"] = max(summary.get('longest_streak', 0), longest_streak)
+            print(f"📊 [SUMMARY] Updated streak: current={current_streak}, longest={update_data['longest_streak']}")
+            
+            # Calculate session metrics
+            session_metrics = await self._calculate_session_metrics(user_id)
+            update_data.update(session_metrics)
+            print(f"📊 [SUMMARY] Session metrics updated: {session_metrics}")
             
             print(f"📝 [SUMMARY] Final update data: {update_data}")
             update_result = self.client.table('ai_tutor_user_progress_summary').update(update_data).eq('user_id', user_id).execute()
@@ -396,6 +617,10 @@ class SupabaseProgressTracker:
         """Get comprehensive user progress data"""
         print(f"🔄 [GET] Getting comprehensive user progress for user {user_id}")
         try:
+            # Validate user_id
+            if not user_id or not user_id.strip():
+                raise ValueError("User ID is required")
+            
             # Get progress summary
             print(f"🔍 [GET] Fetching progress summary...")
             summary = self.client.table('ai_tutor_user_progress_summary').select('*').eq('user_id', user_id).execute()
@@ -438,6 +663,16 @@ class SupabaseProgressTracker:
         """Get the current topic_id for a specific exercise"""
         print(f"🔄 [TOPIC] Getting current topic for user {user_id}, stage {stage_id}, exercise {exercise_id}")
         try:
+            # Validate parameters
+            if not user_id or not user_id.strip():
+                raise ValueError("User ID is required")
+            
+            if not (1 <= stage_id <= 6):
+                raise ValueError(f"Invalid stage_id: {stage_id}. Must be between 1 and 6")
+            
+            if not (1 <= exercise_id <= 3):
+                raise ValueError(f"Invalid exercise_id: {exercise_id}. Must be between 1 and 3")
+            
             # Get exercise progress
             print(f"🔍 [TOPIC] Fetching exercise progress...")
             exercise_progress = self.client.table('ai_tutor_user_exercise_progress').select('*').eq('user_id', user_id).eq('stage_id', stage_id).eq('exercise_id', exercise_id).execute()
@@ -471,6 +706,10 @@ class SupabaseProgressTracker:
         print(f"📊 [TOPIC_PROGRESS] Stage: {stage_id}, Exercise: {exercise_id}")
         
         try:
+            # Validate parameters
+            if not user_id or not user_id.strip():
+                raise ValueError("User ID is required")
+            
             # Query the ai_tutor_user_topic_progress table
             result = self.client.table('ai_tutor_user_topic_progress').select('*').eq('user_id', user_id).eq('stage_id', stage_id).eq('exercise_id', exercise_id).execute()
             
@@ -495,12 +734,17 @@ class SupabaseProgressTracker:
         """Check if user should unlock new content based on progress"""
         print(f"🔄 [UNLOCK] Checking content unlocks for user {user_id}")
         try:
+            # Validate user_id
+            if not user_id or not user_id.strip():
+                raise ValueError("User ID is required")
+            
             # Get current exercise progress - use completed_at IS NOT NULL instead of completed column
             print(f"🔍 [UNLOCK] Fetching completed exercises...")
             current_exercise = self.client.table('ai_tutor_user_exercise_progress').select('*').eq('user_id', user_id).not_.is_('completed_at', 'null').execute()
             print(f"📊 [UNLOCK] Found {len(current_exercise.data)} completed exercises")
             
             unlocked_content = []
+            current_timestamp = datetime.now().isoformat()
             
             for exercise in current_exercise.data:
                 stage_id = exercise['stage_id']
@@ -518,8 +762,6 @@ class SupabaseProgressTracker:
                     if not existing_unlock.data or not existing_unlock.data[0]['is_unlocked']:
                         print(f"🔓 [UNLOCK] Unlocking exercise {next_exercise_id} in stage {stage_id}")
                         # Unlock next exercise
-                        current_timestamp = datetime.now().isoformat()
-                        
                         unlock_data = {
                             "user_id": user_id,
                             "stage_id": stage_id,
