@@ -9,6 +9,7 @@ It provides comprehensive English learning features including:
 - Real-time Conversation
 - Translation Services
 - Quiz and Assessment Tools
+- English-Only AI Tutor (NEW)
 
 Author: AI Tutor Development Team
 Version: 1.0.0
@@ -23,6 +24,7 @@ from sqlalchemy.sql import text
 from app.routes import (
     conversation_ws,
     conversation_ws_2,
+    english_only_ws,
     user,
     translator,
     repeat_after_me,
@@ -78,6 +80,7 @@ async def startup_event():
     print("   - Learning Exercises")
     print("   - Real-time Conversation")
     print("   - Translation Services")
+    print("   - English-Only AI Tutor")
     print("✅ [STARTUP] Application started successfully")
 
 @app.on_event("shutdown")
@@ -112,6 +115,7 @@ app.include_router(gpt_quiz_parser.router, prefix="/api/quiz", tags=["Quiz & Ass
 # WebSocket routes for real-time communication
 app.include_router(conversation_ws.router, prefix="/api", tags=["WebSocket - Conversation"])
 app.include_router(conversation_ws_2.router, tags=["WebSocket - Conversation 2"])
+app.include_router(english_only_ws.router, prefix="/api", tags=["WebSocket - English-Only AI Tutor"])
 
 # Progress tracking routes (NEW - Comprehensive Progress System)
 app.include_router(progress_tracking.router, prefix="/api/progress", tags=["Progress Tracking"])
@@ -149,7 +153,8 @@ async def root_health_check():
             "progress_tracking",
             "learning_exercises", 
             "real_time_conversation",
-            "translation_services"
+            "translation_services",
+            "english_only_tutor"
         ]
     }
 
@@ -165,6 +170,7 @@ async def api_status():
             "learning_exercises": "enabled",
             "real_time_conversation": "enabled",
             "translation_services": "enabled",
+            "english_only_tutor": "enabled",
             "database": "connected"
         },
         "endpoints": {
@@ -172,6 +178,7 @@ async def api_status():
             "api_health": "/api/healthcheck",
             "db_check": "/api/db-check",
             "docs": "/docs",
-            "progress_tracking": "/api/progress/*"
+            "progress_tracking": "/api/progress/*",
+            "english_only_tutor": "/api/ws/english-only"
         }
     }
