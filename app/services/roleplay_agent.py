@@ -3,7 +3,7 @@ import uuid
 from typing import Dict, List, Optional, Tuple
 from openai import OpenAI
 from app.config import OPENAI_API_KEY
-from app.redis_client import redis
+from app.redis_client import redis_client
 import base64
 from app.services.tts import synthesize_speech_exercises
 
@@ -55,7 +55,7 @@ class RoleplayAgent:
         }
         
         # Store in Redis
-        redis.setex(session_id, 3600, json.dumps(initial_state))  # 1 hour expiry
+        redis_client.setex(session_id, 3600, json.dumps(initial_state))  # 1 hour expiry
         
         print(f"✅ [ROLEPLAY] Created session {session_id} for scenario {scenario['id']}")
         return session_id, scenario["initial_prompt"]
@@ -64,7 +64,7 @@ class RoleplayAgent:
         """Update session with user input and return AI response"""
         try:
             # Get session data from Redis
-            session_data_json = redis.get(session_id)
+            session_data_json = redis_client.get(session_id)
             if not session_data_json:
                 return "", "error", "Session not found"
             
@@ -94,7 +94,7 @@ class RoleplayAgent:
             conversation_status = self._check_conversation_end(session_data, ai_response)
             
             # Update session in Redis
-            redis.setex(session_id, 3600, json.dumps(session_data))
+            redis_client.setex(session_id, 3600, json.dumps(session_data))
             
             print(f"✅ [ROLEPLAY] Updated session {session_id}, status: {conversation_status}")
             return ai_response, conversation_status, None
@@ -185,7 +185,7 @@ Respond as the {scenario['ai_character']}:
     def get_session_history(self, session_id: str) -> Optional[List[Dict]]:
         """Get conversation history for a session"""
         try:
-            session_data_json = redis.get(session_id)
+            session_data_json = redis_client.get(session_id)
             if not session_data_json:
                 return None
             
@@ -199,7 +199,7 @@ Respond as the {scenario['ai_character']}:
     def delete_session(self, session_id: str) -> bool:
         """Delete a session from Redis"""
         try:
-            redis.delete(session_id)
+            redis_client.delete(session_id)
             print(f"✅ [ROLEPLAY] Deleted session {session_id}")
             return True
         except Exception as e:

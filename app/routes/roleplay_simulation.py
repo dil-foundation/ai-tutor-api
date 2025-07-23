@@ -14,7 +14,7 @@ from app.services.roleplay_agent import roleplay_agent
 from app.services.feedback import evaluate_response_ex3_stage2
 from app.services.stt import transcribe_audio_bytes_eng_only
 from app.supabase_client import progress_tracker
-from app.redis_client import redis
+from app.redis_client import redis_client
 import json
 import base64
 from typing import List
@@ -220,7 +220,7 @@ async def get_roleplay_history(session_id: str):
     
     try:
         # Get session data from Redis
-        session_data_json = redis.get(session_id)
+        session_data_json = redis_client.get(session_id)
         if not session_data_json:
             raise HTTPException(status_code=404, detail="Session not found")
         
@@ -264,7 +264,7 @@ async def evaluate_roleplay_session(request: RoleplayEvaluationRequest, db: Sess
     
     try:
         # Get session data from Redis
-        session_data_json = redis.get(request.session_id)
+        session_data_json = redis_client.get(request.session_id)
         if not session_data_json:
             raise HTTPException(status_code=404, detail="Session not found")
         
