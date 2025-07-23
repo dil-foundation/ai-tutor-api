@@ -20,7 +20,7 @@ Features:
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from app.services.translation import translate_urdu_to_english, translate_to_urdu
-from app.services.tts import synthesize_speech_bytes
+from app.services.tts import synthesize_speech_bytes,synthesize_speech
 from app.services.feedback import analyze_english_input_eng_only
 from app.services import stt
 from app.utils.profiler import Profiler
@@ -95,7 +95,7 @@ async def pre_generate_common_tts():
     for phrase in common_phrases:
         if phrase not in tts_cache:
             try:
-                audio = await synthesize_speech_bytes(phrase)
+                audio = await synthesize_speech(phrase)
                 tts_cache[phrase] = audio
                 print(f"✅ Pre-generated TTS for: {phrase}")
             except Exception as e:
@@ -128,7 +128,7 @@ async def english_only_conversation(websocket: WebSocket):
                     if greeting_text in tts_cache:
                         greeting_audio = tts_cache[greeting_text]
                     else:
-                        greeting_audio = await synthesize_speech_bytes(greeting_text)
+                        greeting_audio = await synthesize_speech(greeting_text)
                         tts_cache[greeting_text] = greeting_audio
                     
                     profiler.mark("👋 Greeting generated")
@@ -150,7 +150,7 @@ async def english_only_conversation(websocket: WebSocket):
                     if pause_text in tts_cache:
                         pause_audio = tts_cache[pause_text]
                     else:
-                        pause_audio = await synthesize_speech_bytes(pause_text)
+                        pause_audio = await synthesize_speech(pause_text)
                         tts_cache[pause_text] = pause_audio
                     
                     profiler.mark("⏸️ Pause prompt generated")
@@ -172,7 +172,7 @@ async def english_only_conversation(websocket: WebSocket):
                     if no_speech_text in tts_cache:
                         no_speech_audio = tts_cache[no_speech_text]
                     else:
-                        no_speech_audio = await synthesize_speech_bytes(no_speech_text)
+                        no_speech_audio = await synthesize_speech(no_speech_text)
                         tts_cache[no_speech_text] = no_speech_audio
                     
                     profiler.mark("🔇 No speech detected response generated")
@@ -194,7 +194,7 @@ async def english_only_conversation(websocket: WebSocket):
                     if processing_text in tts_cache:
                         processing_audio = tts_cache[processing_text]
                     else:
-                        processing_audio = await synthesize_speech_bytes(processing_text)
+                        processing_audio = await synthesize_speech(processing_text)
                         tts_cache[processing_text] = processing_audio
                     
                     profiler.mark("🔄 Processing started response generated")
@@ -230,7 +230,7 @@ async def english_only_conversation(websocket: WebSocket):
             if processing_text in tts_cache:
                 processing_audio = tts_cache[processing_text]
             else:
-                processing_audio = await synthesize_speech_bytes(processing_text)
+                processing_audio = await synthesize_speech(processing_text)
                 tts_cache[processing_text] = processing_audio
             
             # Send processing started message immediately
@@ -302,7 +302,7 @@ async def english_only_conversation(websocket: WebSocket):
             if tts_text in tts_cache:
                 response_audio = tts_cache[tts_text]
             else:
-                response_audio = await synthesize_speech_bytes(tts_text)
+                response_audio = await synthesize_speech(tts_text)
                 tts_cache[tts_text] = response_audio
             
             profiler.mark("🔊 TTS response generated")
