@@ -162,6 +162,50 @@ async def english_only_conversation(websocket: WebSocket):
                     await safe_send_bytes(websocket, pause_audio)
                     continue
                 
+                # Handle no speech detected message
+                if message_type == "no_speech_detected":
+                    user_name = message.get("user_name", "there")
+                    no_speech_text = "No speech detected. Please try speaking again."
+                    
+                    # Use cached TTS if available
+                    if no_speech_text in tts_cache:
+                        no_speech_audio = tts_cache[no_speech_text]
+                    else:
+                        no_speech_audio = await synthesize_speech_bytes(no_speech_text)
+                        tts_cache[no_speech_text] = no_speech_audio
+                    
+                    profiler.mark("🔇 No speech detected response generated")
+                    
+                    await safe_send_json(websocket, {
+                        "response": no_speech_text,
+                        "step": "no_speech_detected",
+                        "user_name": user_name
+                    })
+                    await safe_send_bytes(websocket, no_speech_audio)
+                    continue
+                
+                # Handle processing started message
+                if message_type == "processing_started":
+                    user_name = message.get("user_name", "there")
+                    processing_text = "Great! I'm listening."
+                    
+                    # Use cached TTS if available
+                    if processing_text in tts_cache:
+                        processing_audio = tts_cache[processing_text]
+                    else:
+                        processing_audio = await synthesize_speech_bytes(processing_text)
+                        tts_cache[processing_text] = processing_audio
+                    
+                    profiler.mark("🔄 Processing started response generated")
+                    
+                    await safe_send_json(websocket, {
+                        "response": processing_text,
+                        "step": "processing_started",
+                        "user_name": user_name
+                    })
+                    await safe_send_bytes(websocket, processing_audio)
+                    continue
+                
                 # Handle regular audio input
                 audio_base64 = message.get("audio_base64")
                 user_name = message.get("user_name", "there")
