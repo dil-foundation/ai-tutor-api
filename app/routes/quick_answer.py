@@ -85,13 +85,19 @@ async def generate_question_audio(question_id: int):
         print(f"🔄 [QUICK_ANSWER] Generating TTS for question {question_id}")
         
         # Generate TTS audio for the question
-        audio_base64 = await synthesize_speech_exercises(question["question"])
+        audio_content = await synthesize_speech_exercises(question["question"])
         
-        if not audio_base64:
+        if not audio_content:
             print(f"❌ [QUICK_ANSWER] Failed to generate TTS for question {question_id}")
             raise HTTPException(status_code=500, detail="Failed to generate audio")
         
-        print(f"✅ [QUICK_ANSWER] TTS generated successfully for question {question_id}")
+        print(f"✅ [QUICK_ANSWER] Audio content generated, size: {len(audio_content)} bytes")
+        
+        # Convert to base64 for React Native compatibility
+        audio_base64 = base64.b64encode(audio_content).decode('utf-8')
+        print(f"✅ [QUICK_ANSWER] Audio converted to base64, length: {len(audio_base64)}")
+        
+        # Return base64 string directly
         return {"audio_base64": audio_base64}
         
     except HTTPException:
