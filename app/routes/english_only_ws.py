@@ -264,10 +264,9 @@ async def english_only_conversation(websocket: WebSocket):
             profiler.mark("📝 STT completed")
 
             if not transcribed_text.strip():
-                await safe_send_json(websocket, {
-                    "response": "No speech detected.",
-                    "step": "no_speech"
-                })
+                # Don't send no_speech after processing_started - let the processing audio finish
+                # The frontend will handle this gracefully
+                print("🔇 STT returned empty text, but processing audio is already playing - skipping no_speech response")
                 continue
 
             # Process English input with new feedback analysis
