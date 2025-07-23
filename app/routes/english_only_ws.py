@@ -89,6 +89,7 @@ async def pre_generate_common_tts():
         "I didn't catch that. Could you please repeat?",
         "Great! I'm listening.",
         "Perfect! Your English is clear.",
+        "Please wait... Your audio is processing...",
     ]
     
     for phrase in common_phrases:
@@ -223,6 +224,23 @@ async def english_only_conversation(websocket: WebSocket):
                     "step": "error"
                 })
                 continue
+
+            # 🎯 NEW: Send immediate processing feedback
+            processing_text = "Please wait... Your audio is processing..."
+            if processing_text in tts_cache:
+                processing_audio = tts_cache[processing_text]
+            else:
+                processing_audio = await synthesize_speech_bytes(processing_text)
+                tts_cache[processing_text] = processing_audio
+            
+            # Send processing started message immediately
+            await safe_send_json(websocket, {
+                "response": processing_text,
+                "step": "processing_started",
+                "user_name": user_name
+            })
+            await safe_send_bytes(websocket, processing_audio)
+            profiler.mark("🔄 Processing feedback sent")
 
             try:
                 # Move base64 decoding to thread pool for better performance
