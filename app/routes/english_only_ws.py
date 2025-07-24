@@ -82,24 +82,24 @@ async def async_analyze_english_input(user_text: str):
         user_text
     )
 
-async def pre_generate_common_tts():
-    """Pre-generate common TTS responses for better performance"""
-    common_phrases = [
-        "No speech detected. Please try speaking again.",
-        "I didn't catch that. Could you please repeat?",
-        "Great! I'm listening.",
-        "Perfect! Your English is clear.",
-        "Please wait... Your audio is processing...",
-    ]
+# async def pre_generate_common_tts():
+#     """Pre-generate common TTS responses for better performance"""
+#     common_phrases = [
+#         "No speech detected. Please try speaking again.",
+#         "I didn't catch that. Could you please repeat?",
+#         "Great! I'm listening.",
+#         "Perfect! Your English is clear.",
+#         "Please wait... Your audio is processing...",
+#     ]
     
-    for phrase in common_phrases:
-        if phrase not in tts_cache:
-            try:
-                audio = await synthesize_speech(phrase)
-                tts_cache[phrase] = audio
-                print(f"✅ Pre-generated TTS for: {phrase}")
-            except Exception as e:
-                print(f"❌ Failed to pre-generate TTS for '{phrase}': {e}")
+#     for phrase in common_phrases:
+#         if phrase not in tts_cache:
+#             try:
+#                 audio = await synthesize_speech(phrase)
+#                 tts_cache[phrase] = audio
+#                 print(f"✅ Pre-generated TTS for: {phrase}")
+#             except Exception as e:
+#                 print(f"❌ Failed to pre-generate TTS for '{phrase}': {e}")
 
 @router.websocket("/ws/english-only")
 async def english_only_conversation(websocket: WebSocket):
@@ -107,7 +107,7 @@ async def english_only_conversation(websocket: WebSocket):
     profiler = Profiler()
     
     # Pre-generate common TTS responses
-    await pre_generate_common_tts()
+    # await pre_generate_common_tts()
 
     try:
         while True:
@@ -163,6 +163,29 @@ async def english_only_conversation(websocket: WebSocket):
                     await safe_send_bytes(websocket, pause_audio)
                     continue
                 
+                # Handle user being silent after AI speaks
+                if message_type == "user_silent_after_ai":
+                    user_name = message.get("user_name", "there")
+                    # The user requested "Would you be there?". A more natural phrase might be "Are you still there?".
+                    # For now, implementing as requested.
+                    reminder_text = f"Would you be there, {user_name}?"
+                    
+                    if reminder_text in tts_cache:
+                        reminder_audio = tts_cache[reminder_text]
+                    else:
+                        reminder_audio = await synthesize_speech(reminder_text)
+                        tts_cache[reminder_text] = reminder_audio
+                    
+                    profiler.mark("⏰ User silent reminder generated")
+                    
+                    await safe_send_json(websocket, {
+                        "response": reminder_text,
+                        "step": "user_reminded",
+                        "user_name": user_name
+                    })
+                    await safe_send_bytes(websocket, reminder_audio)
+                    continue
+
                 # Handle no speech detected message
                 if message_type == "no_speech_detected":
                     user_name = message.get("user_name", "there")
@@ -268,7 +291,7 @@ async def english_only_conversation(websocket: WebSocket):
                 print("🔇 STT returned empty text after processing started - sending no speech detected response")
                 
                 # Send no speech detected response with "I didn't catch that" message
-                no_speech_text = "I didn't catch that. Could you please repeat?"
+                no_speech_text = f"I didn't catch that. Could you please repeat, {user_name}?"
                 
                 # Use cached TTS if available
                 if no_speech_text in tts_cache:
