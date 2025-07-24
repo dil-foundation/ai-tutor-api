@@ -237,6 +237,19 @@ async def get_comprehensive_progress(request: ComprehensiveProgressRequest):
         
         # Get all progress data
         progress_result = await progress_tracker.get_user_progress(request.user_id)
+        
+        # If no summary exists, the user is likely new. Initialize them.
+        if not progress_result.get("data") or not progress_result.get("data").get("summary"):
+            print(f"⚠️ [API] No progress found for user {request.user_id}. Initializing now.")
+            init_result = await progress_tracker.initialize_user_progress(request.user_id)
+            if not init_result.get("success"):
+                # Handle case where initialization fails
+                raise HTTPException(status_code=500, detail="Failed to initialize user progress.")
+            
+            # Re-fetch progress data after initialization
+            print(f"🔄 [API] Re-fetching progress data after initialization.")
+            progress_result = await progress_tracker.get_user_progress(request.user_id)
+
         print(f"📊 [API] Progress result: {progress_result}")
         
         if not progress_result["success"]:

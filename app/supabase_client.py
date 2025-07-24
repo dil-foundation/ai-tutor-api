@@ -47,8 +47,8 @@ class SupabaseProgressTracker:
             thirty_days_ago = current_date - timedelta(days=30)
             
             daily_analytics = self.client.table('ai_tutor_daily_learning_analytics').select(
-                'date, total_time_minutes, exercises_completed'
-            ).eq('user_id', user_id).gte('date', thirty_days_ago.isoformat()).order('date', desc=False).execute()
+                'analytics_date, total_time_minutes, exercises_completed'
+            ).eq('user_id', user_id).gte('analytics_date', thirty_days_ago.isoformat()).order('analytics_date', desc=False).execute()
             
             print(f"📊 [STREAK] Found {len(daily_analytics.data)} daily records")
             
@@ -60,7 +60,7 @@ class SupabaseProgressTracker:
             active_dates = set()
             for record in daily_analytics.data:
                 if record.get('total_time_minutes', 0) > 0 or record.get('exercises_completed', 0) > 0:
-                    active_dates.add(record['date'])
+                    active_dates.add(record['analytics_date'])
             
             print(f"📊 [STREAK] Active dates: {sorted(active_dates)}")
             
@@ -115,13 +115,13 @@ class SupabaseProgressTracker:
         Update daily learning analytics for the user
         """
         try:
-            current_date = date.today().isoformat()
+            current_date_iso = date.today().isoformat()
             time_spent_minutes = int(time_spent_seconds / 60)
             
-            print(f"🔄 [DAILY] Updating daily analytics for user: {user_id}, date: {current_date}")
+            print(f"🔄 [DAILY] Updating daily analytics for user: {user_id}, date: {current_date_iso}")
             
             # Get existing daily analytics for today
-            existing = self.client.table('ai_tutor_daily_learning_analytics').select('*').eq('user_id', user_id).eq('date', current_date).execute()
+            existing = self.client.table('ai_tutor_daily_learning_analytics').select('*').eq('user_id', user_id).eq('analytics_date', current_date_iso).execute()
             
             if existing.data:
                 # Update existing record
@@ -135,31 +135,28 @@ class SupabaseProgressTracker:
                 new_count = current_count + 1
                 new_avg = ((current_avg * current_count) + score) / new_count if new_count > 0 else score
                 
-                # Calculate Urdu usage percentage
+                # Calculate Urdu usage percentage - REMOVED as column does not exist
                 current_urdu_count = current_record.get('urdu_usage_count', 0) + (1 if urdu_used else 0)
-                urdu_percentage = (current_urdu_count / new_count) * 100 if new_count > 0 else 0
                 
                 update_data = {
                     'total_time_minutes': current_time,
                     'exercises_completed': current_exercises,
                     'average_score': round(new_avg, 2),
-                    'urdu_usage_percentage': round(urdu_percentage, 2),
                     'urdu_usage_count': current_urdu_count,
                     'updated_at': datetime.now().isoformat()
                 }
                 
-                self.client.table('ai_tutor_daily_learning_analytics').update(update_data).eq('user_id', user_id).eq('date', current_date).execute()
+                self.client.table('ai_tutor_daily_learning_analytics').update(update_data).eq('user_id', user_id).eq('analytics_date', current_date_iso).execute()
                 print(f"✅ [DAILY] Updated existing daily analytics")
                 
             else:
                 # Create new record
                 new_record = {
                     'user_id': user_id,
-                    'date': current_date,
+                    'analytics_date': current_date_iso,
                     'total_time_minutes': time_spent_minutes,
                     'exercises_completed': 1 if completed else 0,
                     'average_score': score,
-                    'urdu_usage_percentage': 100 if urdu_used else 0,
                     'urdu_usage_count': 1 if urdu_used else 0,
                     'created_at': datetime.now().isoformat(),
                     'updated_at': datetime.now().isoformat()
@@ -183,12 +180,12 @@ class SupabaseProgressTracker:
             # Get daily analytics for the last 30 days
             thirty_days_ago = date.today() - timedelta(days=30)
             daily_analytics = self.client.table('ai_tutor_daily_learning_analytics').select(
-                'date, total_time_minutes, exercises_completed'
-            ).eq('user_id', user_id).gte('date', thirty_days_ago.isoformat()).execute()
+                'analytics_date, total_time_minutes, exercises_completed'
+            ).eq('user_id', user_id).gte('analytics_date', thirty_days_ago.isoformat()).execute()
             
             if not daily_analytics.data:
                 return {
-                    'average_session_duration': 0.0,
+                    'average_session_duration_minutes': 0.0,
                     'weekly_learning_hours': 0.0,
                     'monthly_learning_hours': 0.0
                 }
@@ -201,7 +198,7 @@ class SupabaseProgressTracker:
             
             # Calculate weekly hours (last 7 days)
             seven_days_ago = date.today() - timedelta(days=7)
-            weekly_data = [r for r in daily_analytics.data if r['date'] >= seven_days_ago.isoformat()]
+            weekly_data = [r for r in daily_analytics.data if r['analytics_date'] >= seven_days_ago.isoformat()]
             weekly_hours = sum(r.get('total_time_minutes', 0) for r in weekly_data) / 60.0
             
             # Calculate monthly hours (last 30 days)
@@ -213,7 +210,7 @@ class SupabaseProgressTracker:
             print(f"   - Monthly hours: {monthly_hours:.2f}")
             
             return {
-                'average_session_duration': round(average_session_duration, 2),
+                'average_session_duration_minutes': round(average_session_duration, 2),
                 'weekly_learning_hours': round(weekly_hours, 2),
                 'monthly_learning_hours': round(monthly_hours, 2)
             }
@@ -222,7 +219,7 @@ class SupabaseProgressTracker:
             print(f"❌ [SESSION] Error calculating session metrics: {str(e)}")
             logger.error(f"Error calculating session metrics for user {user_id}: {str(e)}")
             return {
-                'average_session_duration': 0.0,
+                'average_session_duration_minutes': 0.0,
                 'weekly_learning_hours': 0.0,
                 'monthly_learning_hours': 0.0
             }
@@ -528,8 +525,7 @@ class SupabaseProgressTracker:
                 print(f"📝 [EXERCISE] Updated current_topic_id to {topic_id}")
             
             # Check if exercise is completed (3 consecutive scores >= 80)
-            if completed and not exercise_data.get('completed'):
-                update_data["completed"] = True
+            if completed and not exercise_data.get('completed_at'):
                 update_data["completed_at"] = current_timestamp
                 print(f"🎉 [EXERCISE] Exercise marked as completed!")
             
@@ -761,18 +757,20 @@ class SupabaseProgressTracker:
                     
                     if not existing_unlock.data or not existing_unlock.data[0]['is_unlocked']:
                         print(f"🔓 [UNLOCK] Unlocking exercise {next_exercise_id} in stage {stage_id}")
-                        # Unlock next exercise
+                        # Since initialization creates these rows, we should always UPDATE.
                         unlock_data = {
-                            "user_id": user_id,
-                            "stage_id": stage_id,
-                            "exercise_id": next_exercise_id,
                             "is_unlocked": True,
                             "unlock_criteria_met": True,
                             "unlocked_at": current_timestamp,
                             "unlocked_by_criteria": f"Completed exercise {exercise_id} in stage {stage_id}"
                         }
                         
-                        unlock_result = self.client.table('ai_tutor_learning_unlocks').upsert(unlock_data).execute()
+                        unlock_result = self.client.table('ai_tutor_learning_unlocks').update(unlock_data).match({
+                            'user_id': user_id, 
+                            'stage_id': stage_id, 
+                            'exercise_id': next_exercise_id
+                        }).execute()
+
                         print(f"✅ [UNLOCK] Exercise {next_exercise_id} unlocked successfully")
                         unlocked_content.append(f"Stage {stage_id}, Exercise {next_exercise_id}")
                     else:
@@ -781,26 +779,36 @@ class SupabaseProgressTracker:
                 # Check if next stage should be unlocked (if all exercises in current stage are completed)
                 if exercise_id == 3:  # Last exercise in stage
                     print(f"🔍 [UNLOCK] Checking if stage {stage_id + 1} should be unlocked...")
-                    all_exercises_completed = self.client.table('ai_tutor_user_exercise_progress').select('*').eq('user_id', user_id).eq('stage_id', stage_id).not_.is_('completed_at', 'null').execute()
+                    all_exercises_completed = self.client.table('ai_tutor_user_exercise_progress').select('exercise_id').eq('user_id', user_id).eq('stage_id', stage_id).not_.is_('completed_at', 'null').execute()
                     
                     if len(all_exercises_completed.data) == 3:  # All exercises completed
                         next_stage_id = stage_id + 1
                         
                         if next_stage_id <= 6:  # Valid stage
                             print(f"🔓 [UNLOCK] Unlocking stage {next_stage_id}")
-                            # Unlock next stage
-                            stage_unlock_data = {
-                                "user_id": user_id,
-                                "stage_id": next_stage_id,
-                                "exercise_id": None,
+
+                            # Explicitly check if the stage unlock record exists
+                            existing_stage_unlock = self.client.table('ai_tutor_learning_unlocks').select('id').is_('exercise_id', 'null').eq('user_id', user_id).eq('stage_id', next_stage_id).execute()
+
+                            stage_unlock_payload = {
                                 "is_unlocked": True,
                                 "unlock_criteria_met": True,
                                 "unlocked_at": current_timestamp,
                                 "unlocked_by_criteria": f"Completed all exercises in stage {stage_id}"
                             }
+
+                            if existing_stage_unlock.data:
+                                # Row exists, so UPDATE it
+                                print(f"🔓 [UNLOCK] Updating existing record to unlock stage {next_stage_id}")
+                                self.client.table('ai_tutor_learning_unlocks').update(stage_unlock_payload).eq('user_id', user_id).eq('stage_id', next_stage_id).is_('exercise_id', 'null').execute()
+                            else:
+                                # Row does not exist, so INSERT it
+                                print(f"🔓 [UNLOCK] Inserting new record to unlock stage {next_stage_id}")
+                                stage_insert_payload = stage_unlock_payload.copy()
+                                stage_insert_payload['user_id'] = user_id
+                                stage_insert_payload['stage_id'] = next_stage_id
+                                self.client.table('ai_tutor_learning_unlocks').insert(stage_insert_payload).execute()
                             
-                            stage_unlock_result = self.client.table('ai_tutor_learning_unlocks').upsert(stage_unlock_data).execute()
-                            print(f"✅ [UNLOCK] Stage {next_stage_id} unlocked successfully")
                             unlocked_content.append(f"Stage {next_stage_id}")
                         else:
                             print(f"ℹ️ [UNLOCK] Stage {next_stage_id} is beyond valid range (max 6)")

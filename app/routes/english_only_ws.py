@@ -20,7 +20,7 @@ Features:
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from app.services.translation import translate_urdu_to_english, translate_to_urdu
-from app.services.tts import synthesize_speech_bytes
+from app.services.tts import synthesize_speech_bytes,synthesize_speech
 from app.services.feedback import analyze_english_input_eng_only
 from app.services import stt
 from app.utils.profiler import Profiler
@@ -82,24 +82,24 @@ async def async_analyze_english_input(user_text: str):
         user_text
     )
 
-async def pre_generate_common_tts():
-    """Pre-generate common TTS responses for better performance"""
-    common_phrases = [
-        "No speech detected. Please try speaking again.",
-        "I didn't catch that. Could you please repeat?",
-        "Great! I'm listening.",
-        "Perfect! Your English is clear.",
-        "Please wait... Your audio is processing...",
-    ]
+# async def pre_generate_common_tts():
+#     """Pre-generate common TTS responses for better performance"""
+#     common_phrases = [
+#         "No speech detected. Please try speaking again.",
+#         "I didn't catch that. Could you please repeat?",
+#         "Great! I'm listening.",
+#         "Perfect! Your English is clear.",
+#         "Please wait... Your audio is processing...",
+#     ]
     
-    for phrase in common_phrases:
-        if phrase not in tts_cache:
-            try:
-                audio = await synthesize_speech_bytes(phrase)
-                tts_cache[phrase] = audio
-                print(f"✅ Pre-generated TTS for: {phrase}")
-            except Exception as e:
-                print(f"❌ Failed to pre-generate TTS for '{phrase}': {e}")
+#     for phrase in common_phrases:
+#         if phrase not in tts_cache:
+#             try:
+#                 audio = await synthesize_speech(phrase)
+#                 tts_cache[phrase] = audio
+#                 print(f"✅ Pre-generated TTS for: {phrase}")
+#             except Exception as e:
+#                 print(f"❌ Failed to pre-generate TTS for '{phrase}': {e}")
 
 @router.websocket("/ws/english-only")
 async def english_only_conversation(websocket: WebSocket):
@@ -107,7 +107,7 @@ async def english_only_conversation(websocket: WebSocket):
     profiler = Profiler()
     
     # Pre-generate common TTS responses
-    await pre_generate_common_tts()
+    # await pre_generate_common_tts()
 
     try:
         while True:
@@ -128,7 +128,7 @@ async def english_only_conversation(websocket: WebSocket):
                     if greeting_text in tts_cache:
                         greeting_audio = tts_cache[greeting_text]
                     else:
-                        greeting_audio = await synthesize_speech_bytes(greeting_text)
+                        greeting_audio = await synthesize_speech(greeting_text)
                         tts_cache[greeting_text] = greeting_audio
                     
                     profiler.mark("👋 Greeting generated")
@@ -150,7 +150,7 @@ async def english_only_conversation(websocket: WebSocket):
                     if pause_text in tts_cache:
                         pause_audio = tts_cache[pause_text]
                     else:
-                        pause_audio = await synthesize_speech_bytes(pause_text)
+                        pause_audio = await synthesize_speech(pause_text)
                         tts_cache[pause_text] = pause_audio
                     
                     profiler.mark("⏸️ Pause prompt generated")
@@ -163,6 +163,29 @@ async def english_only_conversation(websocket: WebSocket):
                     await safe_send_bytes(websocket, pause_audio)
                     continue
                 
+                # Handle user being silent after AI speaks
+                if message_type == "user_silent_after_ai":
+                    user_name = message.get("user_name", "there")
+                    # The user requested "Would you be there?". A more natural phrase might be "Are you still there?".
+                    # For now, implementing as requested.
+                    reminder_text = f"Would you be there, {user_name}?"
+                    
+                    if reminder_text in tts_cache:
+                        reminder_audio = tts_cache[reminder_text]
+                    else:
+                        reminder_audio = await synthesize_speech(reminder_text)
+                        tts_cache[reminder_text] = reminder_audio
+                    
+                    profiler.mark("⏰ User silent reminder generated")
+                    
+                    await safe_send_json(websocket, {
+                        "response": reminder_text,
+                        "step": "user_reminded",
+                        "user_name": user_name
+                    })
+                    await safe_send_bytes(websocket, reminder_audio)
+                    continue
+
                 # Handle no speech detected message
                 if message_type == "no_speech_detected":
                     user_name = message.get("user_name", "there")
@@ -172,7 +195,7 @@ async def english_only_conversation(websocket: WebSocket):
                     if no_speech_text in tts_cache:
                         no_speech_audio = tts_cache[no_speech_text]
                     else:
-                        no_speech_audio = await synthesize_speech_bytes(no_speech_text)
+                        no_speech_audio = await synthesize_speech(no_speech_text)
                         tts_cache[no_speech_text] = no_speech_audio
                     
                     profiler.mark("🔇 No speech detected response generated")
@@ -194,7 +217,7 @@ async def english_only_conversation(websocket: WebSocket):
                     if processing_text in tts_cache:
                         processing_audio = tts_cache[processing_text]
                     else:
-                        processing_audio = await synthesize_speech_bytes(processing_text)
+                        processing_audio = await synthesize_speech(processing_text)
                         tts_cache[processing_text] = processing_audio
                     
                     profiler.mark("🔄 Processing started response generated")
@@ -230,7 +253,7 @@ async def english_only_conversation(websocket: WebSocket):
             if processing_text in tts_cache:
                 processing_audio = tts_cache[processing_text]
             else:
-                processing_audio = await synthesize_speech_bytes(processing_text)
+                processing_audio = await synthesize_speech(processing_text)
                 tts_cache[processing_text] = processing_audio
             
             # Send processing started message immediately
@@ -264,10 +287,29 @@ async def english_only_conversation(websocket: WebSocket):
             profiler.mark("📝 STT completed")
 
             if not transcribed_text.strip():
+                # STT returned empty text after processing started - send no speech detected response
+                print("🔇 STT returned empty text after processing started - sending no speech detected response")
+                
+                # Send no speech detected response with "I didn't catch that" message
+                no_speech_text = f"I didn't catch that. Could you please repeat, {user_name}?"
+                
+                # Use cached TTS if available
+                if no_speech_text in tts_cache:
+                    no_speech_audio = tts_cache[no_speech_text]
+                else:
+                    no_speech_audio = await synthesize_speech_bytes(no_speech_text)
+                    tts_cache[no_speech_text] = no_speech_audio
+                
+                profiler.mark("🔇 No speech detected response generated")
+                
                 await safe_send_json(websocket, {
-                    "response": "No speech detected.",
-                    "step": "no_speech"
+                    "response": no_speech_text,
+                    "step": "no_speech_detected_after_processing",
+                    "user_name": user_name
                 })
+
+                print("no speech detected has sended")
+                await safe_send_bytes(websocket, no_speech_audio)
                 continue
 
             # Process English input with new feedback analysis
@@ -303,7 +345,7 @@ async def english_only_conversation(websocket: WebSocket):
             if tts_text in tts_cache:
                 response_audio = tts_cache[tts_text]
             else:
-                response_audio = await synthesize_speech_bytes(tts_text)
+                response_audio = await synthesize_speech(tts_text)
                 tts_cache[tts_text] = response_audio
             
             profiler.mark("🔊 TTS response generated")
