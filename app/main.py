@@ -81,6 +81,14 @@ async def startup_event():
     print("   - Real-time Conversation")
     print("   - Translation Services")
     print("   - English-Only AI Tutor")
+    
+    # Initialize TTS cache on startup
+    try:
+        await conversation_ws.initialize_tts_cache()
+        print("✅ [STARTUP] TTS cache initialized successfully")
+    except Exception as e:
+        print(f"⚠️ [STARTUP] TTS cache initialization failed: {e}")
+    
     print("✅ [STARTUP] Application started successfully")
 
 @app.on_event("shutdown")
@@ -116,6 +124,7 @@ app.include_router(gpt_quiz_parser.router, prefix="/api/quiz", tags=["Quiz & Ass
 app.include_router(conversation_ws.router, prefix="/api", tags=["WebSocket - Conversation"])
 app.include_router(conversation_ws_2.router, tags=["WebSocket - Conversation 2"])
 app.include_router(english_only_ws.router, prefix="/api", tags=["WebSocket - English-Only AI Tutor"])
+
 # Progress tracking routes (NEW - Comprehensive Progress System)
 app.include_router(progress_tracking.router, prefix="/api/progress", tags=["Progress Tracking"])
 

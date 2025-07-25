@@ -17,9 +17,10 @@ router = APIRouter()
 # Global thread pool for CPU-intensive tasks
 thread_pool = ThreadPoolExecutor(max_workers=4)
 
-# Cache for frequently used translations and TTS
+# Global cache for frequently used translations and TTS
 translation_cache = {}
 tts_cache = {}
+_tts_cache_initialized = False
 
 # Connection pool for HTTP clients
 http_client = None
@@ -29,6 +30,13 @@ def get_http_client():
     if http_client is None:
         http_client = httpx.AsyncClient(timeout=30.0)
     return http_client
+
+# Initialize TTS cache on module import
+async def initialize_tts_cache():
+    """Initialize TTS cache on application startup"""
+    global _tts_cache_initialized
+    if not _tts_cache_initialized:
+        await pre_generate_common_tts()
 
 async def safe_send_json(websocket: WebSocket, data: dict):
     try:
@@ -84,7 +92,14 @@ async def async_translate_to_urdu(text: str):
 
 # Pre-generate common TTS responses
 async def pre_generate_common_tts():
-    """Pre-generate common TTS responses for faster response"""
+    """Pre-generate common TTS responses for faster response - only once globally"""
+    global _tts_cache_initialized
+    
+    if _tts_cache_initialized:
+        print("✅ [TTS] Common TTS cache already initialized, skipping...")
+        return
+    
+    print("🔄 [TTS] Initializing common TTS cache...")
     common_texts = [
         "Great job speaking English! However, please say the Urdu sentence to proceed.",
         "No speech detected.",
@@ -94,16 +109,34 @@ async def pre_generate_common_tts():
         "No valid audio found in user response."
     ]
     
+    # Check which texts are already cached
+    uncached_texts = [text for text in common_texts if text not in tts_cache]
+    
+    if not uncached_texts:
+        print("✅ [TTS] All common texts already cached")
+        _tts_cache_initialized = True
+        return
+    
+    print(f"🔄 [TTS] Generating TTS for {len(uncached_texts)} uncached texts...")
+    
+    # Generate TTS for uncached texts only
     tts_tasks = []
-    for text in common_texts:
+    for text in uncached_texts:
         task = synthesize_speech_bytes(text)
         tts_tasks.append(task)
     
     results = await asyncio.gather(*tts_tasks, return_exceptions=True)
     
-    for text, result in zip(common_texts, results):
+    success_count = 0
+    for text, result in zip(uncached_texts, results):
         if isinstance(result, bytes):
             tts_cache[text] = result
+            success_count += 1
+        else:
+            print(f"❌ [TTS] Failed to generate TTS for: {text[:50]}...")
+    
+    print(f"✅ [TTS] Successfully cached {success_count}/{len(uncached_texts)} common texts")
+    _tts_cache_initialized = True
 
 # Optimized conversation handler
 @router.websocket("/ws/learn")
@@ -111,8 +144,9 @@ async def learn_conversation(websocket: WebSocket):
     await websocket.accept()
     profiler = Profiler()
     
-    # Pre-generate common TTS responses
-    await pre_generate_common_tts()
+    # Ensure TTS cache is initialized (only once globally)
+    if not _tts_cache_initialized:
+        await pre_generate_common_tts()
 
     try:
         while True:
