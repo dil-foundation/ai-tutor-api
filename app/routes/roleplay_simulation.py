@@ -14,7 +14,7 @@ from app.services.roleplay_agent import roleplay_agent
 from app.services.feedback import evaluate_response_ex3_stage2
 from app.services.stt import transcribe_audio_bytes_eng_only
 from app.supabase_client import progress_tracker
-from app.redis_client import redis
+from app.redis_client import redis_client
 import json
 import base64
 from typing import List
@@ -187,32 +187,10 @@ async def continue_roleplay(reply: RoleplayUserReply):
         if error:
             raise HTTPException(status_code=400, detail=error)
         
-        # If conversation is done, mark as completed
-        if status == "end" and reply.user_id and reply.user_id.strip():
-            try:
-                session_data_json = redis.get(reply.session_id)
-                if session_data_json:
-                    session_data = json.loads(session_data_json)
-                    scenario_id = session_data.get("scenario_id")
-                    
-                    if scenario_id:
-                        print(f"✅ [ROLEPLAY] Conversation ended. Marking scenario {scenario_id} as completed for user {reply.user_id}")
-                        
-                        # We mark as completed here so the UI updates immediately.
-                        # The full evaluation will update the score and other metrics later.
-                        await progress_tracker.record_topic_attempt(
-                            user_id=reply.user_id,
-                            stage_id=2,
-                            exercise_id=3,
-                            topic_id=scenario_id,
-                            score=0,  # Placeholder, will be updated on evaluation
-                            urdu_used=False, # Placeholder
-                            time_spent_seconds=1, # Placeholder
-                            completed=True
-                        )
-            except Exception as e:
-                # Log error but don't fail the request
-                print(f"⚠️ [ROLEPLAY] Could not mark scenario as complete on conversation end: {e}")
+        # If conversation is done, don't mark as completed yet
+        # Wait for user to explicitly request evaluation
+        if status == "end":
+            print(f"✅ [ROLEPLAY] Conversation ended. Waiting for user to request evaluation.")
 
         # Generate audio for AI response
         audio_base64 = None
@@ -247,7 +225,7 @@ async def get_roleplay_history(session_id: str):
     
     try:
         # Get session data from Redis
-        session_data_json = redis.get(session_id)
+        session_data_json = redis_client.get(session_id)
         if not session_data_json:
             raise HTTPException(status_code=404, detail="Session not found")
         
@@ -291,7 +269,7 @@ async def evaluate_roleplay_session(request: RoleplayEvaluationRequest, db: Sess
     
     try:
         # Get session data from Redis
-        session_data_json = redis.get(request.session_id)
+        session_data_json = redis_client.get(request.session_id)
         if not session_data_json:
             raise HTTPException(status_code=404, detail="Session not found")
         
@@ -327,7 +305,7 @@ async def evaluate_roleplay_session(request: RoleplayEvaluationRequest, db: Sess
                 # Validate time spent
                 time_spent = max(1, min(request.time_spent_seconds, 1800))  # Between 1-30 minutes
                 
-                # Record the topic attempt
+                # Record the topic attempt with actual evaluation results
                 progress_result = await progress_tracker.record_topic_attempt(
                     user_id=request.user_id,
                     stage_id=2,  # Stage 2
@@ -336,7 +314,7 @@ async def evaluate_roleplay_session(request: RoleplayEvaluationRequest, db: Sess
                     score=float(evaluation.get("overall_score", 0)),
                     urdu_used=request.urdu_used,
                     time_spent_seconds=time_spent,
-                    completed=evaluation.get("completed", False)
+                    completed=True  # Mark as completed when user requests evaluation
                 )
                 
                 if progress_result["success"]:
