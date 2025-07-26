@@ -3,6 +3,7 @@ import json
 import base64
 import websockets
 import os
+import struct
 from typing import Dict, Any
 from fastapi import WebSocket, WebSocketDisconnect, APIRouter
 import logging
@@ -10,6 +11,39 @@ import logging
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+def extract_pcm16_from_audio(audio_data: bytes) -> bytes:
+    """Extract raw PCM16 data from audio file (WAV or raw PCM)"""
+    try:
+        # Check if it's a valid WAV file
+        if len(audio_data) >= 44 and audio_data[:4] == b'RIFF' and audio_data[8:12] == b'WAVE':
+            logger.info("🎤 [AUDIO] Detected WAV file, extracting PCM data")
+            # Parse WAV header
+            # Skip RIFF header (12 bytes)
+            # Look for 'data' chunk
+            data_start = 12
+            while data_start < len(audio_data) - 8:
+                chunk_id = audio_data[data_start:data_start + 4]
+                chunk_size = struct.unpack('<I', audio_data[data_start + 4:data_start + 8])[0]
+                
+                if chunk_id == b'data':
+                    # Found data chunk, extract PCM data
+                    pcm_data = audio_data[data_start + 8:data_start + 8 + chunk_size]
+                    logger.info(f"🎤 [AUDIO] Extracted {len(pcm_data)} bytes of PCM16 data from WAV")
+                    return pcm_data
+                
+                data_start += 8 + chunk_size
+            
+            logger.warning("🎤 [AUDIO] No data chunk found in WAV file")
+            return audio_data
+        else:
+            # Assume it's already raw PCM data
+            logger.info(f"🎤 [AUDIO] Detected raw PCM data, size: {len(audio_data)} bytes")
+            return audio_data
+        
+    except Exception as e:
+        logger.error(f"🎤 [AUDIO] Error processing audio data: {e}")
+        return audio_data
 
 class RealtimeConversationManager:
     def __init__(self):
@@ -204,11 +238,15 @@ class RealtimeConversationManager:
         try:
             logger.info(f"🎤 [AUDIO] Received audio data from client {client_id}, size: {len(audio_data)} bytes")
             
+            # Extract raw PCM16 data from WAV file
+            pcm_data = extract_pcm16_from_audio(audio_data)
+            logger.info(f"🎤 [AUDIO] PCM16 data size: {len(pcm_data)} bytes")
+            
             # Accumulate audio data in buffer (don't send immediately)
             if client_id not in self.audio_buffers:
                 self.audio_buffers[client_id] = b''
             
-            self.audio_buffers[client_id] += audio_data
+            self.audio_buffers[client_id] += pcm_data
             logger.info(f"🎤 [AUDIO] Accumulated audio buffer size: {len(self.audio_buffers[client_id])} bytes")
             
             # Don't send to OpenAI yet - wait for input_audio_buffer.commit
