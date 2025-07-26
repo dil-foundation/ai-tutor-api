@@ -18,9 +18,6 @@ router = APIRouter()
 thread_pool = ThreadPoolExecutor(max_workers=4)
 
 # Global cache for frequently used translations and TTS
-translation_cache = {}
-tts_cache = {}
-_tts_cache_initialized = False
 
 # Connection pool for HTTP clients
 http_client = None
@@ -30,13 +27,6 @@ def get_http_client():
     if http_client is None:
         http_client = httpx.AsyncClient(timeout=30.0)
     return http_client
-
-# Initialize TTS cache on module import
-async def initialize_tts_cache():
-    """Initialize TTS cache on application startup"""
-    global _tts_cache_initialized
-    if not _tts_cache_initialized:
-        await pre_generate_common_tts()
 
 async def safe_send_json(websocket: WebSocket, data: dict):
     try:
@@ -90,64 +80,12 @@ async def async_translate_to_urdu(text: str):
         text
     )
 
-# Pre-generate common TTS responses
-async def pre_generate_common_tts():
-    """Pre-generate common TTS responses for faster response - only once globally"""
-    global _tts_cache_initialized
-    
-    if _tts_cache_initialized:
-        print("✅ [TTS] Common TTS cache already initialized, skipping...")
-        return
-    
-    print("🔄 [TTS] Initializing common TTS cache...")
-    common_texts = [
-        "Great job speaking English! However, please say the Urdu sentence to proceed.",
-        "No speech detected.",
-        "Invalid JSON format.",
-        "No audio_base64 found.",
-        "Failed to decode audio.",
-        "No valid audio found in user response."
-    ]
-    
-    # Check which texts are already cached
-    uncached_texts = [text for text in common_texts if text not in tts_cache]
-    
-    if not uncached_texts:
-        print("✅ [TTS] All common texts already cached")
-        _tts_cache_initialized = True
-        return
-    
-    print(f"🔄 [TTS] Generating TTS for {len(uncached_texts)} uncached texts...")
-    
-    # Generate TTS for uncached texts only
-    tts_tasks = []
-    for text in uncached_texts:
-        task = synthesize_speech_bytes(text)
-        tts_tasks.append(task)
-    
-    results = await asyncio.gather(*tts_tasks, return_exceptions=True)
-    
-    success_count = 0
-    for text, result in zip(uncached_texts, results):
-        if isinstance(result, bytes):
-            tts_cache[text] = result
-            success_count += 1
-        else:
-            print(f"❌ [TTS] Failed to generate TTS for: {text[:50]}...")
-    
-    print(f"✅ [TTS] Successfully cached {success_count}/{len(uncached_texts)} common texts")
-    _tts_cache_initialized = True
-
 # Optimized conversation handler
 @router.websocket("/ws/learn")
 async def learn_conversation(websocket: WebSocket):
     await websocket.accept()
     profiler = Profiler()
     
-    # Ensure TTS cache is initialized (only once globally)
-    if not _tts_cache_initialized:
-        await pre_generate_common_tts()
-
     try:
         while True:
             # Step 1: Receive base64 audio as JSON
@@ -206,15 +144,8 @@ async def learn_conversation(websocket: WebSocket):
 
             if is_english:
                 english_feedback = "Great job speaking English! However, please say the Urdu sentence to proceed." if language_mode == "english" else "زبردست! لیکن براہ کرم اردو بولیں تاکہ ہم آگے بڑھ سکیں۔"
-                # Use cached TTS if available
-                if english_feedback in tts_cache:
-                    feedback_audio = tts_cache[english_feedback]
-                else:
-                    feedback_audio = await synthesize_speech_bytes(english_feedback)
-                    tts_cache[english_feedback] = feedback_audio
-                
+                feedback_audio = await synthesize_speech_bytes(english_feedback)
                 profiler.mark("⚠️ English input handled")
-
                 await safe_send_json(websocket, {
                     "response": english_feedback,
                     "step": "english_input_edge_case",
@@ -293,16 +224,19 @@ async def learn_conversation(websocket: WebSocket):
                 full_sentence_text = f"Now repeat the full sentence: {translated_en}."
             else:
                 full_sentence_text = f"اب دوہرائیں:{translated_en}."
-            full_sentence_audio_task = synthesize_speech_bytes(full_sentence_text)
+            full_sentence_audio = await synthesize_speech_bytes(full_sentence_text)
             await safe_send_json(websocket, {
                 "response": full_sentence_text,
                 "step": "full_sentence_audio",
                 "english_sentence": translated_en
             })
             
-            full_sentence_audio = await full_sentence_audio_task
-            profiler.mark("🔊 TTS full sentence completed")
-            await safe_send_bytes(websocket, full_sentence_audio)
+            try:
+                print("Type of audio to send:", type(full_sentence_audio))  # Should be <class 'bytes'>
+                await safe_send_bytes(websocket, full_sentence_audio)
+                print("Full sentence audio sent successfully")
+            except Exception as e:
+                print("Error sending full sentence audio:", e)
 
             # Optimized feedback loop
             while True:
@@ -369,11 +303,7 @@ async def learn_conversation(websocket: WebSocket):
                 #     else:
                 #         feedback_text = "Let's try again. Speak the sentence clearly."
                 if feedback["is_correct"]:
-                    if feedback_text in tts_cache:
-                        feedback_audio = tts_cache[feedback_text]
-                    else:
-                        feedback_audio = await synthesize_speech_bytes(feedback_text)
-                        tts_cache[feedback_text] = feedback_audio
+                    feedback_audio = await synthesize_speech_bytes(feedback_text)
                     profiler.mark("🏆 Feedback (correct) TTS completed")
                     await safe_send_json(websocket, {
                         "response": feedback_text,
@@ -383,13 +313,7 @@ async def learn_conversation(websocket: WebSocket):
                     await safe_send_bytes(websocket, feedback_audio)
                     break
                 # if not correct:
-                if feedback_text in tts_cache:
-                    feedback_audio = tts_cache[feedback_text]
-                else:
-                    feedback_audio = await synthesize_speech_bytes(feedback_text)
-                    tts_cache[feedback_text] = feedback_audio
-                # feedback_audio = await synthesize_speech_bytes(feedback_text)
-                # tts_cache[feedback_text] = feedback_audio
+                feedback_audio = await synthesize_speech_bytes(feedback_text)
                 profiler.mark("🔁 Feedback (retry) TTS completed")
                 await safe_send_json(websocket, {
                     "response": feedback_text,
@@ -427,11 +351,7 @@ async def learn_conversation(websocket: WebSocket):
                     full_sentence_text = f"Now repeat the full sentence: {translated_en}."
                 else:
                     full_sentence_text = f"اب دوہرائیں:{translated_en}."
-                if full_sentence_text in tts_cache:
-                    full_sentence_audio = tts_cache[full_sentence_text]
-                else:
-                    full_sentence_audio = await synthesize_speech_bytes(full_sentence_text)
-                    tts_cache[full_sentence_text] = full_sentence_audio
+                full_sentence_audio = await synthesize_speech_bytes(full_sentence_text)
                 await safe_send_json(websocket, {
                     "response": full_sentence_text,
                     "step": "full_sentence_audio",
