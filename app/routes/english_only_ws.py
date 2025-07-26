@@ -113,6 +113,9 @@ async def english_only_conversation(websocket: WebSocket):
         while True:
             # Step 1: Receive base64 audio as JSON
             data = await websocket.receive_text()
+
+            print("data: ",data)
+            
             profiler.mark("📥 Received audio JSON")
 
             try:

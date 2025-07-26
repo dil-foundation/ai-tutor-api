@@ -92,14 +92,36 @@ class RealtimeConversationManager:
             self.openai_connections[client_id] = openai_ws
             logger.info(f"Connected to OpenAI Realtime API for client {client_id}")
             
-            # Start listening for OpenAI messages
-            asyncio.create_task(self._handle_openai_messages(client_id))
-            
             # Send initial session configuration
             await self._send_session_update(client_id)
             
+            # Start listening for OpenAI messages
+            asyncio.create_task(self._handle_openai_messages(client_id))
+            
         except Exception as e:
             logger.error(f"Failed to connect to OpenAI Realtime API: {e}")
+            
+    async def _send_session_update(self, client_id: str):
+        """Send initial session configuration"""
+        try:
+            session_update = {
+                "type": "session.update",
+                "session": {
+                    "modalities": ["audio", "text"],
+                    "input_audio_format": "pcm16",
+                    "output_audio_format": "pcm16",
+                    "instructions": "You are a helpful English tutor. Help the user improve their English speaking skills through natural conversation. Be encouraging and provide gentle corrections when needed.",
+                    "voice": "alloy"
+                }
+            }
+            
+            if client_id in self.openai_connections:
+                openai_ws = self.openai_connections[client_id]
+                await openai_ws.send(json.dumps(session_update))
+                logger.info(f"Sent session update for client {client_id}")
+                
+        except Exception as e:
+            logger.error(f"Error sending session update: {e}")
             
     async def _handle_openai_messages(self, client_id: str):
         """Handle messages from OpenAI Realtime API"""
@@ -122,7 +144,7 @@ class RealtimeConversationManager:
                     elif event_type == 'response.text.delta':
                         logger.info(f"🤖 [OPENAI] Text delta: {data.get('response', {}).get('output', [{}])[0].get('text', '')}")
                     elif event_type == 'response.audio.delta':
-                        logger.info(f"🤖 [OPENAI] Audio delta received, size: {len(data.get('response', {}).get('output', [{}])[0].get('audio', ''))}")
+                        logger.info(f"🤖 [OPENAI] Audio delta received, size: {len(data.get('delta', ''))}")
                     elif event_type == 'response.done':
                         logger.info(f"🤖 [OPENAI] Response done: {data}")
                     elif event_type == 'error':
@@ -144,25 +166,6 @@ class RealtimeConversationManager:
             logger.error(f"❌ [OPENAI] Error handling OpenAI messages for client {client_id}: {e}")
             import traceback
             logger.error(f"❌ [OPENAI] Traceback: {traceback.format_exc()}")
-            
-    async def _send_session_update(self, client_id: str):
-        """Send initial session configuration"""
-        try:
-            session_update = {
-                "type": "session.update",
-                "session": {
-                    "instructions": "You are a helpful English tutor. Help the user improve their English speaking skills through natural conversation. Be encouraging and provide gentle corrections when needed.",
-                    "voice": "alloy"
-                }
-            }
-            
-            if client_id in self.openai_connections:
-                openai_ws = self.openai_connections[client_id]
-                await openai_ws.send(json.dumps(session_update))
-                logger.info(f"Sent session update for client {client_id}")
-                
-        except Exception as e:
-            logger.error(f"Error sending session update: {e}")
             
     async def handle_client_message(self, client_id: str, message: str):
         """Handle messages from the client"""
@@ -274,6 +277,8 @@ async def realtime_conversation_websocket(websocket: WebSocket):
             try:
                 # Check if the message is binary (audio) or text (JSON)
                 message = await websocket.receive()
+
+                print("message: ",message)
                 
                 if message["type"] == "websocket.receive":
                     if "bytes" in message:
@@ -292,4 +297,124 @@ async def realtime_conversation_websocket(websocket: WebSocket):
     except Exception as e:
         logger.error(f"WebSocket error: {e}")
     finally:
-        await manager.disconnect(client_id) 
+        await manager.disconnect(client_id)
+
+# Alternative simplified approach based on reference code
+@router.websocket("/ws/realtime-simple")
+async def realtime_simple_websocket(websocket: WebSocket):
+    await websocket.accept()
+    
+    try:
+        while True:
+            # Receive audio data as base64
+            data = await websocket.receive_text()
+            try:
+                message = json.loads(data)
+                audio_base64 = message.get("audio_base64")
+                if not audio_base64:
+                    await websocket.send_json({
+                        "error": "No audio_base64 found."
+                    })
+                    continue
+            except Exception:
+                await websocket.send_json({
+                    "error": "Invalid JSON format."
+                })
+                continue
+
+            try:
+                # Decode audio data
+                audio_bytes = base64.b64decode(audio_base64)
+                logger.info(f"🎤 [SIMPLE] Received audio data: {len(audio_bytes)} bytes")
+                
+                # Extract PCM16 data
+                pcm_data = extract_pcm16_from_audio(audio_bytes)
+                logger.info(f"🎤 [SIMPLE] PCM16 data size: {len(pcm_data)} bytes")
+                
+                # Call OpenAI directly
+                response_audio = await talk_to_openai_simple(pcm_data)
+                logger.info(f"✅ [SIMPLE] Received response from OpenAI: {len(response_audio)} bytes")
+                
+                # Send back the audio response
+                await websocket.send_bytes(response_audio)
+                
+            except Exception as e:
+                logger.error(f"❌ [SIMPLE] Error processing audio: {e}")
+                await websocket.send_json({
+                    "error": f"Failed to process audio: {str(e)}"
+                })
+                continue
+
+    except WebSocketDisconnect:
+        logger.info("Client disconnected from simple realtime")
+    except Exception as e:
+        logger.error(f"Unexpected error in simple realtime: {e}")
+
+async def talk_to_openai_simple(audio_bytes: bytes) -> bytes:
+    """
+    Simplified OpenAI Realtime API call based on reference code
+    """
+    response_audio_chunks = []
+    uri = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2025-06-03"
+    
+    openai_api_key = os.getenv("OPENAI_API_KEY")
+    if not openai_api_key:
+        raise Exception("OPENAI_API_KEY not found")
+
+    headers = {
+        "Authorization": f"Bearer {openai_api_key}",
+        "OpenAI-Beta": "realtime=v1"
+    }
+
+    async with websockets.connect(uri, additional_headers=headers) as ws:
+        # Configure the session for audio-to-audio
+        await ws.send(json.dumps({
+            "type": "session.update",
+            "session": {
+                "modalities": ["audio", "text"],
+                "input_audio_format": "pcm16",
+                "output_audio_format": "pcm16",
+                "instructions": "You are a helpful English tutor. Help the user improve their English speaking skills through natural conversation. Be encouraging and provide gentle corrections when needed.",
+                "voice": "alloy"
+            }
+        }))
+
+        # Send the user's audio data in a single chunk
+        audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
+        logger.info(f"🎤 [SIMPLE] Sending audio to OpenAI: {len(audio_base64)} chars")
+        
+        await ws.send(json.dumps({
+            "type": "input_audio_buffer.append",
+            "audio": audio_base64
+        }))
+        
+        # Tell the server that the user's audio is complete
+        await ws.send(json.dumps({"type": "input_audio_buffer.commit"}))
+        
+        # Request a response from the model
+        await ws.send(json.dumps({"type": "response.create"}))
+
+        # Receive the streamed audio response from OpenAI
+        async for message in ws:
+            data = json.loads(message)
+            if data.get("type") == "response.audio.delta":
+                delta_data = base64.b64decode(data["delta"])
+                response_audio_chunks.append(delta_data)
+                logger.info(f"🎵 [SIMPLE] Received audio delta: {len(delta_data)} bytes")
+            elif data.get("type") == "response.done":
+                logger.info("✅ [SIMPLE] Response complete")
+                break  # The model has finished sending its response
+            elif data.get("type") == "error":
+                error_details = data.get('error', {})
+                logger.error(f"❌ [SIMPLE] OpenAI Error: {error_details.get('message')} (Code: {error_details.get('code')})")
+                break
+
+    # Combine the raw PCM audio chunks
+    raw_pcm_data = b"".join(response_audio_chunks)
+    logger.info(f"🎵 [SIMPLE] Total response audio: {len(raw_pcm_data)} bytes")
+
+    if not raw_pcm_data:
+        return b""
+
+    # For now, return raw PCM data - frontend can handle it
+    return raw_pcm_data 
