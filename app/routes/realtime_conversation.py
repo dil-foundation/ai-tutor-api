@@ -64,7 +64,6 @@ class RealtimeConversationManager:
             # Send initial session configuration
             await self._send_session_update(client_id)
             
-            
         except Exception as e:
             logger.error(f"Failed to connect to OpenAI Realtime API: {e}")
             
@@ -140,7 +139,52 @@ class RealtimeConversationManager:
             logger.info(f"📨 [CLIENT] Received client message type: {message_type} from client {client_id}")
             logger.info(f"📨 [CLIENT] Message content: {message[:200]}...")  # Log first 200 chars
             
-            # Forward the message to OpenAI
+            # Handle audio buffer commit specially
+            if message_type == 'input_audio_buffer.commit':
+                logger.info(f"🎤 [CLIENT] Committing audio buffer for client {client_id}")
+                
+                # Send accumulated audio data to OpenAI first
+                if client_id in self.openai_connections:
+                    openai_ws = self.openai_connections[client_id]
+                    
+                    if client_id in self.audio_buffers and len(self.audio_buffers[client_id]) > 0:
+                        buffer_size = len(self.audio_buffers[client_id])
+                        logger.info(f"🎤 [CLIENT] Sending accumulated audio data: {buffer_size} bytes")
+                        
+                        # Encode accumulated audio data as base64
+                        audio_base64 = base64.b64encode(self.audio_buffers[client_id]).decode('utf-8')
+                        logger.info(f"🎤 [CLIENT] Encoded audio to base64, length: {len(audio_base64)} characters")
+                        
+                        # Create input_audio_buffer.append event
+                        append_event = {
+                            "type": "input_audio_buffer.append",
+                            "audio": audio_base64
+                        }
+                        
+                        # Send append event to OpenAI
+                        await openai_ws.send(json.dumps(append_event))
+                        logger.info(f"🎤 [CLIENT] Sent input_audio_buffer.append to OpenAI")
+                        
+                        # Now send the commit message
+                        await openai_ws.send(message)
+                        logger.info(f"🎤 [CLIENT] Sent input_audio_buffer.commit to OpenAI")
+                        
+                        # Clear the buffer after sending
+                        self.audio_buffers[client_id] = b''
+                        logger.info(f"🎤 [CLIENT] Cleared audio buffer after sending")
+                    else:
+                        logger.warning(f"🎤 [CLIENT] No audio buffer found for client {client_id}")
+                        # Still send the commit message even if no audio
+                        await openai_ws.send(message)
+                        logger.info(f"🎤 [CLIENT] Sent input_audio_buffer.commit to OpenAI (no audio)")
+                    
+                    # Don't forward the original message since we've already sent it
+                    return
+                else:
+                    logger.error(f"❌ [CLIENT] No OpenAI connection found for client {client_id}")
+                    return
+            
+            # Forward other messages to OpenAI
             if client_id in self.openai_connections:
                 openai_ws = self.openai_connections[client_id]
                 await openai_ws.send(message)
@@ -160,23 +204,15 @@ class RealtimeConversationManager:
         try:
             logger.info(f"🎤 [AUDIO] Received audio data from client {client_id}, size: {len(audio_data)} bytes")
             
-            # Encode audio data as base64
-            audio_base64 = base64.b64encode(audio_data).decode('utf-8')
-            logger.info(f"🎤 [AUDIO] Encoded audio to base64, length: {len(audio_base64)} characters")
+            # Accumulate audio data in buffer (don't send immediately)
+            if client_id not in self.audio_buffers:
+                self.audio_buffers[client_id] = b''
             
-            # Create input_audio_buffer.append event
-            event = {
-                "type": "input_audio_buffer.append",
-                "audio": audio_base64
-            }
+            self.audio_buffers[client_id] += audio_data
+            logger.info(f"🎤 [AUDIO] Accumulated audio buffer size: {len(self.audio_buffers[client_id])} bytes")
             
-            # Send to OpenAI
-            if client_id in self.openai_connections:
-                openai_ws = self.openai_connections[client_id]
-                await openai_ws.send(json.dumps(event))
-                logger.info(f"🎤 [AUDIO] Sent audio data to OpenAI for client {client_id}")
-            else:
-                logger.error(f"❌ [AUDIO] No OpenAI connection found for client {client_id}")
+            # Don't send to OpenAI yet - wait for input_audio_buffer.commit
+            logger.info(f"🎤 [AUDIO] Audio data accumulated, waiting for commit signal")
                 
         except Exception as e:
             logger.error(f"❌ [AUDIO] Error handling audio data: {e}")
