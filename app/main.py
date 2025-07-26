@@ -25,7 +25,6 @@ from app.routes import (
     conversation_ws,
     conversation_ws_2,
     english_only_ws,
-    ai_tutor_ws,
     user,
     translator,
     repeat_after_me,
@@ -117,7 +116,6 @@ app.include_router(gpt_quiz_parser.router, prefix="/api/quiz", tags=["Quiz & Ass
 app.include_router(conversation_ws.router, prefix="/api", tags=["WebSocket - Conversation"])
 app.include_router(conversation_ws_2.router, tags=["WebSocket - Conversation 2"])
 app.include_router(english_only_ws.router, prefix="/api", tags=["WebSocket - English-Only AI Tutor"])
-app.include_router(ai_tutor_ws.router, prefix="/api", tags=["WebSocket - AI Tutor"])
 
 # Progress tracking routes (NEW - Comprehensive Progress System)
 app.include_router(progress_tracking.router, prefix="/api/progress", tags=["Progress Tracking"])
