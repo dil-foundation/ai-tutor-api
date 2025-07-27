@@ -79,7 +79,7 @@ class RealtimeConversationManager:
                     "input_audio_format": "pcm16",
                     "output_audio_format": "pcm16",
                     "instructions": "You are a helpful English tutor. Help the user improve their English speaking skills through natural conversation. Be encouraging and provide gentle corrections when needed.",
-                    "voice": "alloy"
+                    "voice": "echo"
                 }
             }
             
