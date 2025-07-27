@@ -6,44 +6,12 @@ import os
 import struct
 from typing import Dict, Any
 from fastapi import WebSocket, WebSocketDisconnect, APIRouter
+from app.services.audio_utils import validate_and_convert_audio
 import logging
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-def extract_pcm16_from_audio(audio_data: bytes) -> bytes:
-    """Extract raw PCM16 data from audio file (WAV or raw PCM)"""
-    try:
-        # Check if it's a valid WAV file
-        if len(audio_data) >= 44 and audio_data[:4] == b'RIFF' and audio_data[8:12] == b'WAVE':
-            logger.info("🎤 [AUDIO] Detected WAV file, extracting PCM data")
-            # Parse WAV header
-            # Skip RIFF header (12 bytes)
-            # Look for 'data' chunk
-            data_start = 12
-            while data_start < len(audio_data) - 8:
-                chunk_id = audio_data[data_start:data_start + 4]
-                chunk_size = struct.unpack('<I', audio_data[data_start + 4:data_start + 8])[0]
-                
-                if chunk_id == b'data':
-                    # Found data chunk, extract PCM data
-                    pcm_data = audio_data[data_start + 8:data_start + 8 + chunk_size]
-                    logger.info(f"🎤 [AUDIO] Extracted {len(pcm_data)} bytes of PCM16 data from WAV")
-                    return pcm_data
-                
-                data_start += 8 + chunk_size
-            
-            logger.warning("🎤 [AUDIO] No data chunk found in WAV file")
-            return audio_data
-        else:
-            # Assume it's already raw PCM data
-            logger.info(f"🎤 [AUDIO] Detected raw PCM data, size: {len(audio_data)} bytes")
-            return audio_data
-        
-    except Exception as e:
-        logger.error(f"🎤 [AUDIO] Error processing audio data: {e}")
-        return audio_data
 
 class RealtimeConversationManager:
     def __init__(self):
@@ -176,6 +144,36 @@ class RealtimeConversationManager:
             logger.info(f"📨 [CLIENT] Received client message type: {message_type} from client {client_id}")
             logger.info(f"📨 [CLIENT] Message content: {message[:200]}...")  # Log first 200 chars
             
+            if message_type == 'input_audio':
+                if client_id in self.openai_connections:
+                    audio_base64 = data.get("audio")
+                    print("audio_base64 of mk: ",audio_base64[:10])
+                    # Check for missing or empty audio payload
+                    if not audio_base64:
+                        logger.warning(f"⚠️ [CLIENT] Received empty or missing audio payload for client {client_id}")
+                        return
+
+                    try:
+                        audio_bytes = base64.b64decode(audio_base64)
+                    except Exception as e:
+                        logger.error(f"❌ [CLIENT] Failed to decode audio for client {client_id}: {e}")
+                        return
+
+                    # Log how much audio was received
+                    logger.info(f"🎤 [CLIENT] Decoded {len(audio_bytes)} bytes of audio for client {client_id}")
+                    logger.debug(f"📦 [CLIENT] base64 starts with: {audio_base64[:10]}...")
+
+                    # Append to buffer
+                    if client_id not in self.audio_buffers:
+                        self.audio_buffers[client_id] = b''
+                    self.audio_buffers[client_id] += audio_bytes
+
+                    logger.info(f"🎧 [CLIENT] Buffered total: {len(self.audio_buffers[client_id])} bytes")
+
+                    
+                return  # Do not forward original message
+
+
             # Handle audio buffer commit specially
             if message_type == 'input_audio_buffer.commit':
                 logger.info(f"🎤 [CLIENT] Committing audio buffer for client {client_id}")
@@ -188,9 +186,17 @@ class RealtimeConversationManager:
                         buffer_size = len(self.audio_buffers[client_id])
                         logger.info(f"🎤 [CLIENT] Sending accumulated audio data: {buffer_size} bytes")
                         
-                        # Encode accumulated audio data as base64
-                        audio_base64 = base64.b64encode(self.audio_buffers[client_id]).decode('utf-8')
-                        logger.info(f"🎤 [CLIENT] Encoded audio to base64, length: {len(audio_base64)} characters")
+                        # ✅ Convert and validate audio before sending
+                        try:
+                            converted_audio = validate_and_convert_audio(self.audio_buffers[client_id])
+                            logger.info(f"✅ [AUDIO] Audio successfully validated and converted (length: {len(converted_audio)} bytes)")
+                        except ValueError as ve:
+                            logger.error(f"❌ [AUDIO] Audio validation/conversion failed: {ve}")
+                            return  # Skip sending if audio is invalid
+
+                        # Encode converted audio as base64
+                        audio_base64 = base64.b64encode(converted_audio).decode('utf-8')
+                        logger.info(f"🎤 [CLIENT] Encoded converted audio to base64, length: {len(audio_base64)} characters")
                         
                         # Create input_audio_buffer.append event
                         append_event = {
@@ -236,30 +242,6 @@ class RealtimeConversationManager:
             import traceback
             logger.error(f"❌ [CLIENT] Traceback: {traceback.format_exc()}")
             
-    async def handle_audio_data(self, client_id: str, audio_data: bytes):
-        """Handle audio data from the client"""
-        try:
-            logger.info(f"🎤 [AUDIO] Received audio data from client {client_id}, size: {len(audio_data)} bytes")
-            
-            # Extract raw PCM16 data from WAV file
-            pcm_data = extract_pcm16_from_audio(audio_data)
-            logger.info(f"🎤 [AUDIO] PCM16 data size: {len(pcm_data)} bytes")
-            
-            # Accumulate audio data in buffer (don't send immediately)
-            if client_id not in self.audio_buffers:
-                self.audio_buffers[client_id] = b''
-            
-            self.audio_buffers[client_id] += pcm_data
-            logger.info(f"🎤 [AUDIO] Accumulated audio buffer size: {len(self.audio_buffers[client_id])} bytes")
-            
-            # Don't send to OpenAI yet - wait for input_audio_buffer.commit
-            logger.info(f"🎤 [AUDIO] Audio data accumulated, waiting for commit signal")
-                
-        except Exception as e:
-            logger.error(f"❌ [AUDIO] Error handling audio data: {e}")
-            import traceback
-            logger.error(f"❌ [AUDIO] Traceback: {traceback.format_exc()}")
-
 # Global manager instance
 manager = RealtimeConversationManager()
 
@@ -277,13 +259,12 @@ async def realtime_conversation_websocket(websocket: WebSocket):
             try:
                 # Check if the message is binary (audio) or text (JSON)
                 message = await websocket.receive()
-
-                print("message: ",message)
                 
                 if message["type"] == "websocket.receive":
                     if "bytes" in message:
-                        # Handle binary audio data
-                        await manager.handle_audio_data(client_id, message["bytes"])
+                        # Audio is now sent via text, so we can ignore binary messages
+                        logger.info(f"🎤 [AUDIO] Received binary message from {client_id}, ignoring.")
+                        pass
                     elif "text" in message:
                         # Handle JSON text message
                         await manager.handle_client_message(client_id, message["text"])
@@ -297,124 +278,4 @@ async def realtime_conversation_websocket(websocket: WebSocket):
     except Exception as e:
         logger.error(f"WebSocket error: {e}")
     finally:
-        await manager.disconnect(client_id)
-
-# Alternative simplified approach based on reference code
-@router.websocket("/ws/realtime-simple")
-async def realtime_simple_websocket(websocket: WebSocket):
-    await websocket.accept()
-    
-    try:
-        while True:
-            # Receive audio data as base64
-            data = await websocket.receive_text()
-            try:
-                message = json.loads(data)
-                audio_base64 = message.get("audio_base64")
-                if not audio_base64:
-                    await websocket.send_json({
-                        "error": "No audio_base64 found."
-                    })
-                    continue
-            except Exception:
-                await websocket.send_json({
-                    "error": "Invalid JSON format."
-                })
-                continue
-
-            try:
-                # Decode audio data
-                audio_bytes = base64.b64decode(audio_base64)
-                logger.info(f"🎤 [SIMPLE] Received audio data: {len(audio_bytes)} bytes")
-                
-                # Extract PCM16 data
-                pcm_data = extract_pcm16_from_audio(audio_bytes)
-                logger.info(f"🎤 [SIMPLE] PCM16 data size: {len(pcm_data)} bytes")
-                
-                # Call OpenAI directly
-                response_audio = await talk_to_openai_simple(pcm_data)
-                logger.info(f"✅ [SIMPLE] Received response from OpenAI: {len(response_audio)} bytes")
-                
-                # Send back the audio response
-                await websocket.send_bytes(response_audio)
-                
-            except Exception as e:
-                logger.error(f"❌ [SIMPLE] Error processing audio: {e}")
-                await websocket.send_json({
-                    "error": f"Failed to process audio: {str(e)}"
-                })
-                continue
-
-    except WebSocketDisconnect:
-        logger.info("Client disconnected from simple realtime")
-    except Exception as e:
-        logger.error(f"Unexpected error in simple realtime: {e}")
-
-async def talk_to_openai_simple(audio_bytes: bytes) -> bytes:
-    """
-    Simplified OpenAI Realtime API call based on reference code
-    """
-    response_audio_chunks = []
-    uri = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2025-06-03"
-    
-    openai_api_key = os.getenv("OPENAI_API_KEY")
-    if not openai_api_key:
-        raise Exception("OPENAI_API_KEY not found")
-
-    headers = {
-        "Authorization": f"Bearer {openai_api_key}",
-        "OpenAI-Beta": "realtime=v1"
-    }
-
-    async with websockets.connect(uri, additional_headers=headers) as ws:
-        # Configure the session for audio-to-audio
-        await ws.send(json.dumps({
-            "type": "session.update",
-            "session": {
-                "modalities": ["audio", "text"],
-                "input_audio_format": "pcm16",
-                "output_audio_format": "pcm16",
-                "instructions": "You are a helpful English tutor. Help the user improve their English speaking skills through natural conversation. Be encouraging and provide gentle corrections when needed.",
-                "voice": "alloy"
-            }
-        }))
-
-        # Send the user's audio data in a single chunk
-        audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
-        logger.info(f"🎤 [SIMPLE] Sending audio to OpenAI: {len(audio_base64)} chars")
-        
-        await ws.send(json.dumps({
-            "type": "input_audio_buffer.append",
-            "audio": audio_base64
-        }))
-        
-        # Tell the server that the user's audio is complete
-        await ws.send(json.dumps({"type": "input_audio_buffer.commit"}))
-        
-        # Request a response from the model
-        await ws.send(json.dumps({"type": "response.create"}))
-
-        # Receive the streamed audio response from OpenAI
-        async for message in ws:
-            data = json.loads(message)
-            if data.get("type") == "response.audio.delta":
-                delta_data = base64.b64decode(data["delta"])
-                response_audio_chunks.append(delta_data)
-                logger.info(f"🎵 [SIMPLE] Received audio delta: {len(delta_data)} bytes")
-            elif data.get("type") == "response.done":
-                logger.info("✅ [SIMPLE] Response complete")
-                break  # The model has finished sending its response
-            elif data.get("type") == "error":
-                error_details = data.get('error', {})
-                logger.error(f"❌ [SIMPLE] OpenAI Error: {error_details.get('message')} (Code: {error_details.get('code')})")
-                break
-
-    # Combine the raw PCM audio chunks
-    raw_pcm_data = b"".join(response_audio_chunks)
-    logger.info(f"🎵 [SIMPLE] Total response audio: {len(raw_pcm_data)} bytes")
-
-    if not raw_pcm_data:
-        return b""
-
-    # For now, return raw PCM data - frontend can handle it
-    return raw_pcm_data 
+        await manager.disconnect(client_id) 

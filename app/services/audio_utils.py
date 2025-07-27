@@ -26,7 +26,7 @@ def validate_and_convert_audio(audio_bytes: bytes) -> bytes:
 
         # Export to an in-memory WAV file
         buf = io.BytesIO()
-        audio.export(buf, format="wav")
+        audio.export(buf, format="wav", codec="pcm_s16le")
         
         print("✅ Audio successfully validated and converted to 16kHz mono WAV.")
         
