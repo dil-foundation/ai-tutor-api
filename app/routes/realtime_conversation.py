@@ -8,10 +8,28 @@ from typing import Dict, Any
 from fastapi import WebSocket, WebSocketDisconnect, APIRouter
 from app.services.audio_utils import validate_and_convert_audio
 import logging
+from pydub import AudioSegment
+import io
+import base64
+
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+def convert_pcm_to_mp3(pcm_bytes: bytes, sample_rate=16000) -> str:
+    audio_segment = AudioSegment(
+        data=pcm_bytes,
+        sample_width=2,      # 16-bit
+        frame_rate=sample_rate,
+        channels=1           # Mono
+    )
+    
+    mp3_buffer = io.BytesIO()
+    audio_segment.export(mp3_buffer, format="mp3")
+    mp3_bytes = mp3_buffer.getvalue()
+    
+    return base64.b64encode(mp3_bytes).decode('utf-8')
 
 class RealtimeConversationManager:
     def __init__(self):
@@ -112,16 +130,35 @@ class RealtimeConversationManager:
                     elif event_type == 'response.text.delta':
                         logger.info(f"🤖 [OPENAI] Text delta: {data.get('response', {}).get('output', [{}])[0].get('text', '')}")
                     elif event_type == 'response.audio.delta':
-                        logger.info(f"🤖 [OPENAI] Audio delta received, size: {len(data.get('delta', ''))}")
+                        raw_base64 = data.get("delta", "")
+                        if raw_base64:
+                            try:
+                                pcm_bytes = base64.b64decode(raw_base64)
+                                mp3_base64 = convert_pcm_to_mp3(pcm_bytes)
+
+                                # ✅ Send MP3-encoded audio
+                                if client_id in self.active_connections:
+                                    await self.active_connections[client_id].send_json({
+                                        "type": "audio",
+                                        "data": mp3_base64
+                                    })
+                                    logger.info(f"📤 [OPENAI] Forwarded MP3 audio to client {client_id}")
+                            except Exception as e:
+                                logger.error(f"❌ [AUDIO] Failed to convert/send MP3 audio: {e}")
+
+                        # ❌ Do not forward the original PCM message
+                        continue
                     elif event_type == 'response.done':
                         logger.info(f"🤖 [OPENAI] Response done: {data}")
                     elif event_type == 'error':
                         logger.error(f"❌ [OPENAI] Error from OpenAI: {data}")
                     
                     # Forward the message to the client
-                    if client_id in self.active_connections:
-                        await self.active_connections[client_id].send_text(message)
-                        logger.info(f"📤 [OPENAI] Forwarded {event_type} to client {client_id}")
+                    # Only forward non-audio-delta events to the frontend
+                    if event_type != 'response.audio.delta':
+                        if client_id in self.active_connections:
+                            await self.active_connections[client_id].send_text(message)
+                            logger.info(f"📤 [OPENAI] Forwarded {event_type} to client {client_id}")
                     else:
                         logger.error(f"❌ [OPENAI] No active client connection for {client_id}")
                         
