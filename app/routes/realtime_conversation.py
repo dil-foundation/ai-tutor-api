@@ -3,11 +3,13 @@ import json
 import base64
 import websockets
 import os
-import struct
+import wave
 from typing import Dict, Any
 from fastapi import WebSocket, WebSocketDisconnect, APIRouter
 from app.services.audio_utils import validate_and_convert_audio
 import logging
+import io
+
 from pydub import AudioSegment
 import io
 import base64
@@ -17,29 +19,42 @@ import base64
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def convert_pcm_to_mp3(pcm_bytes: bytes, sample_rate=16000) -> str:
+def convert_pcm_to_wav(pcm_bytes: bytes, sample_rate=16000, channels=1, sampwidth=2) -> str:
+    """
+    Converts raw PCM audio to base64-encoded WAV format.
+    """
+    buffer = io.BytesIO()
+    with wave.open(buffer, 'wb') as wav_file:
+        wav_file.setnchannels(channels)
+        wav_file.setsampwidth(sampwidth)  # 2 bytes for PCM16
+        wav_file.setframerate(sample_rate)
+        wav_file.writeframes(pcm_bytes)
+
+    wav_data = buffer.getvalue()
+    return base64.b64encode(wav_data).decode('utf-8')
+
+def convert_pcm_to_mp3(pcm_bytes: bytes, sample_rate=16000, channels=1, sample_width=2) -> str:
     audio_segment = AudioSegment(
         data=pcm_bytes,
-        sample_width=2,      # 16-bit
+        sample_width=sample_width,
         frame_rate=sample_rate,
-        channels=1           # Mono
+        channels=channels
     )
-    
     mp3_buffer = io.BytesIO()
-    audio_segment.export(mp3_buffer, format="mp3")
-    mp3_bytes = mp3_buffer.getvalue()
-    
-    return base64.b64encode(mp3_bytes).decode('utf-8')
+    audio_segment.export(mp3_buffer, format="mp3", bitrate="64k")
+    return base64.b64encode(mp3_buffer.getvalue()).decode('utf-8')
 
 class RealtimeConversationManager:
     def __init__(self):
         self.active_connections: Dict[str, WebSocket] = {}
         self.openai_connections: Dict[str, websockets.WebSocketServerProtocol] = {}
         self.audio_buffers: Dict[str, bytes] = {}
+        self.openai_audio_buffer: Dict[str, bytes] = {}
         
     async def connect(self, websocket: WebSocket, client_id: str):
         await websocket.accept()
         self.active_connections[client_id] = websocket
+        self.openai_audio_buffer[client_id] = b''
         logger.info(f"Client {client_id} connected to realtime conversation")
         
         # Initialize OpenAI WebSocket connection
@@ -53,6 +68,8 @@ class RealtimeConversationManager:
             del self.openai_connections[client_id]
         if client_id in self.audio_buffers:
             del self.audio_buffers[client_id]
+        if client_id in self.openai_audio_buffer:
+            del self.openai_audio_buffer[client_id]
         logger.info(f"Client {client_id} disconnected from realtime conversation")
         
     async def _connect_to_openai(self, client_id: str):
@@ -130,24 +147,42 @@ class RealtimeConversationManager:
                     elif event_type == 'response.text.delta':
                         logger.info(f"🤖 [OPENAI] Text delta: {data.get('response', {}).get('output', [{}])[0].get('text', '')}")
                     elif event_type == 'response.audio.delta':
-                        raw_base64 = data.get("delta", "")
-                        if raw_base64:
-                            try:
-                                pcm_bytes = base64.b64decode(raw_base64)
-                                mp3_base64 = convert_pcm_to_mp3(pcm_bytes)
+                        raw_base64_pcm = data.get("delta", "")
+                        if raw_base64_pcm:
+                            # Append raw PCM bytes to the buffer for this client
+                            self.openai_audio_buffer[client_id] += base64.b64decode(raw_base64_pcm)
+                        continue  # Don't forward individual deltas
 
-                                # ✅ Send MP3-encoded audio
+                    elif event_type == 'response.audio.done':
+                        logger.info(f"🤖 [OPENAI] Audio stream finished for client {client_id}.")
+                        
+                        # Check if there is audio in the buffer to process
+                        if self.openai_audio_buffer.get(client_id):
+                            try:
+                                # ✅ Convert PCM16 to MP3
+                                mp3_base64 = convert_pcm_to_mp3(self.openai_audio_buffer[client_id], sample_rate=16000, channels=1)
+
+                                # ✅ Send to frontend
                                 if client_id in self.active_connections:
                                     await self.active_connections[client_id].send_json({
                                         "type": "audio",
+                                        "format": "mp3",
                                         "data": mp3_base64
                                     })
-                                    logger.info(f"📤 [OPENAI] Forwarded MP3 audio to client {client_id}")
+                                logger.info(f"📤 [OPENAI] Sent complete MP3 to client {client_id}")
+                                logger.info(f"📤 [OPENAI] Sent complete WAV to client {client_id}")
                             except Exception as e:
-                                logger.error(f"❌ [AUDIO] Failed to convert/send MP3 audio: {e}")
+                                logger.error(f"❌ [AUDIO] Failed to convert or send WAV audio: {e}")
+                            finally:
+                                # Clear the buffer for the next response
+                                self.openai_audio_buffer[client_id] = b''
+                        
+                        # Send the "response.audio.done" marker
+                        if client_id in self.active_connections:
+                            await self.active_connections[client_id].send_text(message)
 
-                        # ❌ Do not forward the original PCM message
                         continue
+
                     elif event_type == 'response.done':
                         logger.info(f"🤖 [OPENAI] Response done: {data}")
                     elif event_type == 'error':
