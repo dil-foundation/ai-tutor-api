@@ -248,22 +248,8 @@ async def english_only_conversation(websocket: WebSocket):
                 })
                 continue
 
-            # 🎯 NEW: Send immediate processing feedback
-            processing_text = "Please wait... Your audio is processing..."
-            if processing_text in tts_cache:
-                processing_audio = tts_cache[processing_text]
-            else:
-                processing_audio = await synthesize_speech_bytes(processing_text)
-                tts_cache[processing_text] = processing_audio
-            
-            # Send processing started message immediately
-            await safe_send_json(websocket, {
-                "response": processing_text,
-                "step": "processing_started",
-                "user_name": user_name
-            })
-            await safe_send_bytes(websocket, processing_audio)
-            profiler.mark("🔄 Processing feedback sent")
+            # 🎯 REMOVED: No longer sending processing feedback from backend
+            # Frontend will handle playing pre-generated audio file
 
             try:
                 # Move base64 decoding to thread pool for better performance
