@@ -1019,6 +1019,16 @@ Be encouraging, constructive, and speak in a way that a beginner or a child can 
         output = response.choices[0].message.content.strip()
         print(f"🔍 [ENGLISH_ONLY] GPT Raw Output: {output}")
 
+
+        # First, try to parse as direct JSON
+        try:
+            result = json.loads(output)
+            validate_fields_simplified(result)
+            print(f"✅ [ENGLISH_ONLY] Parsed as direct JSON: {result}")
+            return result
+        except json.JSONDecodeError:
+            print("⚠️ Not direct JSON. Checking for code block...")
+
         # clean if wrapped in ```json ... ```
         match = re.search(r"```json\s*(.*?)\s*```", output, re.DOTALL)
         if match:
@@ -1029,7 +1039,7 @@ Be encouraging, constructive, and speak in a way that a beginner or a child can 
         try:
             result = json.loads(output_clean)
             validate_fields_simplified(result)
-            print(f"✅ [ENGLISH_ONLY] Parsed JSON: {result}")
+            print(f"✅ [ENGLISH_ONLY] Parsed JSON from code block: {result}")
             return result
         except json.JSONDecodeError as e:
             print(f"❌ JSON decode error: {e}")
