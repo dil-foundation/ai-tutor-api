@@ -978,8 +978,8 @@ Focus on:
 
 def analyze_english_input_eng_only(user_text: str) -> dict:
     """
-    Analyzes English input for accent issues and grammar mistakes using prompt engineering.
-    Returns structured feedback for the English-Only AI tutor.
+    Analyzes English input and returns conversation text for TTS audio playback.
+    Simplified to only return what the frontend actually needs.
     """
     prompt = f"""
 You are an experienced and professional English tutor AI designed to help non-native speakers, especially beginners and children, improve their spoken English. 
@@ -1000,17 +1000,10 @@ Please respond ONLY with a **valid JSON**, and nothing else. Do not include any 
 
 JSON format:
 {{
-    "has_accent_issues": true/false,
-    "has_grammar_issues": true/false,
-    "corrected_text": "the corrected version of the sentence if needed",
-    "accent_feedback": "friendly feedback about accent if detected, else empty",
-    "grammar_feedback": "friendly feedback about grammar if detected, else empty",
-    "response_type": "accent" or "grammar" or "perfect",
-    "ai_response": "short AI response for the user summarizing the correction or praise",
     "conversation_text": "a friendly and clear teaching statement. Start by saying what the user said, then explain the mistake, and finally say: 'The correct form of your sentence would be: \"<corrected_text>\". If you need more help with grammar or anything else, feel free to ask.'"
 }}
 
-If no issues are found, set both has_accent_issues and has_grammar_issues to false, and in conversation_text praise the user warmly, repeat their sentence, and encourage them to say something else.
+If no issues are found, in conversation_text praise the user warmly, repeat their sentence, and encourage them to say something else.
 
 Be encouraging, constructive, and speak in a way that a beginner or a child can easily understand.
 """
@@ -1026,6 +1019,16 @@ Be encouraging, constructive, and speak in a way that a beginner or a child can 
         output = response.choices[0].message.content.strip()
         print(f"🔍 [ENGLISH_ONLY] GPT Raw Output: {output}")
 
+
+        # First, try to parse as direct JSON
+        try:
+            result = json.loads(output)
+            validate_fields_simplified(result)
+            print(f"✅ [ENGLISH_ONLY] Parsed as direct JSON: {result}")
+            return result
+        except json.JSONDecodeError:
+            print("⚠️ Not direct JSON. Checking for code block...")
+
         # clean if wrapped in ```json ... ```
         match = re.search(r"```json\s*(.*?)\s*```", output, re.DOTALL)
         if match:
@@ -1035,64 +1038,48 @@ Be encouraging, constructive, and speak in a way that a beginner or a child can 
 
         try:
             result = json.loads(output_clean)
-            validate_fields(result)
-            print(f"✅ [ENGLISH_ONLY] Parsed JSON: {result}")
+            validate_fields_simplified(result)
+            print(f"✅ [ENGLISH_ONLY] Parsed JSON from code block: {result}")
             return result
         except json.JSONDecodeError as e:
             print(f"❌ JSON decode error: {e}")
             print(f"🔄 Trying regex fallback…")
-            return extract_feedback_from_text(output_clean, user_text)
+            return extract_feedback_from_text_simplified(output_clean, user_text)
 
     except Exception as e:
         print(f"❌ [ENGLISH_ONLY] Error during analysis: {str(e)}")
-        return fallback_response(user_text)
+        return fallback_response_simplified(user_text)
 
 
-def validate_fields(result: dict):
-    required_fields = [
-        "has_accent_issues", "has_grammar_issues", "corrected_text",
-        "accent_feedback", "grammar_feedback", "response_type",
-        "ai_response", "conversation_text"
-    ]
+def validate_fields_simplified(result: dict):
+    required_fields = ["conversation_text"]
     for field in required_fields:
         if field not in result:
             raise ValueError(f"Missing required field: {field}")
 
 
-def extract_feedback_from_text(output: str, user_text: str) -> dict:
+def extract_feedback_from_text_simplified(output: str, user_text: str) -> dict:
     """
-    Fallback method: extract fields from text using regular expressions.
+    Fallback method: extract conversation_text from text using regular expressions.
     """
     def extract(pattern, text, default):
         m = re.search(pattern, text, re.IGNORECASE)
         return m.group(1).strip() if m else default
 
+    conversation_text = extract(r'"conversation_text"\s*:\s*"(.*?)"', output,
+        f"Wonderful! You said: '{user_text}', and that was perfect! Can you try saying another sentence?")
+    
     result = {
-        "has_accent_issues": json.loads(extract(r'"has_accent_issues"\s*:\s*(true|false)', output, 'false')),
-        "has_grammar_issues": json.loads(extract(r'"has_grammar_issues"\s*:\s*(true|false)', output, 'false')),
-        "corrected_text": extract(r'"corrected_text"\s*:\s*"(.*?)"', output, user_text),
-        "accent_feedback": extract(r'"accent_feedback"\s*:\s*"(.*?)"', output, ""),
-        "grammar_feedback": extract(r'"grammar_feedback"\s*:\s*"(.*?)"', output, ""),
-        "response_type": extract(r'"response_type"\s*:\s*"(.*?)"', output, "perfect"),
-        "ai_response": extract(r'"ai_response"\s*:\s*"(.*?)"', output, f"Great! I understood: '{user_text}'. Your English is clear!"),
-        "conversation_text": extract(r'"conversation_text"\s*:\s*"(.*?)"', output,
-            f"Wonderful! You said: '{user_text}', and that was perfect! Can you try saying another sentence?")
+        "conversation_text": conversation_text
     }
     print(f"✅ [ENGLISH_ONLY] Extracted with Regex: {result}")
     return result
 
 
-def fallback_response(user_text: str) -> dict:
+def fallback_response_simplified(user_text: str) -> dict:
     """
     Returns a default response if everything fails.
     """
     return {
-        "has_accent_issues": False,
-        "has_grammar_issues": False,
-        "corrected_text": user_text,
-        "accent_feedback": "",
-        "grammar_feedback": "",
-        "response_type": "perfect",
-        "ai_response": f"Great! I understood: '{user_text}'. Your English is clear!",
         "conversation_text": f"Wonderful! You said: '{user_text}', and that was perfect! Can you try saying another sentence?"
     }

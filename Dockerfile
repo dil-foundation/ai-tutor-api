@@ -22,6 +22,12 @@ COPY app/ app/
 # Set environment variable to locate Google credentials
 ENV GOOGLE_APPLICATION_CREDENTIALS=/app/credentials/google-credentials.json
 
+# Set OpenTelemetry environment variables for containerized environment
+ENV OTEL_SERVICE_NAME=ai-tutor-backend
+ENV OTEL_TRACES_EXPORTER=otlp
+ENV OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
+ENV OTEL_EXPORTER_OTLP_PROTOCOL=grpc
+
 # Expose the FastAPI default port
 EXPOSE 8000
 
