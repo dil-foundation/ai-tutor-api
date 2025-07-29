@@ -976,38 +976,76 @@ Focus on:
             "recommendations": ["Retry after system restart"]
         }
 
+
 def analyze_english_input_eng_only(user_text: str) -> dict:
     """
     Analyzes English input and returns conversation text for TTS audio playback.
-    Simplified to only return what the frontend actually needs.
+    Implements conversational AI with intent-based responses and gentle grammar correction.
     """
     prompt = f"""
-You are an experienced and professional English tutor AI designed to help non-native speakers, especially beginners and children, improve their spoken English. 
-Your role is to analyze the user's spoken sentence, identify any grammar mistakes or heavy accent-related issues, and respond in a kind, professional, and pedagogical way.
+You are a friendly, conversational English tutor AI designed to help non-native speakers learn English naturally through conversation. 
+Your role is to engage in real conversations while gently correcting English mistakes when they occur.
 
-Your response should:
-- Begin by repeating what the user said, so they feel heard.
-- Clearly explain what mistake (if any) the user made, in simple and understandable language.
-- Teach the correct form of the sentence, and explicitly say it at the end.
-- Use simple grammar and vocabulary so that even a child can understand.
-- Be warm, encouraging, and conversational — but structured and clear.
-- At the end, say this exact phrase:
-  **The correct form of your sentence would be: "<corrected_text>". If you need more help with grammar or anything else, feel free to ask.**
+**CONVERSATION FLOW:**
 
-Here is the user's spoken text: "{user_text}"
+**Step 1: **Initial Message** – Just respond naturally. No grammar checks.**
+
+**Step 2: Intent Handling**
+- Extract the topic/intent from what the user said
+- Examples:
+  * "I want to learn English" → intent = English learning
+  * "Let's talk about weather" → intent = Weather discussion
+  * "Hi, how are you?" → intent = Greeting
+- Respond naturally to continue the conversation about their chosen topic
+
+**Step 3: Tutor Logic (Only trigger when user responds to your questions)**
+- If the sentence is CORRECT: Continue the conversation naturally, asking the next relevant question about the topic
+- If the sentence has ERRORS: Provide gentle, supportive correction without harsh phrases
+
+**Step 4: English Response Logic**:
+   - ✅ If sentence is correct: Continue conversation. Don't mention grammar.
+   - ❌ If incorrect: Gently correct the english sentence with a natural conversation.
+
+**EXAMPLES:**
+
+User: "I want to learn English"
+AI: "Sure! I'd love to help you learn English. What would you like to start with? We could practice greetings, talk about your day, or work on pronunciation."
+
+User: "Let's talk about weather"
+AI: "Great! Talking about weather is fun. How's the weather where you are today?"
+
+User: "Weather is good today" (correct)
+AI: "That's wonderful! I'm glad the weather is nice. What do you like to do when the weather is good?"
+
+User: "Weather good today" (incorrect)
+AI: "Great try! A better way to say that would be: 'The weather is good today.' Want to try saying it again?"
+
+User: "Aap kahan hain" (Urdu)
+AI: "I understand you said 'Where are you?' in Urdu. In English, we say 'Where are you?' Let's practice this together! Try saying 'Where are you?' in English."
+
+User: "Namaste, kaise ho?" (Hindi)
+AI: "I understand you said 'Hello, how are you?' in Hindi. In English, we say 'Hello, how are you?' Let's practice this greeting together!"
+
+**Here is the user's spoken text: "{user_text}"**
 
 Please respond ONLY with a **valid JSON**, and nothing else. Do not include any explanations, notes, or markdown code blocks.
 
 JSON format:
 {{
-    "conversation_text": "a friendly and clear teaching statement. Start by saying what the user said, then explain the mistake, and finally say: 'The correct form of your sentence would be: \"<corrected_text>\". If you need more help with grammar or anything else, feel free to ask.'"
+    "conversation_text": "Your natural, conversational response. If English is correct, continue the conversation. If incorrect, provide gentle correction. If other language, teach the English equivalent naturally.",
+    "is_correct": true/false,
+    "intent": "extracted_intent_or_topic",
+    "should_continue_conversation": true/false,
+    "is_other_language": true/false
 }}
 
-If no issues are found, in conversation_text praise the user warmly, repeat their sentence, and encourage them to say something else.
-
-Be encouraging, constructive, and speak in a way that a beginner or a child can easily understand.
+**IMPORTANT:**
+- Be warm, encouraging, and conversational
+- Use simple, clear language that beginners can understand
+- Always maintain a friendly, supportive tone
+- Always respond in English, even when the user speaks another language
 """
-
+    
     try:
         response = client.chat.completions.create(
             model="gpt-4o",
@@ -1019,7 +1057,6 @@ Be encouraging, constructive, and speak in a way that a beginner or a child can 
         output = response.choices[0].message.content.strip()
         print(f"🔍 [ENGLISH_ONLY] GPT Raw Output: {output}")
 
-
         # First, try to parse as direct JSON
         try:
             result = json.loads(output)
@@ -1029,7 +1066,7 @@ Be encouraging, constructive, and speak in a way that a beginner or a child can 
         except json.JSONDecodeError:
             print("⚠️ Not direct JSON. Checking for code block...")
 
-        # clean if wrapped in ```json ... ```
+        # If direct JSON fails, try to extract from code blocks
         match = re.search(r"```json\s*(.*?)\s*```", output, re.DOTALL)
         if match:
             output_clean = match.group(1)
@@ -1052,7 +1089,7 @@ Be encouraging, constructive, and speak in a way that a beginner or a child can 
 
 
 def validate_fields_simplified(result: dict):
-    required_fields = ["conversation_text"]
+    required_fields = ["conversation_text", "is_correct", "intent", "should_continue_conversation"]
     for field in required_fields:
         if field not in result:
             raise ValueError(f"Missing required field: {field}")
@@ -1067,10 +1104,18 @@ def extract_feedback_from_text_simplified(output: str, user_text: str) -> dict:
         return m.group(1).strip() if m else default
 
     conversation_text = extract(r'"conversation_text"\s*:\s*"(.*?)"', output,
-        f"Wonderful! You said: '{user_text}', and that was perfect! Can you try saying another sentence?")
+        f"Great! I understood: '{user_text}'. Let's continue our conversation!")
+    
+    # Extract other fields with fallbacks
+    is_correct = extract(r'"is_correct"\s*:\s*(true|false)', output, "true").lower() == "true"
+    intent = extract(r'"intent"\s*:\s*"(.*?)"', output, "general_conversation")
+    should_continue = extract(r'"should_continue_conversation"\s*:\s*(true|false)', output, "true").lower() == "true"
     
     result = {
-        "conversation_text": conversation_text
+        "conversation_text": conversation_text,
+        "is_correct": is_correct,
+        "intent": intent,
+        "should_continue_conversation": should_continue
     }
     print(f"✅ [ENGLISH_ONLY] Extracted with Regex: {result}")
     return result
@@ -1081,5 +1126,8 @@ def fallback_response_simplified(user_text: str) -> dict:
     Returns a default response if everything fails.
     """
     return {
-        "conversation_text": f"Wonderful! You said: '{user_text}', and that was perfect! Can you try saying another sentence?"
+        "conversation_text": f"Great! I understood: '{user_text}'. Let's continue our conversation!",
+        "is_correct": True,
+        "intent": "general_conversation",
+        "should_continue_conversation": True
     }
