@@ -20,6 +20,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import text
 
+# OpenTelemetry imports
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+
 # Import all route modules
 from app.routes import (
     conversation_ws,
@@ -58,6 +65,37 @@ app = FastAPI(
     redoc_url="/redoc"
 )
 
+# Configure OpenTelemetry
+def setup_opentelemetry():
+    """Configure OpenTelemetry tracing"""
+    import os
+    
+    # Create TracerProvider
+    provider = TracerProvider()
+    
+    # Get OTLP endpoint from environment or use default
+    otlp_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4317")
+    
+    # Configure OTLP exporter
+    otlp_exporter = OTLPSpanExporter(
+        endpoint=otlp_endpoint,
+        insecure=True
+    )
+    
+    # Add BatchSpanProcessor to the TracerProvider
+    provider.add_span_processor(BatchSpanProcessor(otlp_exporter))
+    
+    # Set the TracerProvider as the global default
+    trace.set_tracer_provider(provider)
+    
+    # Instrument FastAPI
+    FastAPIInstrumentor.instrument_app(app)
+    
+    print(f"🔍 [OPENTELEMETRY] Tracing configured successfully with endpoint: {otlp_endpoint}")
+
+# Initialize OpenTelemetry
+setup_opentelemetry()
+
 origins = [
     "*",
 ]
@@ -81,14 +119,6 @@ async def startup_event():
     print("   - Real-time Conversation")
     print("   - Translation Services")
     print("   - English-Only AI Tutor")
-    
-    # # Initialize TTS cache on startup
-    # try:
-    #     await conversation_ws.initialize_tts_cache()
-    #     print("✅ [STARTUP] TTS cache initialized successfully")
-    # except Exception as e:
-    #     print(f"⚠️ [STARTUP] TTS cache initialization failed: {e}")
-    
     print("✅ [STARTUP] Application started successfully")
 
 @app.on_event("shutdown")
