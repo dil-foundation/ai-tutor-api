@@ -1,27 +1,10 @@
 services:
   ai-tutor-backend:
     environment:
-      # Enable debug logging for OpenTelemetry
-      - OTEL_LOG_LEVEL=DEBUG
-      - OTEL_PYTHON_LOG_LEVEL=DEBUG
       # Additional debugging
       - PYTHONUNBUFFERED=1
     volumes:
       # Mount the entire app directory for development
       - ./app:/app/app
       - ./credentials:/app/credentials
-    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips=*", "--reload", "--log-level", "debug"]
-
-  jaeger:
-    environment:
-      # Enable debug logging for Jaeger
-      - LOG_LEVEL=debug
-      - COLLECTOR_OTLP_ENABLED=true
-      - COLLECTOR_ZIPKIN_HOST_PORT=:9411
-    ports:
-      # Additional ports for debugging
-      - "14268:14268"  # HTTP collector
-      - "14250:14250"  # gRPC collector
-      - "16686:16686"  # Web UI
-      - "4317:4317"    # OTLP gRPC
-      - "4318:4318"    # OTLP HTTP 
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips=*", "--reload", "--log-level", "debug"] 
