@@ -328,13 +328,17 @@ async def english_only_conversation(websocket: WebSocket):
                     analysis_span.set_attribute("analysis.input_length", len(transcribed_text))
                     analysis_span.set_attribute("analysis.has_corrections", bool(analysis_result.get("corrections")))
 
-                # Extract only conversation_text (what the AI actually says)
-                conversation_text = analysis_result.get("conversation_text", f"Great! I understood: '{transcribed_text}'. Your English is clear!")
+                # Extract conversation data from analysis result
+                conversation_text = analysis_result.get("conversation_text", f"Great! I understood: '{transcribed_text}'. Let's continue our conversation!")
+                is_correct = analysis_result.get("is_correct", True)
+                intent = analysis_result.get("intent", "general_conversation")
+                should_continue = analysis_result.get("should_continue_conversation", True)
 
                 # Use conversation_text for TTS (what the AI actually says out loud)
                 tts_text = conversation_text
                 
-                print(f"🎯 [ENGLISH_ONLY] TTS Text (conversation_text): {tts_text}")
+                print(f"🎯 [ENGLISH_ONLY] TTS Text: {tts_text}")
+                print(f"🎯 [ENGLISH_ONLY] Analysis: correct={is_correct}, intent={intent}, continue={should_continue}")
 
                 # Generate TTS for conversation_text (what the AI actually says)
                 with tracer.start_as_current_span("synthesize_response_audio") as tts_span:
@@ -348,14 +352,19 @@ async def english_only_conversation(websocket: WebSocket):
                     tts_span.set_attribute("tts.text_length", len(tts_text))
                     tts_span.set_attribute("tts.audio_bytes_length", len(response_audio))
 
-                # Send simplified response
+                # Send enhanced response with analysis data
                 with tracer.start_as_current_span("send_response") as send_span:
                     await safe_send_json(websocket, {
-                        "response": conversation_text,  # Use conversation_text for both response and conversation_text
-                        "conversation_text": conversation_text,  # What the AI actually says
-                        "step": "correction",
+                        "response": conversation_text,
+                        "conversation_text": conversation_text,
+                        "step": "correction" if not is_correct else "conversation",
                         "original_text": transcribed_text,
-                        "user_name": user_name
+                        "user_name": user_name,
+                        "analysis": {
+                            "is_correct": is_correct,
+                            "intent": intent,
+                            "should_continue_conversation": should_continue
+                        }
                     })
                     await safe_send_bytes(websocket, response_audio)
                     send_span.set_attribute("response.sent", True)
