@@ -319,27 +319,13 @@ async def english_only_conversation(websocket: WebSocket):
             analysis_result = await async_analyze_english_input(transcribed_text)
             profiler.mark("🔍 English analysis completed")
 
-            # Extract analysis results
-            has_accent_issues = analysis_result.get("has_accent_issues", False)
-            has_grammar_issues = analysis_result.get("has_grammar_issues", False)
-            corrected_text = analysis_result.get("corrected_text", transcribed_text)
-            accent_feedback = analysis_result.get("accent_feedback", "")
-            grammar_feedback = analysis_result.get("grammar_feedback", "")
-            response_type = analysis_result.get("response_type", "perfect")
-            ai_response = analysis_result.get("ai_response", f"Great! I understood: '{transcribed_text}'.")
+            # Extract only conversation_text (what the AI actually says)
             conversation_text = analysis_result.get("conversation_text", f"Great! I understood: '{transcribed_text}'. Your English is clear!")
 
             # Use conversation_text for TTS (what the AI actually says out loud)
             tts_text = conversation_text
             
             print(f"🎯 [ENGLISH_ONLY] TTS Text (conversation_text): {tts_text}")
-            print(f"📝 [ENGLISH_ONLY] AI Response (for display): {ai_response}")
-
-            print(f"✅ [ENGLISH_ONLY] Analysis Results:")
-            print(f"   - Has Accent Issues: {has_accent_issues}")
-            print(f"   - Has Grammar Issues: {has_grammar_issues}")
-            print(f"   - Response Type: {response_type}")
-            print(f"   - AI Response: {ai_response}")
 
             # Generate TTS for conversation_text (what the AI actually says)
             if tts_text in tts_cache:
@@ -350,18 +336,12 @@ async def english_only_conversation(websocket: WebSocket):
             
             profiler.mark("🔊 TTS response generated")
 
-            # Send response
+            # Send simplified response
             await safe_send_json(websocket, {
-                "response": ai_response,
+                "response": conversation_text,  # Use conversation_text for both response and conversation_text
                 "conversation_text": conversation_text,  # What the AI actually says
                 "step": "correction",
                 "original_text": transcribed_text,
-                "corrected_text": corrected_text,
-                "has_accent_issues": has_accent_issues,
-                "has_grammar_issues": has_grammar_issues,
-                "accent_feedback": accent_feedback,
-                "grammar_feedback": grammar_feedback,
-                "response_type": response_type,
                 "user_name": user_name
             })
             await safe_send_bytes(websocket, response_audio)

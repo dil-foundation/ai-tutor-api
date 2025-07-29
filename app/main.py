@@ -82,12 +82,12 @@ async def startup_event():
     print("   - Translation Services")
     print("   - English-Only AI Tutor")
     
-    # Initialize TTS cache on startup
-    try:
-        await conversation_ws.initialize_tts_cache()
-        print("✅ [STARTUP] TTS cache initialized successfully")
-    except Exception as e:
-        print(f"⚠️ [STARTUP] TTS cache initialization failed: {e}")
+    # # Initialize TTS cache on startup
+    # try:
+    #     await conversation_ws.initialize_tts_cache()
+    #     print("✅ [STARTUP] TTS cache initialized successfully")
+    # except Exception as e:
+    #     print(f"⚠️ [STARTUP] TTS cache initialization failed: {e}")
     
     print("✅ [STARTUP] Application started successfully")
 
