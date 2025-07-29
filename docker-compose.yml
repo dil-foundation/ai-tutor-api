@@ -20,14 +20,8 @@ services:
       - ELEVEN_API_KEY=${ELEVEN_API_KEY}
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
-      # OpenTelemetry configuration
-      - OTEL_SERVICE_NAME=ai-tutor-backend
-      - OTEL_TRACES_EXPORTER=otlp
-      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
-      - OTEL_EXPORTER_OTLP_PROTOCOL=grpc
     depends_on:
       - redis
-      - jaeger
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips=*", "--reload"]
 
   redis:
@@ -39,20 +33,5 @@ services:
     volumes:
       - redis-data:/data
 
-  jaeger:
-    image: jaegertracing/all-in-one:latest
-    container_name: jaeger
-    ports:
-      - "16686:16686"  # Web UI
-      - "4317:4317"    # OTLP gRPC
-      - "4318:4318"    # OTLP HTTP
-    environment:
-      - COLLECTOR_OTLP_ENABLED=true
-      - COLLECTOR_ZIPKIN_HOST_PORT=:9411
-    restart: always
-    volumes:
-      - jaeger-data:/tmp
-
 volumes:
   redis-data:
-  jaeger-data:

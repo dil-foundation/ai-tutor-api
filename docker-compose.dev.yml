@@ -1,0 +1,44 @@
+# Development compose file with tracing support
+# Run with: docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
+
+services:
+  # Jaeger tracing service for development
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: jaeger-dev
+    ports:
+      - "16686:16686"  # Web UI
+      - "4317:4317"    # OTLP gRPC
+      - "4318:4318"    # OTLP HTTP
+      - "14268:14268"  # HTTP collector
+      - "14250:14250"  # gRPC collector
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+      - COLLECTOR_ZIPKIN_HOST_PORT=:9411
+      - LOG_LEVEL=debug
+    restart: always
+    volumes:
+      - jaeger-dev-data:/tmp
+
+  # Override ai-tutor-backend to include tracing configuration
+  ai-tutor-backend:
+    environment:
+      # OpenTelemetry configuration for development
+      - OTEL_SERVICE_NAME=ai-tutor-backend-dev
+      - OTEL_TRACES_EXPORTER=otlp
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
+      - OTEL_EXPORTER_OTLP_PROTOCOL=grpc
+      - OTEL_LOG_LEVEL=DEBUG
+      - OTEL_PYTHON_LOG_LEVEL=DEBUG
+      # Additional debugging
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      - jaeger
+    volumes:
+      # Mount the entire app directory for development
+      - ./app:/app/app
+      - ./credentials:/app/credentials
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips=*", "--reload", "--log-level", "debug"]
+
+volumes:
+  jaeger-dev-data: 
