@@ -73,13 +73,14 @@ async def async_transcribe_audio_eng_only(audio_bytes: bytes):
     )
 
 # Async wrapper for English feedback analysis
-async def async_analyze_english_input(user_text: str):
+async def async_analyze_english_input(user_text: str, is_first_interaction: bool = False):
     """Run English analysis in thread pool"""
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(
         thread_pool,
         analyze_english_input_eng_only,
-        user_text
+        user_text,
+        is_first_interaction
     )
 
 # async def pre_generate_common_tts():
@@ -105,6 +106,8 @@ async def async_analyze_english_input(user_text: str):
 async def english_only_conversation(websocket: WebSocket):
     await websocket.accept()
     profiler = Profiler()
+    conversation_stage = "greeting"  # Initial conversation stage
+
     
     # Pre-generate common TTS responses
     # await pre_generate_common_tts()
@@ -127,6 +130,8 @@ async def english_only_conversation(websocket: WebSocket):
             
             # Handle greeting message
             if message_type == "greeting":
+                conversation_stage = "intent_detection"  # Move to intent detection after greeting
+
                 user_name = message.get("user_name", "there")
                 greeting_text = f"Hi {user_name}, I'm your AI English tutor. How can I help?"
                 
@@ -301,7 +306,12 @@ async def english_only_conversation(websocket: WebSocket):
             print(f"🔍 [ENGLISH_ONLY] Processing input: '{transcribed_text}'")
             
             # Analyze English input for accent and grammar issues
-            analysis_result = await async_analyze_english_input(transcribed_text)
+            if conversation_stage == "intent_detection":
+                analysis_result = await async_analyze_english_input(transcribed_text, is_first_interaction=True)
+                conversation_stage = "main_conversation"
+            else:
+                analysis_result = await async_analyze_english_input(transcribed_text)
+            
             profiler.mark("🔍 English analysis completed")
 
             # Extract conversation data from analysis result

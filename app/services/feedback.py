@@ -976,13 +976,39 @@ Focus on:
             "recommendations": ["Retry after system restart"]
         }
 
-
-def analyze_english_input_eng_only(user_text: str) -> dict:
+def analyze_english_input_eng_only(user_text: str, is_first_interaction: bool = False) -> dict:
     """
     Analyzes English input and returns conversation text for TTS audio playback.
     Implements conversational AI with intent-based responses and gentle grammar correction.
     """
-    prompt = f"""
+    if is_first_interaction:
+        prompt = f"""
+You are a friendly, conversational English tutor AI. This is the user's first interaction after your greeting.
+Your task is to understand the user's intent, even if their English is broken, and guide them to the next step.
+
+**User's first response:** "{user_text}"
+
+**Instructions:**
+1.  **Detect Intent:** Analyze the user's response to understand their goal. The intent is likely related to learning English.
+    *   **Example 1:** "Myself, Learn New English" -> intent: "Learn English"
+    *   **Example 2:** "I want speak good English" -> intent: "Improve speaking"
+    *   **Example 3:** "Hi" -> intent: "Greeting"
+2.  **Formulate a Kind Response:** Based on the detected intent, create a warm and encouraging response.
+    *   Start with: "Great, I'm glad to assist you in your journey to learn English."
+    *   Then, offer specific options: "Would you like to learn Vocabulary, Sentence Structure, Grammar, or have a topic-based discussion?"
+3.  **JSON Output:** Respond ONLY with a valid JSON object in the following format:
+    ```json
+    {{
+        "conversation_text": "Your kind response with the learning options.",
+        "is_correct": true,
+        "intent": "detected_intent",
+        "should_continue_conversation": true,
+        "is_other_language": false
+    }}
+    ```
+"""
+    else:
+        prompt = f"""
 You are a friendly, conversational English tutor AI designed to help non-native speakers learn English naturally through conversation. 
 Your role is to engage in real conversations while gently correcting English mistakes when they occur.
 
@@ -1010,6 +1036,9 @@ Your role is to engage in real conversations while gently correcting English mis
 
 User: "I want to learn English"
 AI: "Sure! I'd love to help you learn English. What would you like to start with? We could practice greetings, talk about your day, or work on pronunciation."
+
+User: "Let's talk about weather"
+AI: "Great! Talking about weather is fun. How's the weather where you are today?"
 
 User: "Weather is good today" (correct)
 AI: "That's wonderful! I'm glad the weather is nice. What do you like to do when the weather is good?"
@@ -1040,7 +1069,6 @@ JSON format:
 - Be warm, encouraging, and conversational
 - Use simple, clear language that beginners can understand
 - Always maintain a friendly, supportive tone
-- Teach in corresponding english sentence if the user speaks in Urdu/Hindi
 - Always respond in English, even when the user speaks another language
 """
     
