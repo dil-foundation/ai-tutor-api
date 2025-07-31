@@ -1297,3 +1297,225 @@ You are an expert English language tutor evaluating a student's storytelling res
             "strengths": ["Attempted response"],
             "areas_for_improvement": ["Technical evaluation error"]
         }
+
+
+def evaluate_response_ex2_stage3(expected_responses: list, user_response: str, context: str, initial_prompt: str, follow_up_turns: list) -> dict:
+    """
+    Evaluate user's response for Stage 3 Exercise 2 (Group Dialogue) using OpenAI GPT-4.
+    Focuses on conversational flow, agreement/disagreement expressions, and group decision-making.
+    """
+    print(f"🔍 [EVAL] Evaluating group dialogue response: {user_response[:50]}...")
+    
+    # Extract expected response types and keywords
+    expected_types = [resp.get("type", "") for resp in expected_responses]
+    all_keywords = []
+    for resp in expected_responses:
+        all_keywords.extend(resp.get("keywords", []))
+    
+    # Create conversation context
+    conversation_context = f"""
+**Initial Prompt:** {initial_prompt}
+"""
+    for turn in follow_up_turns:
+        conversation_context += f"""
+**{turn['speaker']}:** {turn['message']}"""
+    
+    prompt_template = f"""
+You are an expert English language tutor evaluating a student's group dialogue response for Stage 3 (B1 Intermediate level).
+
+**Context:**
+- Exercise: Group Dialogue with AI Personas
+- Student Level: B1 Intermediate
+- Focus: Conversational flow, agreement/disagreement, group decision-making
+
+**Conversation Context:**
+{conversation_context}
+
+**Student's Response:** "{user_response}"
+
+**Expected Response Types:** {expected_types}
+**Expected Keywords:** {all_keywords}
+
+**Evaluation Criteria:**
+1. **Relevance to Conversation (25%):** Response directly addresses the question and maintains conversation flow
+2. **Appropriate Expressions (25%):** Uses proper agreement/disagreement phrases and opinion expressions
+3. **Fluency and Tone (20%):** Natural flow, polite tone, clear pronunciation
+4. **Conversation Timing (15%):** Responds appropriately without interrupting flow
+5. **Group Decision Language (15%):** Uses collaborative language and decision-making phrases
+
+**Scoring System:**
+- Excellent (90-100%): All criteria met with high quality
+- Good (75-89%): Most criteria met with minor issues
+- Fair (60-74%): Some criteria met with noticeable issues
+- Needs Improvement (Below 60%): Significant issues in multiple areas
+
+**Instructions:**
+Analyze the student's response comprehensively and provide detailed feedback.
+Focus on conversational skills and group interaction abilities.
+
+**Output Format (JSON):**
+{{
+    "overall_score": <0-100>,
+    "relevance_score": <0-25>,
+    "expressions_score": <0-25>,
+    "fluency_score": <0-20>,
+    "timing_score": <0-15>,
+    "decision_language_score": <0-15>,
+    "keyword_matches": <list of matched keywords>,
+    "total_keywords": <total number of expected keywords>,
+    "matched_keywords_count": <number of matched keywords>,
+    "response_type_detected": "<agreement/disagreement/compromise/etc>",
+    "detailed_feedback": {{
+        "relevance_feedback": "<specific feedback on conversation relevance>",
+        "expressions_feedback": "<feedback on agreement/disagreement expressions>",
+        "fluency_feedback": "<feedback on fluency and tone>",
+        "timing_feedback": "<feedback on conversation timing>",
+        "decision_language_feedback": "<feedback on group decision language>"
+    }},
+    "suggested_improvements": [
+        "<specific improvement suggestion 1>",
+        "<specific improvement suggestion 2>",
+        "<specific improvement suggestion 3>"
+    ],
+    "encouragement": "<positive encouragement message>",
+    "next_steps": "<what to focus on next>"
+}}
+"""
+
+    try:
+        print("🔄 [EVAL] Sending evaluation request to OpenAI...")
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": "You are an expert English language tutor specializing in B1 intermediate level conversational assessment."},
+                {"role": "user", "content": prompt_template}
+            ],
+            temperature=0.3,
+            max_tokens=1000
+        )
+        
+        result_text = response.choices[0].message.content
+        print(f"📊 [EVAL] Raw OpenAI response: {result_text[:200]}...")
+        
+        # Clean the response text to extract JSON
+        result_text = result_text.strip()
+        if result_text.startswith('```json'):
+            result_text = result_text[7:]
+        if result_text.endswith('```'):
+            result_text = result_text[:-3]
+        result_text = result_text.strip()
+        
+        print(f"📊 [EVAL] Cleaned response: {result_text[:200]}...")
+        
+        # Parse JSON response
+        evaluation_result = json.loads(result_text)
+        
+        # Calculate success based on overall score
+        success = evaluation_result.get("overall_score", 0) >= 75
+        
+        print(f"✅ [EVAL] Evaluation completed. Score: {evaluation_result.get('overall_score', 0)}%")
+        
+        return {
+            "success": success,
+            "evaluation": evaluation_result,
+            "suggested_improvement": evaluation_result.get("suggested_improvements", [""])[0] if evaluation_result.get("suggested_improvements") else "",
+            "keyword_matches": evaluation_result.get("keyword_matches", []),
+            "total_keywords": evaluation_result.get("total_keywords", 0),
+            "matched_keywords_count": evaluation_result.get("matched_keywords_count", 0),
+            "fluency_score": evaluation_result.get("fluency_score", 0),
+            "grammar_score": evaluation_result.get("expressions_score", 0) + evaluation_result.get("decision_language_score", 0),
+            "response_type": evaluation_result.get("response_type_detected", ""),
+            "score": evaluation_result.get("overall_score", 0),
+            "is_correct": success,
+            "completed": success
+        }
+        
+    except json.JSONDecodeError as e:
+        print(f"❌ [EVAL] JSON parsing error: {str(e)}")
+        print(f"📊 [EVAL] Failed to parse response: {result_text}")
+        fallback_evaluation = {
+            "overall_score": 50,
+            "relevance_score": 12,
+            "expressions_score": 12,
+            "fluency_score": 10,
+            "timing_score": 8,
+            "decision_language_score": 8,
+            "keyword_matches": [],
+            "total_keywords": len(all_keywords),
+            "matched_keywords_count": 0,
+            "response_type_detected": "unknown",
+            "detailed_feedback": {
+                "relevance_feedback": "Response was received but could not be fully evaluated.",
+                "expressions_feedback": "Please try to use clear agreement or disagreement phrases.",
+                "fluency_feedback": "Speak clearly and naturally.",
+                "timing_feedback": "Respond appropriately to the conversation flow.",
+                "decision_language_feedback": "Use collaborative language when making decisions."
+            },
+            "suggested_improvements": [
+                "Try to be more specific in your response",
+                "Use clear agreement or disagreement phrases",
+                "Practice natural conversation flow"
+            ],
+            "encouragement": "Good effort! Keep practicing to improve your conversational skills.",
+            "next_steps": "Focus on using appropriate expressions for group discussions."
+        }
+        
+        return {
+            "success": False,
+            "error": "Failed to parse evaluation response",
+            "suggested_improvement": "Please try again with a clearer response.",
+            "evaluation": fallback_evaluation,
+            "score": 50,
+            "is_correct": False,
+            "completed": False,
+            "keyword_matches": [],
+            "total_keywords": len(all_keywords),
+            "matched_keywords_count": 0,
+            "fluency_score": 10,
+            "grammar_score": 20,
+            "response_type": "unknown"
+        }
+    except Exception as e:
+        print(f"❌ [EVAL] OpenAI API error: {str(e)}")
+        fallback_evaluation = {
+            "overall_score": 50,
+            "relevance_score": 12,
+            "expressions_score": 12,
+            "fluency_score": 10,
+            "timing_score": 8,
+            "decision_language_score": 8,
+            "keyword_matches": [],
+            "total_keywords": len(all_keywords),
+            "matched_keywords_count": 0,
+            "response_type_detected": "unknown",
+            "detailed_feedback": {
+                "relevance_feedback": "Response was received but could not be fully evaluated.",
+                "expressions_feedback": "Please try to use clear agreement or disagreement phrases.",
+                "fluency_feedback": "Speak clearly and naturally.",
+                "timing_feedback": "Respond appropriately to the conversation flow.",
+                "decision_language_feedback": "Use collaborative language when making decisions."
+            },
+            "suggested_improvements": [
+                "Try to be more specific in your response",
+                "Use clear agreement or disagreement phrases",
+                "Practice natural conversation flow"
+            ],
+            "encouragement": "Good effort! Keep practicing to improve your conversational skills.",
+            "next_steps": "Focus on using appropriate expressions for group discussions."
+        }
+        
+        return {
+            "success": False,
+            "error": f"Evaluation service error: {str(e)}",
+            "suggested_improvement": "Please try again later.",
+            "evaluation": fallback_evaluation,
+            "score": 50,
+            "is_correct": False,
+            "completed": False,
+            "keyword_matches": [],
+            "total_keywords": len(all_keywords),
+            "matched_keywords_count": 0,
+            "fluency_score": 10,
+            "grammar_score": 20,
+            "response_type": "unknown"
+        }
