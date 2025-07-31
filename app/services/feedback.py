@@ -1519,3 +1519,211 @@ Focus on conversational skills and group interaction abilities.
             "grammar_score": 20,
             "response_type": "unknown"
         }
+
+
+def evaluate_response_ex3_stage3(expected_keywords: list, user_response: str, problem_description: str, context: str, polite_phrases: list, sample_responses: list) -> dict:
+    """
+    Evaluate user's response for Stage 3 Exercise 3 (Problem-Solving Simulations) using OpenAI GPT-4o.
+    Focuses on polite problem-solving language, clarity, and functional English usage.
+    """
+    print(f"🔍 [EVAL] Evaluating problem-solving response: {user_response[:50]}...")
+    
+    # Create comprehensive prompt for evaluation
+    prompt_template = f"""
+You are an expert English language tutor specializing in B1 intermediate level problem-solving assessment. You are a well experienced prompt engineer.
+
+**Problem Scenario:**
+{problem_description}
+
+**Context:**
+{context}
+
+**User's Response:**
+"{user_response}"
+
+**Expected Keywords (should be included):**
+{', '.join(expected_keywords)}
+
+**Polite Phrases to Use:**
+{', '.join(polite_phrases)}
+
+**Sample Good Responses:**
+{', '.join(sample_responses)}
+
+**Evaluation Criteria:**
+1. **Clarity (20 points):** Clear description of the problem and situation
+2. **Politeness (25 points):** Use of polite phrases and respectful tone
+3. **Request Structure (20 points):** Proper way to ask for help or assistance
+4. **Specificity (15 points):** Providing specific details about the issue
+5. **Solution Orientation (20 points):** Asking for specific solutions or next steps
+
+**Task:** Evaluate the user's response based on the criteria above. Provide detailed feedback and scoring.
+
+**JSON Output Format:**
+{{
+    "overall_score": <0-100>,
+    "clarity_score": <0-20>,
+    "politeness_score": <0-25>,
+    "request_structure_score": <0-20>,
+    "specificity_score": <0-15>,
+    "solution_orientation_score": <0-20>,
+    "keyword_matches": ["list", "of", "matched", "keywords"],
+    "total_keywords": <number>,
+    "matched_keywords_count": <number>,
+    "response_type_detected": "<apology|request|complaint|notification>",
+    "detailed_feedback": {{
+        "clarity_feedback": "<feedback on clarity>",
+        "politeness_feedback": "<feedback on politeness>",
+        "request_structure_feedback": "<feedback on request structure>",
+        "specificity_feedback": "<feedback on specificity>",
+        "solution_orientation_feedback": "<feedback on solution orientation>"
+    }},
+    "suggested_improvements": [
+        "<specific improvement suggestion 1>",
+        "<specific improvement suggestion 2>",
+        "<specific improvement suggestion 3>"
+    ],
+    "encouragement": "<positive encouragement message>",
+    "next_steps": "<what to focus on next>"
+}}
+
+Provide only the JSON output, no additional text.
+"""
+    
+    try:
+        print("🔄 [EVAL] Sending evaluation request to OpenAI...")
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": "You are an expert English language tutor specializing in B1 intermediate level problem-solving assessment."},
+                {"role": "user", "content": prompt_template}
+            ],
+            temperature=0.3,
+            max_tokens=1000
+        )
+        
+        result_text = response.choices[0].message.content
+        print(f"📊 [EVAL] Raw OpenAI response: {result_text[:200]}...")
+        
+        # Clean the response text to extract JSON
+        result_text = result_text.strip()
+        if result_text.startswith('```json'):
+            result_text = result_text[7:]
+        if result_text.endswith('```'):
+            result_text = result_text[:-3]
+        result_text = result_text.strip()
+        
+        print(f"📊 [EVAL] Cleaned response: {result_text[:200]}...")
+        
+        # Parse JSON response
+        evaluation_result = json.loads(result_text)
+        
+        # Calculate success based on overall score (adjusted for B1 intermediate level)
+        success = evaluation_result.get("overall_score", 0) >= 60
+        
+        print(f"✅ [EVAL] Evaluation completed. Score: {evaluation_result.get('overall_score', 0)}%")
+        
+        return {
+            "success": success,
+            "evaluation": evaluation_result,
+            "suggested_improvement": evaluation_result.get("suggested_improvements", [""])[0] if evaluation_result.get("suggested_improvements") else "",
+            "keyword_matches": evaluation_result.get("keyword_matches", []),
+            "total_keywords": evaluation_result.get("total_keywords", 0),
+            "matched_keywords_count": evaluation_result.get("matched_keywords_count", 0),
+            "fluency_score": evaluation_result.get("clarity_score", 0) + evaluation_result.get("politeness_score", 0),
+            "grammar_score": evaluation_result.get("request_structure_score", 0) + evaluation_result.get("specificity_score", 0) + evaluation_result.get("solution_orientation_score", 0),
+            "response_type": evaluation_result.get("response_type_detected", ""),
+            "score": evaluation_result.get("overall_score", 0),
+            "is_correct": success,
+            "completed": success
+        }
+        
+    except json.JSONDecodeError as e:
+        print(f"❌ [EVAL] JSON parsing error: {str(e)}")
+        print(f"📊 [EVAL] Failed to parse response: {result_text}")
+        fallback_evaluation = {
+            "overall_score": 50,
+            "clarity_score": 10,
+            "politeness_score": 12,
+            "request_structure_score": 10,
+            "specificity_score": 8,
+            "solution_orientation_score": 10,
+            "keyword_matches": [],
+            "total_keywords": len(expected_keywords),
+            "matched_keywords_count": 0,
+            "response_type_detected": "unknown",
+            "detailed_feedback": {
+                "clarity_feedback": "Response was received but could not be fully evaluated.",
+                "politeness_feedback": "Please try to use polite phrases and respectful tone.",
+                "request_structure_feedback": "Make sure to ask for help clearly and appropriately.",
+                "specificity_feedback": "Provide specific details about your problem.",
+                "solution_orientation_feedback": "Ask for specific solutions or next steps."
+            },
+            "suggested_improvements": [
+                "Try to be more specific in your response",
+                "Use polite phrases when asking for help",
+                "Practice clear problem description"
+            ],
+            "encouragement": "Good effort! Keep practicing to improve your problem-solving skills.",
+            "next_steps": "Focus on using appropriate polite language for problem-solving."
+        }
+        
+        return {
+            "success": False,
+            "error": "Failed to parse evaluation response",
+            "suggested_improvement": "Please try again with a clearer response.",
+            "evaluation": fallback_evaluation,
+            "score": 50,
+            "is_correct": False,
+            "completed": False,
+            "keyword_matches": [],
+            "total_keywords": len(expected_keywords),
+            "matched_keywords_count": 0,
+            "fluency_score": 22,
+            "grammar_score": 28,
+            "response_type": "unknown"
+        }
+    except Exception as e:
+        print(f"❌ [EVAL] OpenAI API error: {str(e)}")
+        fallback_evaluation = {
+            "overall_score": 50,
+            "clarity_score": 10,
+            "politeness_score": 12,
+            "request_structure_score": 10,
+            "specificity_score": 8,
+            "solution_orientation_score": 10,
+            "keyword_matches": [],
+            "total_keywords": len(expected_keywords),
+            "matched_keywords_count": 0,
+            "response_type_detected": "unknown",
+            "detailed_feedback": {
+                "clarity_feedback": "Response was received but could not be fully evaluated.",
+                "politeness_feedback": "Please try to use polite phrases and respectful tone.",
+                "request_structure_feedback": "Make sure to ask for help clearly and appropriately.",
+                "specificity_feedback": "Provide specific details about your problem.",
+                "solution_orientation_feedback": "Ask for specific solutions or next steps."
+            },
+            "suggested_improvements": [
+                "Try to be more specific in your response",
+                "Use polite phrases when asking for help",
+                "Practice clear problem description"
+            ],
+            "encouragement": "Good effort! Keep practicing to improve your problem-solving skills.",
+            "next_steps": "Focus on using appropriate polite language for problem-solving."
+        }
+        
+        return {
+            "success": False,
+            "error": f"Evaluation service error: {str(e)}",
+            "suggested_improvement": "Please try again later.",
+            "evaluation": fallback_evaluation,
+            "score": 50,
+            "is_correct": False,
+            "completed": False,
+            "keyword_matches": [],
+            "total_keywords": len(expected_keywords),
+            "matched_keywords_count": 0,
+            "fluency_score": 22,
+            "grammar_score": 28,
+            "response_type": "unknown"
+        }

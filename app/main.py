@@ -35,6 +35,7 @@ from app.routes import (
     roleplay_simulation,
     storytelling,
     group_dialogue,
+    problem_solving,
     quiz_parser,
     gpt_quiz_parser,
     progress_tracking
@@ -109,6 +110,7 @@ app.include_router(quick_answer.router, prefix="/api", tags=["Stage 2 - Exercise
 app.include_router(roleplay_simulation.router, prefix="/api", tags=["Stage 2 - Exercise 3 (Roleplay Simulation)"])
 app.include_router(storytelling.router, prefix="/api", tags=["Stage 3 - Exercise 1 (Storytelling)"])
 app.include_router(group_dialogue.router, prefix="/api", tags=["Stage 3 - Exercise 2 (Group Dialogue)"])
+app.include_router(problem_solving.router, prefix="/api", tags=["Stage 3 - Exercise 3 (Problem-Solving)"])
 app.include_router(quiz_parser.router, prefix="/api", tags=["Quiz Parser"])
 
 # Stage 2 exercises
