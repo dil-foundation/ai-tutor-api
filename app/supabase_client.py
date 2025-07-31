@@ -426,9 +426,15 @@ class SupabaseProgressTracker:
                 
                 # Determine initial topic_id based on completion
                 initial_topic_id = topic_id or 1
-                if score >= 80 and topic_id:
-                    # If topic was completed successfully, start with next topic
-                    initial_topic_id = topic_id + 1
+                # Use different thresholds for different exercises
+                if exercise_id == 3:  # Problem-solving exercise
+                    if score >= 60 and topic_id:
+                        # If topic was completed successfully, start with next topic
+                        initial_topic_id = topic_id + 1
+                else:
+                    if score >= 80 and topic_id:
+                        # If topic was completed successfully, start with next topic
+                        initial_topic_id = topic_id + 1
                 
                 new_exercise_data = {
                     "user_id": user_id,
@@ -443,7 +449,7 @@ class SupabaseProgressTracker:
                     "time_spent_minutes": int(time_spent_seconds / 60),
                     "best_score": score,
                     "total_score": score,
-                    "mature": score >= 80,
+                    "mature": score >= 60 if exercise_id == 3 else score >= 80,
                     "started_at": current_timestamp,
                     "last_attempt_at": current_timestamp
                 }
@@ -480,17 +486,27 @@ class SupabaseProgressTracker:
             print(f"   - Best score: {best_score}")
             print(f"   - Time spent: {time_spent_minutes} minutes")
             
-            # Check if exercise is mature (average score >= 80)
-            mature = average_score >= 80
-            print(f"📊 [EXERCISE] Exercise mature: {mature} (average >= 80)")
+            # Check if exercise is mature (average score >= threshold)
+            if exercise_id == 3:  # Problem-solving exercise
+                mature = average_score >= 60  # 60% threshold for problem-solving
+                print(f"📊 [EXERCISE] Exercise mature: {mature} (average >= 60)")
+            else:
+                mature = average_score >= 80  # 80% threshold for other exercises
+                print(f"📊 [EXERCISE] Exercise mature: {mature} (average >= 80)")
             
-            # Check if exercise is completed (3 consecutive scores >= 80)
+            # Check if exercise is completed (3 consecutive scores >= threshold)
             completed = False
             if len(scores) >= 3:
                 recent_scores = scores[-3:]
-                completed = all(s >= 80 for s in recent_scores)
-                print(f"📊 [EXERCISE] Recent 3 scores: {recent_scores}")
-                print(f"📊 [EXERCISE] Exercise completed: {completed} (3 consecutive >= 80)")
+                # Use different thresholds for different exercises
+                if exercise_id == 3:  # Problem-solving exercise
+                    completed = all(s >= 60 for s in recent_scores)  # 60% threshold
+                    print(f"📊 [EXERCISE] Recent 3 scores: {recent_scores}")
+                    print(f"📊 [EXERCISE] Exercise completed: {completed} (3 consecutive >= 60)")
+                else:
+                    completed = all(s >= 80 for s in recent_scores)  # 80% threshold
+                    print(f"📊 [EXERCISE] Recent 3 scores: {recent_scores}")
+                    print(f"📊 [EXERCISE] Exercise completed: {completed} (3 consecutive >= 80)")
             
             # Update exercise progress
             current_timestamp = datetime.now().isoformat()
@@ -511,8 +527,12 @@ class SupabaseProgressTracker:
             # Update current_topic_id based on topic completion
             current_topic_id = exercise_data.get('current_topic_id', 1)
             
-            # Check if this topic was completed successfully (score >= 80)
-            topic_completed = score >= 80
+            # Check if this topic was completed successfully
+            # Use different thresholds for different exercises
+            if exercise_id == 3:  # Problem-solving exercise
+                topic_completed = score >= 60  # 60% threshold for problem-solving
+            else:
+                topic_completed = score >= 80  # 80% threshold for other exercises
             
             if topic_completed:
                 # Increment topic_id for next topic when current topic is completed
@@ -683,6 +703,31 @@ class SupabaseProgressTracker:
             
             print(f"📊 [TOPIC] Current topic_id: {current_topic_id}, Exercise completed: {is_completed}")
             
+            # Check if current topic is completed and advance to next topic
+            if not is_completed:
+                # Get topic progress to check if current topic is completed
+                topic_progress = self.client.table('ai_tutor_user_topic_progress').select('*').eq('user_id', user_id).eq('stage_id', stage_id).eq('exercise_id', exercise_id).eq('topic_id', current_topic_id).execute()
+                
+                if topic_progress.data:
+                    topic_data = topic_progress.data[0]
+                    topic_completed = topic_data.get('completed', False)
+                    
+                    if topic_completed:
+                        # Current topic is completed, advance to next topic
+                        next_topic_id = current_topic_id + 1
+                        print(f"🎉 [TOPIC] Topic {current_topic_id} is completed! Advancing to topic {next_topic_id}")
+                        
+                        # Update the exercise progress with the new topic_id
+                        update_result = self.client.table('ai_tutor_user_exercise_progress').update({
+                            "current_topic_id": next_topic_id
+                        }).eq('user_id', user_id).eq('stage_id', stage_id).eq('exercise_id', exercise_id).execute()
+                        
+                        if update_result.data:
+                            print(f"✅ [TOPIC] Updated current_topic_id to {next_topic_id}")
+                            current_topic_id = next_topic_id
+                        else:
+                            print(f"⚠️ [TOPIC] Failed to update current_topic_id, keeping {current_topic_id}")
+            
             return {
                 "success": True, 
                 "current_topic_id": current_topic_id, 
@@ -796,7 +841,7 @@ class SupabaseProgressTracker:
                                 "unlocked_at": current_timestamp,
                                 "unlocked_by_criteria": f"Completed all exercises in stage {stage_id}"
                             }
-
+                            
                             if existing_stage_unlock.data:
                                 # Row exists, so UPDATE it
                                 print(f"🔓 [UNLOCK] Updating existing record to unlock stage {next_stage_id}")
