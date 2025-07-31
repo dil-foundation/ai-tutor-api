@@ -1115,3 +1115,185 @@ Focus on:
             "learning_progress": "none",
             "recommendations": ["Retry after system restart"]
         }
+
+
+
+def evaluate_response_ex1_stage3(expected_keywords: list, user_response: str, prompt: str, prompt_urdu: str, model_answer: str) -> dict:
+    """
+    Evaluate user's storytelling response for Stage 3 Exercise 1
+    Uses ChatGPT to provide comprehensive feedback on narrative structure, past tense usage, and fluency
+    """
+    print(f"🔄 [EVAL] Evaluating Stage 3 Exercise 1 response")
+    print(f"📝 [EVAL] User response: '{user_response}'")
+    print(f"🎯 [EVAL] Expected keywords: {expected_keywords}")
+    print(f"📖 [EVAL] Prompt: '{prompt}'")
+    print(f"📖 [EVAL] Model answer: '{model_answer}'")
+    
+    try:
+        # Create comprehensive evaluation prompt
+        evaluation_prompt = f"""
+You are an expert English language tutor evaluating a student's storytelling response. The student is learning to tell personal stories in English.
+
+**STUDENT'S PROMPT:** {prompt}
+**STUDENT'S RESPONSE:** "{user_response}"
+**MODEL ANSWER FOR REFERENCE:** "{model_answer}"
+**EXPECTED KEYWORDS TO INCLUDE:** {expected_keywords}
+
+**EVALUATION CRITERIA:**
+1. **Past Tense Usage (25 points):** Check if the student correctly uses past tense verbs (was, were, had, went, felt, etc.)
+2. **Narrative Structure (25 points):** Evaluate if the story has a clear beginning, middle, and end with proper transitions
+3. **Keyword Integration (20 points):** Assess how well the student incorporates the expected keywords naturally
+4. **Fluency & Coherence (20 points):** Check for smooth flow, logical progression, and clear expression
+5. **Descriptive Language (10 points):** Evaluate use of descriptive words and emotional expression
+
+**SCORING GUIDELINES:**
+- 90-100: Excellent storytelling with all criteria met
+- 80-89: Very good with minor issues
+- 70-79: Good with some areas for improvement
+- 60-69: Satisfactory but needs work
+- Below 60: Needs significant improvement
+
+**TASK:** Provide a comprehensive evaluation with specific feedback and suggestions for improvement.
+
+**REQUIRED JSON OUTPUT FORMAT:**
+{{
+    "score": <number between 0-100>,
+    "is_correct": <boolean - true if score >= 75>,
+    "completed": <boolean - true if score >= 80>,
+    "keyword_matches": <number of expected keywords found>,
+    "total_keywords": <total number of expected keywords>,
+    "fluency_score": <number between 0-100>,
+    "grammar_score": <number between 0-100>,
+    "detailed_feedback": {{
+        "past_tense_usage": "<specific feedback on past tense usage>",
+        "narrative_structure": "<feedback on story structure and flow>",
+        "keyword_integration": "<feedback on keyword usage>",
+        "fluency_coherence": "<feedback on overall fluency>",
+        "descriptive_language": "<feedback on descriptive elements>"
+    }},
+    "suggested_improvement": "<specific suggestions for improvement>",
+    "strengths": ["<list of strengths in the response>"],
+    "areas_for_improvement": ["<list of areas that need work>"]
+}}
+"""
+
+        print(f"🤖 [EVAL] Sending evaluation request to ChatGPT...")
+        
+        response = client.chat.completions.create(
+            model="gpt-4",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are an expert English language tutor specializing in storytelling and narrative skills. Provide detailed, constructive feedback in JSON format."
+                },
+                {
+                    "role": "user",
+                    "content": evaluation_prompt
+                }
+            ],
+            temperature=0.3,
+            max_tokens=1000
+        )
+        
+        print(f"✅ [EVAL] Received ChatGPT response")
+        
+        # Extract and parse the response
+        evaluation_text = response.choices[0].message.content.strip()
+        print(f"📄 [EVAL] Raw evaluation response: {evaluation_text}")
+        
+        # Try to extract JSON from the response
+        try:
+            # Look for JSON in the response
+            json_start = evaluation_text.find('{')
+            json_end = evaluation_text.rfind('}') + 1
+            
+            if json_start != -1 and json_end != 0:
+                json_content = evaluation_text[json_start:json_end]
+                evaluation_result = json.loads(json_content)
+                print(f"✅ [EVAL] Successfully parsed JSON evaluation")
+            else:
+                raise ValueError("No JSON found in response")
+                
+        except json.JSONDecodeError as e:
+            print(f"❌ [EVAL] JSON parsing error: {str(e)}")
+            print(f"📄 [EVAL] Attempted to parse: {evaluation_text}")
+            
+            # Fallback evaluation
+            evaluation_result = {
+                "score": 50,
+                "is_correct": False,
+                "completed": False,
+                "keyword_matches": 0,
+                "total_keywords": len(expected_keywords),
+                "fluency_score": 50,
+                "grammar_score": 50,
+                "detailed_feedback": {
+                    "past_tense_usage": "Unable to evaluate due to processing error",
+                    "narrative_structure": "Unable to evaluate due to processing error",
+                    "keyword_integration": "Unable to evaluate due to processing error",
+                    "fluency_coherence": "Unable to evaluate due to processing error",
+                    "descriptive_language": "Unable to evaluate due to processing error"
+                },
+                "suggested_improvement": "Please try again. Make sure to use past tense verbs and tell a complete story with beginning, middle, and end.",
+                "strengths": ["Response provided"],
+                "areas_for_improvement": ["Evaluation processing error"]
+            }
+        
+        # Validate and sanitize the evaluation result
+        score = evaluation_result.get("score", 50)
+        if not isinstance(score, (int, float)) or score < 0 or score > 100:
+            score = 50
+            evaluation_result["score"] = score
+        
+        is_correct = evaluation_result.get("is_correct", score >= 75)
+        completed = evaluation_result.get("completed", score >= 80)
+        
+        # Ensure keyword matches is valid
+        keyword_matches = evaluation_result.get("keyword_matches", 0)
+        total_keywords = evaluation_result.get("total_keywords", len(expected_keywords))
+        
+        if not isinstance(keyword_matches, int) or keyword_matches < 0:
+            keyword_matches = 0
+        if not isinstance(total_keywords, int) or total_keywords <= 0:
+            total_keywords = len(expected_keywords)
+        
+        evaluation_result.update({
+            "is_correct": is_correct,
+            "completed": completed,
+            "keyword_matches": keyword_matches,
+            "total_keywords": total_keywords
+        })
+        
+        print(f"📊 [EVAL] Final evaluation result:")
+        print(f"   - Score: {score}")
+        print(f"   - Is correct: {is_correct}")
+        print(f"   - Completed: {completed}")
+        print(f"   - Keyword matches: {keyword_matches}/{total_keywords}")
+        print(f"   - Fluency score: {evaluation_result.get('fluency_score', 0)}")
+        print(f"   - Grammar score: {evaluation_result.get('grammar_score', 0)}")
+        
+        return evaluation_result
+        
+    except Exception as e:
+        print(f"❌ [EVAL] Error in evaluate_response_ex1_stage3: {str(e)}")
+        
+        # Return fallback evaluation
+        return {
+            "score": 50,
+            "is_correct": False,
+            "completed": False,
+            "keyword_matches": 0,
+            "total_keywords": len(expected_keywords),
+            "fluency_score": 50,
+            "grammar_score": 50,
+            "detailed_feedback": {
+                "past_tense_usage": "Evaluation error occurred",
+                "narrative_structure": "Evaluation error occurred",
+                "keyword_integration": "Evaluation error occurred",
+                "fluency_coherence": "Evaluation error occurred",
+                "descriptive_language": "Evaluation error occurred"
+            },
+            "suggested_improvement": "Please try again. Focus on using past tense verbs and telling a complete story.",
+            "strengths": ["Attempted response"],
+            "areas_for_improvement": ["Technical evaluation error"]
+        }
