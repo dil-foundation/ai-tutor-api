@@ -170,6 +170,7 @@ async def root_health_check():
         ]
     }
 
+
 @app.get("/api/status")
 async def api_status():
     """Comprehensive API status endpoint"""
@@ -194,3 +195,4 @@ async def api_status():
             "english_only_tutor": "/api/ws/english-only"
         }
     }
+ 
