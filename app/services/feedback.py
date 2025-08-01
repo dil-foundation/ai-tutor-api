@@ -2289,3 +2289,150 @@ Focus on B2 Upper Intermediate standards for professional interview communicatio
             "interview_vocabulary_score": 15,
             "response_type": "unknown"
         }
+
+
+
+def evaluate_response_ex3_stage4(user_response: str, news_title: str, summary_text: str, expected_keywords: list, vocabulary_focus: list, model_summary: str) -> dict:
+    """
+    Evaluate user's news summary response for Stage 4 Exercise 3 (News Summary Challenge)
+    
+    Args:
+        user_response: User's recorded summary
+        news_title: Title of the news article
+        summary_text: Original news text
+        expected_keywords: List of expected keywords
+        vocabulary_focus: List of vocabulary words to focus on
+        model_summary: Example model summary
+    
+    Returns:
+        Dictionary with evaluation results
+    """
+    try:
+        print(f"🔍 [EVAL] Evaluating news summary response: {user_response[:50]}...")
+        
+        # Create comprehensive evaluation prompt
+        prompt = f"""
+You are an expert English language evaluator specializing in B2 Upper Intermediate level assessments. 
+Evaluate the following news summary response based on the criteria below.
+
+NEWS TITLE: {news_title}
+ORIGINAL NEWS TEXT: {summary_text}
+USER'S SUMMARY: {user_response}
+MODEL SUMMARY: {model_summary}
+EXPECTED KEYWORDS: {', '.join(expected_keywords)}
+VOCABULARY FOCUS: {', '.join(vocabulary_focus)}
+
+EVALUATION CRITERIA (Total: 100 points):
+1. Main Points Coverage (30 points): Does the summary cover the key facts, events, and important details from the original news?
+2. Grammar & Structure (25 points): Is the grammar correct and the structure clear and logical?
+3. Paraphrasing Skills (25 points): Does the user paraphrase effectively without copying the original text?
+4. Neutral Tone (20 points): Is the tone objective and journalistic, avoiding personal opinions?
+
+Provide your evaluation in the following JSON format:
+{{
+    "overall_score": <0-100>,
+    "main_points_coverage_score": <0-30>,
+    "grammar_structure_score": <0-25>,
+    "paraphrasing_skills_score": <0-25>,
+    "neutral_tone_score": <0-20>,
+    "keyword_matches": ["list", "of", "matched", "keywords"],
+    "total_keywords": <total_number_of_expected_keywords>,
+    "matched_keywords_count": <number_of_matched_keywords>,
+    "summary_type_detected": "<summary/paraphrase/copy>",
+    "detailed_feedback": {{
+        "main_points_feedback": "<feedback on main points coverage>",
+        "grammar_feedback": "<feedback on grammar and structure>",
+        "paraphrasing_feedback": "<feedback on paraphrasing skills>",
+        "tone_feedback": "<feedback on neutral tone>"
+    }},
+    "suggested_improvements": ["improvement1", "improvement2", "improvement3"],
+    "encouragement": "<positive encouragement message>",
+    "next_steps": "<specific next steps for improvement>"
+}}
+
+Focus on B2 Upper Intermediate level expectations. Be encouraging but honest in your assessment.
+"""
+
+        print("🔄 [EVAL] Sending evaluation request to OpenAI...")
+        
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": "You are an expert English language evaluator for B2 Upper Intermediate level. Provide evaluations in the exact JSON format requested."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3,
+            max_tokens=1500
+        )
+        
+        print("📊 [EVAL] Raw OpenAI response received")
+        
+        # Extract and clean the response
+        raw_response = response.choices[0].message.content.strip()
+        print(f"📊 [EVAL] Raw response: {raw_response[:200]}...")
+        
+        # Clean the response to extract JSON
+        cleaned_response = raw_response
+        if "```json" in raw_response:
+            cleaned_response = raw_response.split("```json")[1].split("```")[0].strip()
+        elif "```" in raw_response:
+            cleaned_response = raw_response.split("```")[1].strip()
+        
+        print(f"📊 [EVAL] Cleaned response: {cleaned_response[:200]}...")
+        
+        # Parse JSON response
+        evaluation_data = json.loads(cleaned_response)
+        
+        # Calculate overall score
+        overall_score = evaluation_data.get("overall_score", 0)
+        
+        # Determine if the response meets the success threshold (80% for B2 level)
+        success_threshold = 80
+        is_successful = overall_score >= success_threshold
+        
+        # Count keyword matches
+        keyword_matches = evaluation_data.get("keyword_matches", [])
+        total_keywords = evaluation_data.get("total_keywords", len(expected_keywords))
+        matched_count = evaluation_data.get("matched_keywords_count", len(keyword_matches))
+        
+        # Determine summary type
+        summary_type = evaluation_data.get("summary_type_detected", "summary")
+        
+        # Calculate fluency and grammar scores (scaled down for consistency)
+        fluency_score = min(50, evaluation_data.get("grammar_structure_score", 0) * 2)
+        grammar_score = min(50, evaluation_data.get("grammar_structure_score", 0) * 2)
+        
+        print(f"✅ [EVAL] Evaluation completed. Score: {overall_score}%")
+        
+        return {
+            "success": True,
+            "news_title": news_title,
+            "expected_keywords": expected_keywords,
+            "user_text": user_response,
+            "evaluation": evaluation_data,
+            "suggested_improvement": evaluation_data.get("suggested_improvements", [""])[0] if evaluation_data.get("suggested_improvements") else "",
+            "keyword_matches": keyword_matches,
+            "total_keywords": total_keywords,
+            "matched_keywords_count": matched_count,
+            "fluency_score": fluency_score,
+            "grammar_score": grammar_score,
+            "summary_type": summary_type,
+            "score": overall_score,
+            "is_correct": is_successful,
+            "completed": is_successful
+        }
+        
+    except json.JSONDecodeError as e:
+        print(f"❌ [EVAL] JSON parsing error: {e}")
+        return {
+            "success": False,
+            "error": "json_parsing_error",
+            "message": "Failed to parse evaluation response"
+        }
+    except Exception as e:
+        print(f"❌ [EVAL] Evaluation error: {e}")
+        return {
+            "success": False,
+            "error": "evaluation_error",
+            "message": f"Evaluation failed: {str(e)}"
+        }
