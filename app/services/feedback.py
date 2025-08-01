@@ -1727,3 +1727,712 @@ Provide only the JSON output, no additional text.
             "grammar_score": 28,
             "response_type": "unknown"
         }
+
+
+def evaluate_response_ex1_stage4(user_response: str, topic: str, key_connectors: list, vocabulary_focus: list, model_response: str) -> dict:
+    """
+    Evaluate Stage 4 Exercise 1 (Abstract Topic Monologue) responses using OpenAI GPT-4o.
+    
+    This function evaluates B2 Upper Intermediate level abstract topic monologues based on:
+    - Opinion clarity and balanced viewpoints
+    - Effective use of transitional phrases and connectors
+    - Fluency in extended monologue speaking
+    - Grammar accuracy and lexical richness
+    - Coherence and logical structure
+    
+    Args:
+        user_response (str): The user's recorded monologue response
+        topic (str): The abstract topic they were asked to speak about
+        key_connectors (list): Expected transitional phrases and connectors
+        vocabulary_focus (list): Domain-specific vocabulary to evaluate
+        model_response (str): Example of a well-structured response for comparison
+    
+    Returns:
+        dict: Comprehensive evaluation results with scores and detailed feedback
+    """
+    print(f"🔍 [EVAL] Evaluating Stage 4 Exercise 1 response: {user_response[:100]}...")
+    
+    try:
+        # Create comprehensive evaluation prompt for B2 level abstract topic monologue
+        evaluation_prompt = f"""
+You are an expert English language assessor evaluating a B2 Upper Intermediate level abstract topic monologue. 
+
+TOPIC: "{topic}"
+
+USER RESPONSE: "{user_response}"
+
+EXPECTED CONNECTORS: {key_connectors}
+EXPECTED VOCABULARY: {vocabulary_focus}
+MODEL RESPONSE EXAMPLE: "{model_response}"
+
+Evaluate the response based on B2 Upper Intermediate criteria:
+
+1. OPINION CLARITY (20 points):
+   - Clear position statement
+   - Balanced view with multiple perspectives
+   - Personal insight and nuanced thinking
+
+2. CONNECTOR USAGE (20 points):
+   - Effective use of transitional phrases: {key_connectors}
+   - Logical flow between ideas
+   - Appropriate discourse markers
+
+3. FLUENCY INDICATORS (20 points):
+   - Smooth transitions and natural flow
+   - Appropriate pacing for 60-90 second monologue
+   - Minimal pauses and hesitations
+   - Extended discourse fluency
+
+4. GRAMMAR ACCURACY (20 points):
+   - Complex sentence structures
+   - Conditional forms and modals
+   - Passive voice usage
+   - B2 level grammatical complexity
+
+5. LEXICAL RICHNESS (20 points):
+   - Academic and domain-specific vocabulary
+   - Synonyms and lexical variety
+   - Collocations and idiomatic expressions
+   - Sophisticated word choice
+
+6. COHERENCE & STRUCTURE:
+   - Logical organization of ideas
+   - Supporting arguments and counter-arguments
+   - Strong conclusion
+   - Clear topic development
+
+Provide your evaluation in the following JSON format:
+
+{{
+    "overall_score": <0-100>,
+    "opinion_clarity_score": <0-20>,
+    "connector_usage_score": <0-20>,
+    "fluency_score": <0-20>,
+    "grammar_score": <0-20>,
+    "lexical_richness_score": <0-20>,
+    "connector_matches": ["list", "of", "used", "connectors"],
+    "vocabulary_matches": ["list", "of", "used", "vocabulary"],
+    "total_connectors": <number>,
+    "matched_connectors_count": <number>,
+    "total_vocabulary": <number>,
+    "matched_vocabulary_count": <number>,
+    "response_type_detected": "opinion_essay|balanced_argument|personal_reflection",
+    "detailed_feedback": {{
+        "opinion_clarity_feedback": "Detailed feedback on opinion expression",
+        "connector_feedback": "Feedback on transitional phrase usage",
+        "fluency_feedback": "Feedback on speaking fluency and flow",
+        "grammar_feedback": "Feedback on grammatical accuracy",
+        "lexical_feedback": "Feedback on vocabulary usage and richness",
+        "structure_feedback": "Feedback on overall organization and coherence"
+    }},
+    "suggested_improvements": [
+        "Specific improvement suggestion 1",
+        "Specific improvement suggestion 2",
+        "Specific improvement suggestion 3"
+    ],
+    "encouragement": "Motivational message for the learner",
+    "next_steps": "Recommended focus areas for improvement"
+}}
+
+Scoring Guidelines:
+- 80-100: Excellent B2 level performance
+- 70-79: Good B2 level with minor areas for improvement
+- 60-69: Adequate B2 level with clear improvement areas
+- Below 60: Needs more practice to reach B2 level
+
+Focus on B2 Upper Intermediate standards for abstract topic discussion and extended monologue speaking.
+"""
+
+        print(f"🔄 [EVAL] Sending evaluation request to OpenAI...")
+        
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are an expert English language assessor specializing in B2 Upper Intermediate level evaluation. Provide detailed, constructive feedback in JSON format."
+                },
+                {
+                    "role": "user",
+                    "content": evaluation_prompt
+                }
+            ],
+            temperature=0.3,
+            max_tokens=1500
+        )
+        
+        result_text = response.choices[0].message.content
+        print(f"📊 [EVAL] Raw OpenAI response: {result_text[:200]}...")
+        
+        # Clean the response text to extract JSON
+        result_text = result_text.strip()
+        if result_text.startswith('```json'):
+            result_text = result_text[7:]
+        if result_text.endswith('```'):
+            result_text = result_text[:-3]
+        result_text = result_text.strip()
+        
+        print(f"📊 [EVAL] Cleaned response: {result_text[:200]}...")
+        
+        # Parse JSON response
+        evaluation_result = json.loads(result_text)
+        
+        # Calculate success based on overall score (B2 level requires 80%+)
+        success = evaluation_result.get("overall_score", 0) >= 80
+        
+        print(f"✅ [EVAL] Evaluation completed. Score: {evaluation_result.get('overall_score', 0)}%")
+        
+        return {
+            "success": success,
+            "evaluation": evaluation_result,
+            "suggested_improvement": evaluation_result.get("suggested_improvements", [""])[0] if evaluation_result.get("suggested_improvements") else "",
+            "connector_matches": evaluation_result.get("connector_matches", []),
+            "total_connectors": evaluation_result.get("total_connectors", len(key_connectors)),
+            "matched_connectors_count": evaluation_result.get("matched_connectors_count", 0),
+            "vocabulary_matches": evaluation_result.get("vocabulary_matches", []),
+            "total_vocabulary": evaluation_result.get("total_vocabulary", len(vocabulary_focus)),
+            "matched_vocabulary_count": evaluation_result.get("matched_vocabulary_count", 0),
+            "fluency_score": evaluation_result.get("fluency_score", 0),
+            "grammar_score": evaluation_result.get("grammar_score", 0),
+            "lexical_richness_score": evaluation_result.get("lexical_richness_score", 0),
+            "opinion_clarity_score": evaluation_result.get("opinion_clarity_score", 0),
+            "connector_usage_score": evaluation_result.get("connector_usage_score", 0),
+            "response_type": evaluation_result.get("response_type_detected", ""),
+            "score": evaluation_result.get("overall_score", 0),
+            "is_correct": success,
+            "completed": success
+        }
+        
+    except json.JSONDecodeError as e:
+        print(f"❌ [EVAL] JSON parsing error: {str(e)}")
+        print(f"📊 [EVAL] Failed to parse response: {result_text}")
+        fallback_evaluation = {
+            "overall_score": 60,
+            "opinion_clarity_score": 12,
+            "connector_usage_score": 12,
+            "fluency_score": 12,
+            "grammar_score": 12,
+            "lexical_richness_score": 12,
+            "connector_matches": [],
+            "vocabulary_matches": [],
+            "total_connectors": len(key_connectors),
+            "matched_connectors_count": 0,
+            "total_vocabulary": len(vocabulary_focus),
+            "matched_vocabulary_count": 0,
+            "response_type_detected": "unknown",
+            "detailed_feedback": {
+                "opinion_clarity_feedback": "Response was received but could not be fully evaluated.",
+                "connector_feedback": "Please try to use transitional phrases effectively.",
+                "fluency_feedback": "Focus on speaking smoothly and naturally.",
+                "grammar_feedback": "Pay attention to grammatical accuracy.",
+                "lexical_feedback": "Use a variety of vocabulary and expressions.",
+                "structure_feedback": "Organize your thoughts logically."
+            },
+            "suggested_improvements": [
+                "Practice using transitional phrases like 'however', 'although', 'furthermore'",
+                "Work on expressing balanced opinions with supporting arguments",
+                "Focus on speaking fluently for extended periods"
+            ],
+            "encouragement": "Good effort! Keep practicing to improve your abstract topic discussion skills.",
+            "next_steps": "Focus on using connectors and expressing complex opinions clearly."
+        }
+        
+        return {
+            "success": False,
+            "error": "Failed to parse evaluation response",
+            "suggested_improvement": "Please try again with a clearer response.",
+            "evaluation": fallback_evaluation,
+            "score": 60,
+            "is_correct": False,
+            "completed": False,
+            "connector_matches": [],
+            "total_connectors": len(key_connectors),
+            "matched_connectors_count": 0,
+            "vocabulary_matches": [],
+            "total_vocabulary": len(vocabulary_focus),
+            "matched_vocabulary_count": 0,
+            "fluency_score": 12,
+            "grammar_score": 12,
+            "lexical_richness_score": 12,
+            "opinion_clarity_score": 12,
+            "connector_usage_score": 12,
+            "response_type": "unknown"
+        }
+    except Exception as e:
+        print(f"❌ [EVAL] OpenAI API error: {str(e)}")
+        fallback_evaluation = {
+            "overall_score": 60,
+            "opinion_clarity_score": 12,
+            "connector_usage_score": 12,
+            "fluency_score": 12,
+            "grammar_score": 12,
+            "lexical_richness_score": 12,
+            "connector_matches": [],
+            "vocabulary_matches": [],
+            "total_connectors": len(key_connectors),
+            "matched_connectors_count": 0,
+            "total_vocabulary": len(vocabulary_focus),
+            "matched_vocabulary_count": 0,
+            "response_type_detected": "unknown",
+            "detailed_feedback": {
+                "opinion_clarity_feedback": "Response was received but could not be fully evaluated.",
+                "connector_feedback": "Please try to use transitional phrases effectively.",
+                "fluency_feedback": "Focus on speaking smoothly and naturally.",
+                "grammar_feedback": "Pay attention to grammatical accuracy.",
+                "lexical_feedback": "Use a variety of vocabulary and expressions.",
+                "structure_feedback": "Organize your thoughts logically."
+            },
+            "suggested_improvements": [
+                "Practice using transitional phrases like 'however', 'although', 'furthermore'",
+                "Work on expressing balanced opinions with supporting arguments",
+                "Focus on speaking fluently for extended periods"
+            ],
+            "encouragement": "Good effort! Keep practicing to improve your abstract topic discussion skills.",
+            "next_steps": "Focus on using connectors and expressing complex opinions clearly."
+        }
+        
+        return {
+            "success": False,
+            "error": f"Evaluation service error: {str(e)}",
+            "suggested_improvement": "Please try again later.",
+            "evaluation": fallback_evaluation,
+            "score": 60,
+            "is_correct": False,
+            "completed": False,
+            "connector_matches": [],
+            "total_connectors": len(key_connectors),
+            "matched_connectors_count": 0,
+            "vocabulary_matches": [],
+            "total_vocabulary": len(vocabulary_focus),
+            "matched_vocabulary_count": 0,
+            "fluency_score": 12,
+            "grammar_score": 12,
+            "lexical_richness_score": 12,
+            "opinion_clarity_score": 12,
+            "connector_usage_score": 12,
+            "response_type": "unknown"
+        }
+
+
+
+
+def evaluate_response_ex2_stage4(user_response: str, question: str, expected_keywords: list, vocabulary_focus: list, model_response: str) -> dict:
+    """
+    Evaluate Stage 4 Exercise 2 (Mock Interview Practice) responses using OpenAI GPT-4o.
+    
+    This function evaluates B2 Upper Intermediate level interview responses based on:
+    - Answer relevance and depth
+    - Professional confidence and tone
+    - Grammar accuracy and fluency
+    - Interview-specific vocabulary usage
+    - Structured response organization
+    
+    Args:
+        user_response (str): The user's recorded interview response
+        question (str): The interview question they were asked
+        expected_keywords (list): Expected keywords to include in response
+        vocabulary_focus (list): Professional interview vocabulary to evaluate
+        model_response (str): Example of a well-structured interview response
+    
+    Returns:
+        dict: Comprehensive evaluation results with scores and detailed feedback
+    """
+    print(f"🔍 [EVAL] Evaluating Stage 4 Exercise 2 response: {user_response[:100]}...")
+    
+    try:
+        # Create comprehensive evaluation prompt for B2 level interview practice
+        evaluation_prompt = f"""
+You are an expert English language assessor evaluating a B2 Upper Intermediate level mock interview response. 
+
+INTERVIEW QUESTION: "{question}"
+
+USER RESPONSE: "{user_response}"
+
+EXPECTED KEYWORDS: {expected_keywords}
+EXPECTED VOCABULARY: {vocabulary_focus}
+MODEL RESPONSE EXAMPLE: "{model_response}"
+
+Evaluate the response based on B2 Upper Intermediate interview criteria:
+
+1. ANSWER RELEVANCE (25 points):
+   - Directly addresses the interview question
+   - Provides comprehensive and detailed response
+   - Shows understanding of what the interviewer is asking
+   - Demonstrates preparation and thoughtfulness
+
+2. PROFESSIONAL CONFIDENCE (25 points):
+   - Confident and self-assured tone
+   - Professional demeanor and presentation
+   - Clear and articulate expression
+   - Appropriate level of enthusiasm and engagement
+
+3. GRAMMAR & FLUENCY (25 points):
+   - Grammatically accurate sentences
+   - Natural flow and rhythm of speech
+   - Appropriate use of complex sentence structures
+   - Minimal hesitations and fillers
+
+4. INTERVIEW VOCABULARY (25 points):
+   - Use of professional interview language
+   - Appropriate industry-specific terminology
+   - Sophisticated vocabulary choices
+   - Effective use of expected keywords: {expected_keywords}
+
+5. STRUCTURE & ORGANIZATION:
+   - Clear beginning, middle, and end
+   - Logical progression of ideas
+   - Appropriate use of transitions
+   - Strong conclusion and call-to-action
+
+Provide your evaluation in the following JSON format:
+
+{{
+    "overall_score": <0-100>,
+    "answer_relevance_score": <0-25>,
+    "confidence_tone_score": <0-25>,
+    "grammar_fluency_score": <0-25>,
+    "interview_vocabulary_score": <0-25>,
+    "keyword_matches": ["list", "of", "used", "keywords"],
+    "vocabulary_matches": ["list", "of", "used", "vocabulary"],
+    "total_keywords": <number>,
+    "matched_keywords_count": <number>,
+    "total_vocabulary": <number>,
+    "matched_vocabulary_count": <number>,
+    "response_type_detected": "self_introduction|motivation|strengths_weaknesses|problem_solving|career_planning",
+    "detailed_feedback": {{
+        "relevance_feedback": "Detailed feedback on question relevance",
+        "confidence_feedback": "Feedback on professional tone and confidence",
+        "grammar_feedback": "Feedback on grammatical accuracy and fluency",
+        "vocabulary_feedback": "Feedback on interview vocabulary usage",
+        "structure_feedback": "Feedback on response organization and flow"
+    }},
+    "suggested_improvements": [
+        "Specific improvement suggestion 1",
+        "Specific improvement suggestion 2",
+        "Specific improvement suggestion 3"
+    ],
+    "encouragement": "Motivational message for the learner",
+    "next_steps": "Recommended focus areas for improvement"
+}}
+
+Scoring Guidelines:
+- 80-100: Excellent B2 level interview performance
+- 70-79: Good B2 level with minor areas for improvement
+- 60-69: Adequate B2 level with clear improvement areas
+- Below 60: Needs more practice to reach B2 level
+
+Focus on B2 Upper Intermediate standards for professional interview communication and self-presentation.
+"""
+
+        print(f"🔄 [EVAL] Sending evaluation request to OpenAI...")
+        
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are an expert English language assessor specializing in B2 Upper Intermediate level interview evaluation. Provide detailed, constructive feedback in JSON format."
+                },
+                {
+                    "role": "user",
+                    "content": evaluation_prompt
+                }
+            ],
+            temperature=0.3,
+            max_tokens=1500
+        )
+        
+        result_text = response.choices[0].message.content
+        print(f"📊 [EVAL] Raw OpenAI response: {result_text[:200]}...")
+        
+        # Clean the response text to extract JSON
+        result_text = result_text.strip()
+        if result_text.startswith('```json'):
+            result_text = result_text[7:]
+        if result_text.endswith('```'):
+            result_text = result_text[:-3]
+        result_text = result_text.strip()
+        
+        print(f"📊 [EVAL] Cleaned response: {result_text[:200]}...")
+        
+        # Parse JSON response
+        evaluation_result = json.loads(result_text)
+        
+        # Calculate success based on overall score (B2 level requires 80%+)
+        success = evaluation_result.get("overall_score", 0) >= 80
+        
+        print(f"✅ [EVAL] Evaluation completed. Score: {evaluation_result.get('overall_score', 0)}%")
+        
+        return {
+            "success": success,
+            "evaluation": evaluation_result,
+            "suggested_improvement": evaluation_result.get("suggested_improvements", [""])[0] if evaluation_result.get("suggested_improvements") else "",
+            "keyword_matches": evaluation_result.get("keyword_matches", []),
+            "total_keywords": evaluation_result.get("total_keywords", len(expected_keywords)),
+            "matched_keywords_count": evaluation_result.get("matched_keywords_count", 0),
+            "vocabulary_matches": evaluation_result.get("vocabulary_matches", []),
+            "total_vocabulary": evaluation_result.get("total_vocabulary", len(vocabulary_focus)),
+            "matched_vocabulary_count": evaluation_result.get("matched_vocabulary_count", 0),
+            "fluency_score": evaluation_result.get("grammar_fluency_score", 0),
+            "grammar_score": evaluation_result.get("grammar_fluency_score", 0),
+            "answer_relevance_score": evaluation_result.get("answer_relevance_score", 0),
+            "confidence_tone_score": evaluation_result.get("confidence_tone_score", 0),
+            "interview_vocabulary_score": evaluation_result.get("interview_vocabulary_score", 0),
+            "response_type": evaluation_result.get("response_type_detected", ""),
+            "score": evaluation_result.get("overall_score", 0),
+            "is_correct": success,
+            "completed": success
+        }
+        
+    except json.JSONDecodeError as e:
+        print(f"❌ [EVAL] JSON parsing error: {str(e)}")
+        print(f"📊 [EVAL] Failed to parse response: {result_text}")
+        fallback_evaluation = {
+            "overall_score": 60,
+            "answer_relevance_score": 15,
+            "confidence_tone_score": 15,
+            "grammar_fluency_score": 15,
+            "interview_vocabulary_score": 15,
+            "keyword_matches": [],
+            "vocabulary_matches": [],
+            "total_keywords": len(expected_keywords),
+            "matched_keywords_count": 0,
+            "total_vocabulary": len(vocabulary_focus),
+            "matched_vocabulary_count": 0,
+            "response_type_detected": "unknown",
+            "detailed_feedback": {
+                "relevance_feedback": "Response was received but could not be fully evaluated.",
+                "confidence_feedback": "Please try to maintain a confident and professional tone.",
+                "grammar_feedback": "Focus on grammatical accuracy and fluency.",
+                "vocabulary_feedback": "Use professional interview vocabulary and expected keywords.",
+                "structure_feedback": "Organize your response with clear structure and flow."
+            },
+            "suggested_improvements": [
+                "Practice using professional interview vocabulary",
+                "Work on maintaining confident and clear communication",
+                "Focus on directly addressing the interview question"
+            ],
+            "encouragement": "Good effort! Keep practicing to improve your interview skills.",
+            "next_steps": "Focus on professional vocabulary and confident self-presentation."
+        }
+        
+        return {
+            "success": False,
+            "error": "Failed to parse evaluation response",
+            "suggested_improvement": "Please try again with a clearer response.",
+            "evaluation": fallback_evaluation,
+            "score": 60,
+            "is_correct": False,
+            "completed": False,
+            "keyword_matches": [],
+            "total_keywords": len(expected_keywords),
+            "matched_keywords_count": 0,
+            "vocabulary_matches": [],
+            "total_vocabulary": len(vocabulary_focus),
+            "matched_vocabulary_count": 0,
+            "fluency_score": 15,
+            "grammar_score": 15,
+            "answer_relevance_score": 15,
+            "confidence_tone_score": 15,
+            "interview_vocabulary_score": 15,
+            "response_type": "unknown"
+        }
+    except Exception as e:
+        print(f"❌ [EVAL] OpenAI API error: {str(e)}")
+        fallback_evaluation = {
+            "overall_score": 60,
+            "answer_relevance_score": 15,
+            "confidence_tone_score": 15,
+            "grammar_fluency_score": 15,
+            "interview_vocabulary_score": 15,
+            "keyword_matches": [],
+            "vocabulary_matches": [],
+            "total_keywords": len(expected_keywords),
+            "matched_keywords_count": 0,
+            "total_vocabulary": len(vocabulary_focus),
+            "matched_vocabulary_count": 0,
+            "response_type_detected": "unknown",
+            "detailed_feedback": {
+                "relevance_feedback": "Response was received but could not be fully evaluated.",
+                "confidence_feedback": "Please try to maintain a confident and professional tone.",
+                "grammar_feedback": "Focus on grammatical accuracy and fluency.",
+                "vocabulary_feedback": "Use professional interview vocabulary and expected keywords.",
+                "structure_feedback": "Organize your response with clear structure and flow."
+            },
+            "suggested_improvements": [
+                "Practice using professional interview vocabulary",
+                "Work on maintaining confident and clear communication",
+                "Focus on directly addressing the interview question"
+            ],
+            "encouragement": "Good effort! Keep practicing to improve your interview skills.",
+            "next_steps": "Focus on professional vocabulary and confident self-presentation."
+        }
+        
+        return {
+            "success": False,
+            "error": f"Evaluation service error: {str(e)}",
+            "suggested_improvement": "Please try again later.",
+            "evaluation": fallback_evaluation,
+            "score": 60,
+            "is_correct": False,
+            "completed": False,
+            "keyword_matches": [],
+            "total_keywords": len(expected_keywords),
+            "matched_keywords_count": 0,
+            "vocabulary_matches": [],
+            "total_vocabulary": len(vocabulary_focus),
+            "matched_vocabulary_count": 0,
+            "fluency_score": 15,
+            "grammar_score": 15,
+            "answer_relevance_score": 15,
+            "confidence_tone_score": 15,
+            "interview_vocabulary_score": 15,
+            "response_type": "unknown"
+        }
+
+
+
+def evaluate_response_ex3_stage4(user_response: str, news_title: str, summary_text: str, expected_keywords: list, vocabulary_focus: list, model_summary: str) -> dict:
+    """
+    Evaluate user's news summary response for Stage 4 Exercise 3 (News Summary Challenge)
+    
+    Args:
+        user_response: User's recorded summary
+        news_title: Title of the news article
+        summary_text: Original news text
+        expected_keywords: List of expected keywords
+        vocabulary_focus: List of vocabulary words to focus on
+        model_summary: Example model summary
+    
+    Returns:
+        Dictionary with evaluation results
+    """
+    try:
+        print(f"🔍 [EVAL] Evaluating news summary response: {user_response[:50]}...")
+        
+        # Create comprehensive evaluation prompt
+        prompt = f"""
+You are an expert English language evaluator specializing in B2 Upper Intermediate level assessments. 
+Evaluate the following news summary response based on the criteria below.
+
+NEWS TITLE: {news_title}
+ORIGINAL NEWS TEXT: {summary_text}
+USER'S SUMMARY: {user_response}
+MODEL SUMMARY: {model_summary}
+EXPECTED KEYWORDS: {', '.join(expected_keywords)}
+VOCABULARY FOCUS: {', '.join(vocabulary_focus)}
+
+EVALUATION CRITERIA (Total: 100 points):
+1. Main Points Coverage (30 points): Does the summary cover the key facts, events, and important details from the original news?
+2. Grammar & Structure (25 points): Is the grammar correct and the structure clear and logical?
+3. Paraphrasing Skills (25 points): Does the user paraphrase effectively without copying the original text?
+4. Neutral Tone (20 points): Is the tone objective and journalistic, avoiding personal opinions?
+
+Provide your evaluation in the following JSON format:
+{{
+    "overall_score": <0-100>,
+    "main_points_coverage_score": <0-30>,
+    "grammar_structure_score": <0-25>,
+    "paraphrasing_skills_score": <0-25>,
+    "neutral_tone_score": <0-20>,
+    "keyword_matches": ["list", "of", "matched", "keywords"],
+    "total_keywords": <total_number_of_expected_keywords>,
+    "matched_keywords_count": <number_of_matched_keywords>,
+    "summary_type_detected": "<summary/paraphrase/copy>",
+    "detailed_feedback": {{
+        "main_points_feedback": "<feedback on main points coverage>",
+        "grammar_feedback": "<feedback on grammar and structure>",
+        "paraphrasing_feedback": "<feedback on paraphrasing skills>",
+        "tone_feedback": "<feedback on neutral tone>"
+    }},
+    "suggested_improvements": ["improvement1", "improvement2", "improvement3"],
+    "encouragement": "<positive encouragement message>",
+    "next_steps": "<specific next steps for improvement>"
+}}
+
+Focus on B2 Upper Intermediate level expectations. Be encouraging but honest in your assessment.
+"""
+
+        print("🔄 [EVAL] Sending evaluation request to OpenAI...")
+        
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": "You are an expert English language evaluator for B2 Upper Intermediate level. Provide evaluations in the exact JSON format requested."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3,
+            max_tokens=1500
+        )
+        
+        print("📊 [EVAL] Raw OpenAI response received")
+        
+        # Extract and clean the response
+        raw_response = response.choices[0].message.content.strip()
+        print(f"📊 [EVAL] Raw response: {raw_response[:200]}...")
+        
+        # Clean the response to extract JSON
+        cleaned_response = raw_response
+        if "```json" in raw_response:
+            cleaned_response = raw_response.split("```json")[1].split("```")[0].strip()
+        elif "```" in raw_response:
+            cleaned_response = raw_response.split("```")[1].strip()
+        
+        print(f"📊 [EVAL] Cleaned response: {cleaned_response[:200]}...")
+        
+        # Parse JSON response
+        evaluation_data = json.loads(cleaned_response)
+        
+        # Calculate overall score
+        overall_score = evaluation_data.get("overall_score", 0)
+        
+        # Determine if the response meets the success threshold (80% for B2 level)
+        success_threshold = 80
+        is_successful = overall_score >= success_threshold
+        
+        # Count keyword matches
+        keyword_matches = evaluation_data.get("keyword_matches", [])
+        total_keywords = evaluation_data.get("total_keywords", len(expected_keywords))
+        matched_count = evaluation_data.get("matched_keywords_count", len(keyword_matches))
+        
+        # Determine summary type
+        summary_type = evaluation_data.get("summary_type_detected", "summary")
+        
+        # Calculate fluency and grammar scores (scaled down for consistency)
+        fluency_score = min(50, evaluation_data.get("grammar_structure_score", 0) * 2)
+        grammar_score = min(50, evaluation_data.get("grammar_structure_score", 0) * 2)
+        
+        print(f"✅ [EVAL] Evaluation completed. Score: {overall_score}%")
+        
+        return {
+            "success": True,
+            "news_title": news_title,
+            "expected_keywords": expected_keywords,
+            "user_text": user_response,
+            "evaluation": evaluation_data,
+            "suggested_improvement": evaluation_data.get("suggested_improvements", [""])[0] if evaluation_data.get("suggested_improvements") else "",
+            "keyword_matches": keyword_matches,
+            "total_keywords": total_keywords,
+            "matched_keywords_count": matched_count,
+            "fluency_score": fluency_score,
+            "grammar_score": grammar_score,
+            "summary_type": summary_type,
+            "score": overall_score,
+            "is_correct": is_successful,
+            "completed": is_successful
+        }
+        
+    except json.JSONDecodeError as e:
+        print(f"❌ [EVAL] JSON parsing error: {e}")
+        return {
+            "success": False,
+            "error": "json_parsing_error",
+            "message": "Failed to parse evaluation response"
+        }
+    except Exception as e:
+        print(f"❌ [EVAL] Evaluation error: {e}")
+        return {
+            "success": False,
+            "error": "evaluation_error",
+            "message": f"Evaluation failed: {str(e)}"
+        }
