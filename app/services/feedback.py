@@ -2436,3 +2436,158 @@ Focus on B2 Upper Intermediate level expectations. Be encouraging but honest in 
             "error": "evaluation_error",
             "message": f"Evaluation failed: {str(e)}"
         }
+
+
+def evaluate_response_ex1_stage5(user_response: str, topic: str, ai_position: str, expected_keywords: list, vocabulary_focus: list, model_response: str) -> dict:
+    """
+    Evaluate critical thinking dialogue responses for Stage 5 Exercise 1.
+    Focuses on argument structure, critical thinking, vocabulary range, fluency, and discourse markers.
+    """
+    print(f"🔍 [EVAL] Evaluating critical thinking response: {user_response[:50]}...")
+    
+    prompt = f"""
+You are an expert English language evaluator specializing in C1 Advanced level critical thinking and philosophical discussions. Evaluate the user's response to a complex philosophical debate topic.
+
+**Topic:** {topic}
+**AI Position:** {ai_position}
+**User Response:** {user_response}
+**Expected Keywords:** {', '.join(expected_keywords)}
+**Vocabulary Focus:** {', '.join(vocabulary_focus)}
+**Model Response:** {model_response}
+
+**Evaluation Criteria (Total: 100 points):**
+1. **Argument Structure (25 points):** Logical organization, clear introduction, main arguments, counter-arguments, evidence, and conclusion
+2. **Critical Thinking (25 points):** Depth of analysis, ability to consider multiple perspectives, evidence-based reasoning, and nuanced understanding
+3. **Vocabulary Range (20 points):** Use of advanced academic vocabulary, sophisticated word choices, and appropriate terminology
+4. **Fluency & Grammar (20 points):** Natural flow, grammatical accuracy, sentence variety, and coherence
+5. **Discourse Markers (10 points):** Effective use of connectors, transition phrases, and logical flow indicators
+
+**Scoring Guidelines:**
+- **90-100:** Exceptional C1 level with sophisticated argumentation and vocabulary
+- **80-89:** Strong C1 level with clear structure and advanced language use
+- **70-79:** Good C1 level with some areas for improvement
+- **60-69:** Adequate C1 level with noticeable gaps
+- **Below 60:** Needs significant improvement to reach C1 level
+
+**Success Threshold:** 80 points (C1 Advanced level)
+
+**IMPORTANT:** Set "completed" and "is_correct" to true ONLY if the overall_score is 80 or higher.
+
+Analyze the response and provide detailed feedback in the following JSON format:
+
+{{
+    "success": true/false,
+    "overall_score": <0-100>,
+    "argument_structure_score": <0-25>,
+    "critical_thinking_score": <0-25>,
+    "vocabulary_range_score": <0-20>,
+    "fluency_grammar_score": <0-20>,
+    "discourse_markers_score": <0-10>,
+    "keyword_matches": ["list", "of", "matched", "keywords"],
+    "total_keywords": <number>,
+    "matched_keywords_count": <number>,
+    "vocabulary_matches": ["list", "of", "matched", "vocabulary"],
+    "total_vocabulary": <number>,
+    "matched_vocabulary_count": <number>,
+    "argument_type_detected": "balanced/one-sided/undeveloped",
+    "detailed_feedback": {{
+        "argument_structure_feedback": "<detailed feedback on argument organization>",
+        "critical_thinking_feedback": "<detailed feedback on analysis depth>",
+        "vocabulary_feedback": "<detailed feedback on word choice>",
+        "fluency_feedback": "<detailed feedback on flow and grammar>",
+        "discourse_feedback": "<detailed feedback on connectors>"
+    }},
+    "suggested_improvements": [
+        "<specific improvement suggestion 1>",
+        "<specific improvement suggestion 2>",
+        "<specific improvement suggestion 3>"
+    ],
+    "encouragement": "<motivational message>",
+    "next_steps": "<specific guidance for improvement>",
+    "score": <0-100>
+}}
+
+Note: Do NOT include "completed" or "is_correct" fields in your response. These will be calculated automatically based on the score threshold.
+
+Ensure the response is valid JSON and all scores are numerical values.
+"""
+
+    try:
+        print("🔄 [EVAL] Sending evaluation request to OpenAI...")
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": "You are an expert English language evaluator for C1 Advanced level critical thinking exercises. Provide detailed, constructive feedback in JSON format."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3,
+            max_tokens=2000
+        )
+        
+        print("📊 [EVAL] Raw OpenAI response received")
+        raw_response = response.choices[0].message.content.strip()
+        print(f"📊 [EVAL] Raw response: {raw_response[:200]}...")
+        
+        # Clean the response to ensure valid JSON
+        cleaned_response = raw_response
+        if cleaned_response.startswith("```json"):
+            cleaned_response = cleaned_response[7:]
+        if cleaned_response.endswith("```"):
+            cleaned_response = cleaned_response[:-3]
+        cleaned_response = cleaned_response.strip()
+        
+        print(f"📊 [EVAL] Cleaned response: {cleaned_response[:200]}...")
+        
+        evaluation = json.loads(cleaned_response)
+        
+        # Validate and set default values
+        if not isinstance(evaluation.get("overall_score"), (int, float)):
+            evaluation["overall_score"] = 0
+        if not isinstance(evaluation.get("score"), (int, float)):
+            evaluation["score"] = evaluation.get("overall_score", 0)
+        
+        # Force correct completion logic based on score threshold (80 for Stage 5)
+        score = evaluation.get("score", 0)
+        evaluation["completed"] = score >= 80
+        evaluation["is_correct"] = score >= 80
+            
+        print(f"✅ [EVAL] Evaluation completed. Score: {evaluation.get('score', 0)}%")
+        
+        return {
+            "success": True,
+            "evaluation": evaluation,
+            "suggested_improvement": evaluation.get("suggested_improvements", [""])[0] if evaluation.get("suggested_improvements") else "",
+            "keyword_matches": evaluation.get("keyword_matches", []),
+            "total_keywords": evaluation.get("total_keywords", 0),
+            "matched_keywords_count": evaluation.get("matched_keywords_count", 0),
+            "vocabulary_matches": evaluation.get("vocabulary_matches", []),
+            "total_vocabulary": evaluation.get("total_vocabulary", 0),
+            "matched_vocabulary_count": evaluation.get("matched_vocabulary_count", 0),
+            "fluency_score": evaluation.get("fluency_grammar_score", 0),
+            "grammar_score": evaluation.get("fluency_grammar_score", 0),
+            "argument_type": evaluation.get("argument_type_detected", ""),
+            "score": evaluation.get("score", 0),
+            "is_correct": evaluation.get("is_correct", False),
+            "completed": evaluation.get("completed", False)
+        }
+        
+    except json.JSONDecodeError as e:
+        print(f"❌ [EVAL] JSON parsing error: {str(e)}")
+        return {
+            "success": False,
+            "error": "evaluation_failed",
+            "message": "Failed to parse evaluation response. Please try again.",
+            "score": 0,
+            "is_correct": False,
+            "completed": False
+        }
+    except Exception as e:
+        print(f"❌ [EVAL] Evaluation error: {str(e)}")
+        return {
+            "success": False,
+            "error": "evaluation_failed",
+            "message": "Failed to evaluate response. Please try again.",
+            "score": 0,
+            "is_correct": False,
+            "completed": False
+        }
