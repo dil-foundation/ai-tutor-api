@@ -41,7 +41,8 @@ from app.routes import (
     news_summary,
     quiz_parser,
     gpt_quiz_parser,
-    progress_tracking
+    progress_tracking,
+    messaging
 )
 from .database import get_db, engine
 
@@ -131,6 +132,9 @@ app.include_router(english_only_ws.router, prefix="/api", tags=["WebSocket - Eng
 
 # Progress tracking routes (NEW - Comprehensive Progress System)
 app.include_router(progress_tracking.router, prefix="/api/progress", tags=["Progress Tracking"])
+
+# Messaging system routes (NEW - Real-time Messaging)
+app.include_router(messaging.router, prefix="/api", tags=["Messaging System"])
 
 print("✅ [MAIN] All routers included successfully")
 
