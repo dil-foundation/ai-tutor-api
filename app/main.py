@@ -15,6 +15,7 @@ Author: AI Tutor Development Team
 Version: 1.0.0
 """
 
+import logging
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
@@ -76,6 +77,16 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Configure logging to suppress WebSocket debug logs
+logging.getLogger("websockets").setLevel(logging.WARNING)
+logging.getLogger("uvicorn.protocols.websockets").setLevel(logging.WARNING)
+logging.getLogger("uvicorn.protocols.http.h11_impl").setLevel(logging.WARNING)
+logging.getLogger("uvicorn.protocols.websocket").setLevel(logging.WARNING)
+logging.getLogger("uvicorn.protocols.http").setLevel(logging.WARNING)
+logging.getLogger("uvicorn.lifespan").setLevel(logging.WARNING)
+logging.getLogger("uvicorn.error").setLevel(logging.WARNING)
+logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
 
 # Application lifecycle events
 @app.on_event("startup")

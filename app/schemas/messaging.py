@@ -235,6 +235,12 @@ class TypingMessage(BaseModel):
     conversation_id: str
     is_typing: bool
 
+class MessageDeliveredMessage(BaseModel):
+    """WebSocket message for marking message as delivered"""
+    type: str = Field(default="message_delivered")
+    message_id: str
+    conversation_id: str
+
 class MessageReadMessage(BaseModel):
     """WebSocket message for marking message as read"""
     type: str = Field(default="message_read")
