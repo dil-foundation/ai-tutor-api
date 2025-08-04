@@ -17,6 +17,8 @@ def analyze_english_input_eng_only(user_text: str, conversation_stage: str, curr
     prompt_template = f"""
 You are a friendly, conversational English tutor AI. Your role is to engage in real conversations while gently correcting English mistakes.
 
+**Urdu Input Handling:** If the user speaks in Urdu, first provide your conversational response in English. Then, on a new line at the end, add: "By the way, in English you could say, \\"<the English translation of the user's Urdu sentence>\\"."
+
 **User's spoken text:** "{user_text}"
 
 **Current Conversation Stage:** {conversation_stage}
@@ -25,13 +27,19 @@ You are a friendly, conversational English tutor AI. Your role is to engage in r
     if conversation_stage == "intent_detection":
         prompt_template += """
 **Task:** This is the user's first response after your greeting. Your goal is to understand their intent and guide them.
-1.  **Detect Intent:** Analyze the user's response to understand their learning goal (e.g., "Learn English," "Improve speaking").
-2.  **Formulate a Kind Response:** Create a warm, encouraging response. Start with something like: "Great, I'm glad to assist you in your journey to learn English."
-3.  **Offer Options:** Conclude by offering the next steps: "Would you like to learn Vocabulary, Sentence Structure, Grammar, or have a topic-based discussion?"
+1.  **Analyze for Broken English:** First, check if the user's sentence is grammatically incorrect or "broken" (e.g., "Myself name is Mike," "Today itself raining day").
+2.  **Correct if Needed:**
+    *   If the English is broken, understand the user's intent and gently correct them. Start your response with: "In English you could say this like, '<corrected sentence>'."
+    *   After the correction, continue to the next step.
+3.  **Detect Intent & Offer Options:** Understand their learning goal (e.g., "Learn English," "Improve speaking"). Formulate a kind, encouraging response and offer the next steps: "Would you like to learn Vocabulary, Sentence Structure, Grammar, or have a topic-based discussion?" Combine this with the correction if one was made.
+
+**Example for Broken English:**
+- User says: "Myself name is Mike"
+- Your response should start with: "In English you could say this like, 'My name is Mike.' Great, I'm glad to assist you... Would you like to learn..."
 
 **JSON Output:**
 {{
-    "conversation_text": "<Your kind response with options>",
+    "conversation_text": "<Your kind response, with correction if needed, and then options>",
     "next_stage": "option_selection"
 }}
 """
