@@ -41,6 +41,8 @@ from app.routes import (
     mock_interview,
     news_summary,
     critical_thinking,
+    academic_presentation,
+    in_depth_interview,
     quiz_parser,
     gpt_quiz_parser,
     progress_tracking,
@@ -131,6 +133,8 @@ app.include_router(abstract_topic.router, prefix="/api", tags=["Stage 4 - Exerci
 app.include_router(mock_interview.router, prefix="/api", tags=["Stage 4 - Exercise 2 (Mock Interview)"])
 app.include_router(news_summary.router, prefix="/api", tags=["Stage 4 - Exercise 3 (News Summary)"])
 app.include_router(critical_thinking.router, prefix="/api", tags=["Stage 5 - Exercise 1 (Critical Thinking Dialogues)"])
+app.include_router(academic_presentation.router, prefix="/api", tags=["Stage 5 - Exercise 2 (Academic Presentation)"])
+app.include_router(in_depth_interview.router, prefix="/api", tags=["Stage 5 - Exercise 3 (In-Depth Interview)"])
 app.include_router(quiz_parser.router, prefix="/api", tags=["Quiz Parser"])
 
 # Stage 2 exercises
