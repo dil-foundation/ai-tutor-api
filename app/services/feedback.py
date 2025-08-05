@@ -2599,3 +2599,164 @@ Ensure the response is valid JSON and all scores are numerical values.
             "is_correct": False,
             "completed": False
         }
+
+
+def evaluate_response_ex2_stage5(user_response: str, topic: str, expected_keywords: list, vocabulary_focus: list, model_response: str, expected_structure: str) -> dict:
+    """
+    Evaluate Stage 5 Exercise 2 (Academic Presentation) responses.
+    Focuses on academic presentation skills, argument structure, evidence usage, and formal tone.
+    """
+    print(f"🔄 [EVAL] Evaluating Stage 5 Exercise 2 (Academic Presentation)")
+    print(f"📝 [EVAL] Topic: {topic}")
+    print(f"📝 [EVAL] User response: {user_response[:100]}...")
+    print(f"📝 [EVAL] Expected keywords: {expected_keywords}")
+    print(f"📝 [EVAL] Expected structure: {expected_structure}")
+    
+    prompt = f"""
+You are an expert English language evaluator for C1 Advanced level academic presentations. Evaluate the user's 3-minute academic presentation based on the following criteria:
+
+**Topic:** {topic}
+**User's Presentation:** {user_response}
+**Expected Keywords:** {expected_keywords}
+**Expected Structure:** {expected_structure}
+**Vocabulary Focus:** {vocabulary_focus}
+**Model Response:** {model_response}
+
+**Evaluation Criteria (100 points total):**
+1. **Argument Structure (25 points):** Introduction, thesis statement, supporting evidence, counter-arguments, conclusion
+2. **Evidence Usage (25 points):** Use of examples, statistics, research, logical reasoning
+3. **Academic Tone (20 points):** Formal language, professional vocabulary, appropriate register
+4. **Fluency & Pacing (15 points):** Smooth delivery, appropriate speed, clear articulation
+5. **Vocabulary Range (15 points):** Sophisticated word choice, academic terminology
+
+**Analysis Tasks:**
+1. **Keyword Analysis:** Check how many expected keywords were used appropriately
+2. **Structure Analysis:** Evaluate if the presentation follows the expected academic structure
+3. **Evidence Analysis:** Assess the quality and relevance of evidence provided
+4. **Language Analysis:** Evaluate academic tone, vocabulary sophistication, and grammar
+5. **Overall Assessment:** Provide a comprehensive score and detailed feedback
+
+**Response Format (JSON only):**
+{{
+    "overall_score": <0-100>,
+    "argument_structure_score": <0-25>,
+    "evidence_usage_score": <0-25>,
+    "academic_tone_score": <0-20>,
+    "fluency_pacing_score": <0-15>,
+    "vocabulary_range_score": <0-15>,
+    "keyword_matches": {expected_keywords},
+    "matched_keywords_count": <number of keywords used>,
+    "total_keywords": {len(expected_keywords)},
+    "vocabulary_matches": {vocabulary_focus},
+    "matched_vocabulary_count": <number of vocabulary words used>,
+    "total_vocabulary": {len(vocabulary_focus)},
+    "structure_followed": <true/false>,
+    "evidence_provided": <true/false>,
+    "academic_tone_maintained": <true/false>,
+    "detailed_feedback": {{
+        "argument_structure_feedback": "<detailed feedback on structure>",
+        "evidence_usage_feedback": "<detailed feedback on evidence>",
+        "academic_tone_feedback": "<detailed feedback on tone>",
+        "fluency_feedback": "<detailed feedback on delivery>",
+        "vocabulary_feedback": "<detailed feedback on word choice>"
+    }},
+    "suggested_improvements": [
+        "<specific improvement suggestion 1>",
+        "<specific improvement suggestion 2>",
+        "<specific improvement suggestion 3>"
+    ],
+    "encouragement": "<motivational message>",
+    "next_steps": "<specific guidance for improvement>",
+    "score": <0-100>
+}}
+
+Note: Do NOT include "completed" or "is_correct" fields in your response. These will be calculated automatically based on the score threshold.
+
+Ensure the response is valid JSON and all scores are numerical values.
+"""
+
+    try:
+        print("🔄 [EVAL] Sending evaluation request to OpenAI...")
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": "You are an expert English language evaluator for C1 Advanced level academic presentations. Provide detailed, constructive feedback in JSON format."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3,
+            max_tokens=2000
+        )
+        
+        print("📊 [EVAL] Raw OpenAI response received")
+        raw_response = response.choices[0].message.content.strip()
+        print(f"📊 [EVAL] Raw response: {raw_response[:200]}...")
+        
+        # Clean the response to ensure valid JSON
+        cleaned_response = raw_response
+        if cleaned_response.startswith("```json"):
+            cleaned_response = cleaned_response[7:]
+        if cleaned_response.endswith("```"):
+            cleaned_response = cleaned_response[:-3]
+        cleaned_response = cleaned_response.strip()
+        
+        print(f"📊 [EVAL] Cleaned response: {cleaned_response[:200]}...")
+        
+        evaluation = json.loads(cleaned_response)
+        
+        # Validate and set default values
+        if not isinstance(evaluation.get("overall_score"), (int, float)):
+            evaluation["overall_score"] = 0
+        if not isinstance(evaluation.get("score"), (int, float)):
+            evaluation["score"] = evaluation.get("overall_score", 0)
+        
+        # Force correct completion logic based on score threshold (80 for Stage 5)
+        score = evaluation.get("score", 0)
+        evaluation["completed"] = score >= 80
+        evaluation["is_correct"] = score >= 80
+            
+        print(f"✅ [EVAL] Evaluation completed. Score: {evaluation.get('score', 0)}%")
+        
+        return {
+            "success": True,
+            "evaluation": evaluation,
+            "suggested_improvement": evaluation.get("suggested_improvements", [""])[0] if evaluation.get("suggested_improvements") else "",
+            "keyword_matches": evaluation.get("keyword_matches", []),
+            "total_keywords": evaluation.get("total_keywords", 0),
+            "matched_keywords_count": evaluation.get("matched_keywords_count", 0),
+            "vocabulary_matches": evaluation.get("vocabulary_matches", []),
+            "total_vocabulary": evaluation.get("total_vocabulary", 0),
+            "matched_vocabulary_count": evaluation.get("matched_vocabulary_count", 0),
+            "fluency_score": evaluation.get("fluency_pacing_score", 0),
+            "grammar_score": evaluation.get("academic_tone_score", 0),
+            "argument_structure_score": evaluation.get("argument_structure_score", 0),
+            "academic_tone_score": evaluation.get("academic_tone_score", 0),
+            "evidence_usage_score": evaluation.get("evidence_usage_score", 0),
+            "vocabulary_range_score": evaluation.get("vocabulary_range_score", 0),
+            "structure_followed": evaluation.get("structure_followed", False),
+            "evidence_provided": evaluation.get("evidence_provided", False),
+            "academic_tone_maintained": evaluation.get("academic_tone_maintained", False),
+            "score": evaluation.get("score", 0),
+            "is_correct": evaluation.get("is_correct", False),
+            "completed": evaluation.get("completed", False)
+        }
+        
+    except json.JSONDecodeError as e:
+        print(f"❌ [EVAL] JSON parsing error: {str(e)}")
+        return {
+            "success": False,
+            "error": "evaluation_failed",
+            "message": "Failed to parse evaluation response. Please try again.",
+            "score": 0,
+            "is_correct": False,
+            "completed": False
+        }
+    except Exception as e:
+        print(f"❌ [EVAL] Evaluation error: {str(e)}")
+        return {
+            "success": False,
+            "error": "evaluation_failed",
+            "message": "Failed to evaluate response. Please try again.",
+            "score": 0,
+            "is_correct": False,
+            "completed": False
+        }
