@@ -1,12 +1,13 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 import json
 import base64
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from app.services.feedback import evaluate_response_ex1_stage4
 from app.services.stt import transcribe_audio_bytes_eng_only
 from app.services.tts import synthesize_speech_exercises
 from app.supabase_client import progress_tracker
+from app.auth_middleware import get_current_user, require_student
 import os
 
 router = APIRouter()
@@ -47,7 +48,7 @@ def get_topic_by_id(topic_id: int):
     description="Retrieve all available abstract topics for Stage 4 Exercise 1",
     tags=["Stage 4 - Exercise 1 (Abstract Topic Monologue)"]
 )
-async def get_abstract_topics():
+async def get_abstract_topics(current_user: Dict[str, Any] = Depends(require_student)):
     """Get all abstract topics"""
     print("🔄 [API] GET /abstract-topics endpoint called")
     
@@ -69,7 +70,7 @@ async def get_abstract_topics():
     description="Retrieve a specific abstract topic by ID",
     tags=["Stage 4 - Exercise 1 (Abstract Topic Monologue)"]
 )
-async def get_abstract_topic(topic_id: int):
+async def get_abstract_topic(topic_id: int, current_user: Dict[str, Any] = Depends(require_student)):
     """Get a specific abstract topic by ID"""
     print(f"🔄 [API] GET /abstract-topics/{topic_id} endpoint called")
     
@@ -93,7 +94,10 @@ async def get_abstract_topic(topic_id: int):
     description="Generate audio narration for a specific abstract topic",
     tags=["Stage 4 - Exercise 1 (Abstract Topic Monologue)"]
 )
-async def generate_abstract_topic_audio(request: AudioGenerationRequest):
+async def generate_abstract_topic_audio(
+    request: AudioGenerationRequest,
+    current_user: Dict[str, Any] = Depends(require_student)
+):
     """Generate audio for an abstract topic"""
     print(f"🔄 [API] POST /abstract-topic/{request.topic_id} endpoint called")
     
@@ -142,10 +146,20 @@ Also records progress tracking data in Supabase database.
 """,
     tags=["Stage 4 - Exercise 1 (Abstract Topic Monologue)"]
 )
-async def evaluate_abstract_topic(request: AudioEvaluationRequest):
+async def evaluate_abstract_topic(
+    request: AudioEvaluationRequest,
+    current_user: Dict[str, Any] = Depends(require_student)
+):
     """Evaluate user's response for abstract topic monologue"""
     print(f"🔄 [API] POST /evaluate-abstract-topic endpoint called")
     print(f"📊 [API] Request details: topic_id={request.topic_id}, user_id={request.user_id}")
+    
+    # Validate user_id and ensure user can only access their own data
+    if not request.user_id:
+        raise HTTPException(status_code=400, detail="user_id is required")
+    
+    if request.user_id != current_user['id']:
+        raise HTTPException(status_code=403, detail="You can only access your own data")
     
     try:
         # Get topic data
@@ -342,9 +356,16 @@ async def evaluate_abstract_topic(request: AudioEvaluationRequest):
     description="Retrieve the user's progress for Stage 4 Exercise 1 (Abstract Topic Monologue)",
     tags=["Stage 4 - Exercise 1 (Abstract Topic Monologue)"]
 )
-async def get_abstract_topic_progress(user_id: str):
+async def get_abstract_topic_progress(
+    user_id: str,
+    current_user: Dict[str, Any] = Depends(require_student)
+):
     """Get user's abstract topic progress"""
     print(f"🔄 [API] GET /abstract-topic-progress/{user_id} endpoint called")
+    
+    # Ensure user can only access their own data
+    if user_id != current_user['id']:
+        raise HTTPException(status_code=403, detail="You can only access your own data")
     
     try:
         # Get user's progress for Stage 4 Exercise 1
@@ -384,9 +405,16 @@ async def get_abstract_topic_progress(user_id: str):
     description="Retrieve the user's current topic for Stage 4 Exercise 1 (Abstract Topic Monologue)",
     tags=["Stage 4 - Exercise 1 (Abstract Topic Monologue)"]
 )
-async def get_abstract_topic_current_topic(user_id: str):
+async def get_abstract_topic_current_topic(
+    user_id: str,
+    current_user: Dict[str, Any] = Depends(require_student)
+):
     """Get user's current abstract topic"""
     print(f"🔄 [API] GET /abstract-topic-current-topic/{user_id} endpoint called")
+    
+    # Ensure user can only access their own data
+    if user_id != current_user['id']:
+        raise HTTPException(status_code=403, detail="You can only access your own data")
     
     try:
         # Get user's current topic for Stage 4 Exercise 1

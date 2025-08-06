@@ -1,14 +1,16 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 import json
 import os
 import base64
 from io import BytesIO
+from typing import Dict, Any
 from app.services.tts import synthesize_speech, synthesize_speech_exercises
 from app.services.stt import transcribe_audio_bytes_eng_only
 from app.services.feedback import evaluate_response_ex1_stage5
 from app.supabase_client import progress_tracker
+from app.auth_middleware import get_current_user, require_student
 
 router = APIRouter()
 
@@ -39,7 +41,7 @@ def get_topic_by_id(topic_id: int):
         return None
 
 @router.get("/critical-thinking-topics")
-async def get_all_topics():
+async def get_all_topics(current_user: Dict[str, Any] = Depends(require_student)):
     """Get all available topics for Critical Thinking Dialogues exercise"""
     print("🔄 [API] GET /critical-thinking-topics endpoint called")
     try:
@@ -53,7 +55,7 @@ async def get_all_topics():
         raise HTTPException(status_code=500, detail=f"Failed to load topics: {str(e)}")
 
 @router.get("/critical-thinking-topics/{topic_id}")
-async def get_topic(topic_id: int):
+async def get_topic(topic_id: int, current_user: Dict[str, Any] = Depends(require_student)):
     """Get a specific topic by ID"""
     print(f"🔄 [API] GET /critical-thinking-topics/{topic_id} endpoint called")
     try:
@@ -98,7 +100,7 @@ and returns the generated audio file as the response.
 """,
     tags=["Stage 5 - Exercise 1 (Critical Thinking Dialogues)"]
 )
-async def critical_thinking(topic_id: int):
+async def critical_thinking(topic_id: int, current_user: Dict[str, Any] = Depends(require_student)):
     print(f"🔄 [API] POST /critical-thinking/{topic_id} endpoint called")
     try:
         topic_data = get_topic_by_id(topic_id)
@@ -147,9 +149,19 @@ Also records progress tracking data in Supabase database.
 """,
     tags=["Stage 5 - Exercise 1 (Critical Thinking Dialogues)"]
 )
-async def evaluate_critical_thinking(request: AudioEvaluationRequest):
+async def evaluate_critical_thinking(
+    request: AudioEvaluationRequest,
+    current_user: Dict[str, Any] = Depends(require_student)
+):
     print(f"🔄 [API] POST /evaluate-critical-thinking endpoint called")
     print(f"📊 [API] Request details: topic_id={request.topic_id}, user_id={request.user_id}")
+    
+    # Validate user_id and ensure user can only access their own data
+    if not request.user_id:
+        raise HTTPException(status_code=400, detail="user_id is required")
+    
+    if request.user_id != current_user['id']:
+        raise HTTPException(status_code=403, detail="You can only access your own data")
     
     try:
         # Get topic data
@@ -311,9 +323,17 @@ async def evaluate_critical_thinking(request: AudioEvaluationRequest):
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @router.get("/critical-thinking-progress/{user_id}")
-async def get_user_progress(user_id: str):
+async def get_user_progress(
+    user_id: str,
+    current_user: Dict[str, Any] = Depends(require_student)
+):
     """Get user's progress for Critical Thinking Dialogues exercise"""
     print(f"🔄 [API] GET /critical-thinking-progress/{user_id} endpoint called")
+    
+    # Ensure user can only access their own data
+    if user_id != current_user['id']:
+        raise HTTPException(status_code=403, detail="You can only access your own data")
+    
     try:
         # Get topic progress for this specific exercise
         topic_progress = await progress_tracker.get_user_topic_progress(user_id, stage_id=5, exercise_id=1)
@@ -336,9 +356,17 @@ async def get_user_progress(user_id: str):
         raise HTTPException(status_code=500, detail=f"Failed to get progress: {str(e)}")
 
 @router.get("/critical-thinking-current-topic/{user_id}")
-async def get_current_topic(user_id: str):
+async def get_current_topic(
+    user_id: str,
+    current_user: Dict[str, Any] = Depends(require_student)
+):
     """Get user's current topic for Critical Thinking Dialogues exercise"""
     print(f"🔄 [API] GET /critical-thinking-current-topic/{user_id} endpoint called")
+    
+    # Ensure user can only access their own data
+    if user_id != current_user['id']:
+        raise HTTPException(status_code=403, detail="You can only access your own data")
+    
     try:
         topic_data = await progress_tracker.get_current_topic_for_exercise(user_id, stage_id=5, exercise_id=1)
         print(f"✅ [API] Current topic retrieved: {topic_data}")

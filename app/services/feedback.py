@@ -2922,3 +2922,605 @@ Ensure the response is valid JSON and all scores are numerical values.
             "is_correct": False,
             "completed": False
         }
+
+def evaluate_response_ex1_stage6(expected_keywords, user_text, topic_text, model_response, evaluation_criteria):
+    """
+    Evaluate Stage 6 Exercise 1 (AI-Guided Spontaneous Speech) responses using ChatGPT.
+    
+    Args:
+        expected_keywords: List of expected keywords from the topic
+        user_text: Transcribed user response
+        topic_text: The spontaneous speech topic
+        model_response: Expected model response for comparison
+        evaluation_criteria: Dictionary with evaluation weights
+    
+    Returns:
+        Dictionary with evaluation results
+    """
+    try:
+        print(f"🔄 [EVAL] Starting Stage 6 Exercise 1 evaluation")
+        print(f"📝 [EVAL] Topic: {topic_text}")
+        print(f"🎤 [EVAL] User response: {user_text}")
+        print(f"🔑 [EVAL] Expected keywords: {expected_keywords}")
+        
+        # Extract evaluation criteria weights
+        spontaneous_fluency_weight = evaluation_criteria.get("spontaneous_fluency", 30)
+        depth_of_thought_weight = evaluation_criteria.get("depth_of_thought", 25)
+        advanced_vocabulary_weight = evaluation_criteria.get("advanced_vocabulary", 25)
+        structural_coherence_weight = evaluation_criteria.get("structural_coherence", 20)
+        
+        # Create sophisticated evaluation prompt
+        evaluation_prompt = f"""
+You are an expert English language evaluator for C2-level spontaneous speech exercises. Evaluate the following response based on the given criteria.
+
+TOPIC: {topic_text}
+
+USER RESPONSE: {user_text}
+
+EXPECTED KEYWORDS: {', '.join(expected_keywords)}
+
+MODEL RESPONSE (for reference): {model_response}
+
+EVALUATION CRITERIA:
+1. Spontaneous Fluency (Weight: {spontaneous_fluency_weight}%): Natural flow, minimal hesitation, confident delivery
+2. Depth of Thought (Weight: {depth_of_thought_weight}%): Sophisticated analysis, nuanced perspectives, intellectual depth
+3. Advanced Vocabulary (Weight: {advanced_vocabulary_weight}%): C2-level terminology, precise word choice, academic language
+4. Structural Coherence (Weight: {structural_coherence_weight}%): Logical organization, clear progression, well-structured arguments
+
+Please provide a comprehensive evaluation in the following JSON format:
+
+{{
+    "overall_score": <0-100>,
+    "spontaneous_fluency_score": <0-100>,
+    "depth_of_thought_score": <0-100>,
+    "advanced_vocabulary_score": <0-100>,
+    "structural_coherence_score": <0-100>,
+    "keyword_matches": <number of keywords used>,
+    "total_keywords": <total number of expected keywords>,
+    "fluency_analysis": "<detailed analysis of spontaneous fluency>",
+    "thought_analysis": "<detailed analysis of depth of thought>",
+    "vocabulary_analysis": "<detailed analysis of vocabulary usage>",
+    "coherence_analysis": "<detailed analysis of structural coherence>",
+    "strengths": ["<list of key strengths>"],
+    "areas_for_improvement": ["<list of specific improvement areas>"],
+    "suggested_improvement": "<comprehensive improvement suggestion>",
+    "is_correct": <true/false based on overall quality>,
+    "completed": <true if score >= 80, false otherwise>
+}}
+
+Focus on C2-level expectations: sophisticated language, complex ideas, nuanced arguments, and native-like fluency.
+"""
+
+        print(f"🔄 [EVAL] Sending evaluation request to ChatGPT")
+        
+        # Get ChatGPT response
+        response = client.chat.completions.create(
+            model="gpt-4",
+            messages=[
+                {"role": "system", "content": "You are an expert English language evaluator for C2-level spontaneous speech exercises. Provide detailed, professional evaluations in the exact JSON format requested."},
+                {"role": "user", "content": evaluation_prompt}
+            ],
+            temperature=0.3,
+            max_tokens=1500
+        )
+        
+        # Extract and parse the response
+        evaluation_text = response.choices[0].message.content.strip()
+        print(f"📊 [EVAL] ChatGPT response received: {evaluation_text[:200]}...")
+        
+        # Parse JSON response
+        try:
+            evaluation_data = json.loads(evaluation_text)
+            print(f"✅ [EVAL] JSON parsed successfully")
+        except json.JSONDecodeError as e:
+            print(f"❌ [EVAL] JSON parsing error: {str(e)}")
+            # Fallback evaluation
+            return create_fallback_evaluation(user_text, expected_keywords, topic_text)
+        
+        # Validate and process the evaluation data
+        overall_score = evaluation_data.get("overall_score", 0)
+        spontaneous_fluency_score = evaluation_data.get("spontaneous_fluency_score", 0)
+        depth_of_thought_score = evaluation_data.get("depth_of_thought_score", 0)
+        advanced_vocabulary_score = evaluation_data.get("advanced_vocabulary_score", 0)
+        structural_coherence_score = evaluation_data.get("structural_coherence_score", 0)
+        keyword_matches = evaluation_data.get("keyword_matches", 0)
+        total_keywords = evaluation_data.get("total_keywords", len(expected_keywords))
+        
+        # Calculate weighted score
+        weighted_score = (
+            (spontaneous_fluency_score * spontaneous_fluency_weight / 100) +
+            (depth_of_thought_score * depth_of_thought_weight / 100) +
+            (advanced_vocabulary_score * advanced_vocabulary_weight / 100) +
+            (structural_coherence_score * structural_coherence_weight / 100)
+        )
+        
+        # Determine completion status
+        is_correct = weighted_score >= 70
+        completed = weighted_score >= 80
+        
+        print(f"📊 [EVAL] Evaluation results:")
+        print(f"   Overall Score: {weighted_score:.1f}")
+        print(f"   Spontaneous Fluency: {spontaneous_fluency_score}")
+        print(f"   Depth of Thought: {depth_of_thought_score}")
+        print(f"   Advanced Vocabulary: {advanced_vocabulary_score}")
+        print(f"   Structural Coherence: {structural_coherence_score}")
+        print(f"   Keyword Matches: {keyword_matches}/{total_keywords}")
+        print(f"   Completed: {completed}")
+        
+        return {
+            "score": round(weighted_score, 1),
+            "spontaneous_fluency_score": spontaneous_fluency_score,
+            "depth_of_thought_score": depth_of_thought_score,
+            "advanced_vocabulary_score": advanced_vocabulary_score,
+            "structural_coherence_score": structural_coherence_score,
+            "keyword_matches": keyword_matches,
+            "total_keywords": total_keywords,
+            "fluency_score": spontaneous_fluency_score,  # For compatibility
+            "grammar_score": structural_coherence_score,  # For compatibility
+            "is_correct": is_correct,
+            "completed": completed,
+            "suggested_improvement": evaluation_data.get("suggested_improvement", ""),
+            "strengths": evaluation_data.get("strengths", []),
+            "areas_for_improvement": evaluation_data.get("areas_for_improvement", []),
+            "fluency_analysis": evaluation_data.get("fluency_analysis", ""),
+            "thought_analysis": evaluation_data.get("thought_analysis", ""),
+            "vocabulary_analysis": evaluation_data.get("vocabulary_analysis", ""),
+            "coherence_analysis": evaluation_data.get("coherence_analysis", "")
+        }
+        
+    except Exception as e:
+        print(f"❌ [EVAL] Error in Stage 6 Exercise 1 evaluation: {str(e)}")
+        return create_fallback_evaluation(user_text, expected_keywords, topic_text)
+
+def create_fallback_evaluation(user_text, expected_keywords, topic_text):
+    """Create a fallback evaluation when ChatGPT fails"""
+    print(f"🔄 [EVAL] Creating fallback evaluation")
+    
+    # Simple keyword matching
+    user_words = set(user_text.lower().split())
+    keyword_matches = sum(1 for keyword in expected_keywords if keyword.lower() in user_words)
+    total_keywords = len(expected_keywords)
+    
+    # Basic scoring
+    keyword_score = (keyword_matches / total_keywords) * 100 if total_keywords > 0 else 0
+    length_score = min(len(user_text.split()) / 50 * 100, 100)  # Target: 50+ words
+    overall_score = (keyword_score * 0.4) + (length_score * 0.6)
+    
+    return {
+        "score": round(overall_score, 1),
+        "spontaneous_fluency_score": 60,
+        "depth_of_thought_score": 50,
+        "advanced_vocabulary_score": keyword_score,
+        "structural_coherence_score": 50,
+        "keyword_matches": keyword_matches,
+        "total_keywords": total_keywords,
+        "fluency_score": 60,
+        "grammar_score": 50,
+        "is_correct": overall_score >= 70,
+        "completed": overall_score >= 80,
+        "suggested_improvement": "Try to speak more naturally and include more of the expected keywords in your response.",
+        "strengths": ["Attempted the topic"],
+        "areas_for_improvement": ["Need more spontaneous fluency", "Include more expected keywords"],
+        "fluency_analysis": "Basic response provided",
+        "thought_analysis": "Simple response structure",
+        "vocabulary_analysis": f"Used {keyword_matches}/{total_keywords} expected keywords",
+        "coherence_analysis": "Basic organization"
+    }
+
+
+
+def evaluate_response_ex2_stage6(expected_keywords, user_text, scenario_text, model_response, evaluation_criteria):
+    """
+    Evaluate Stage 6 Exercise 2 (Roleplay - Handle a Sensitive Scenario) responses using ChatGPT.
+    
+    Args:
+        expected_keywords: List of expected keywords from the scenario
+        user_text: Transcribed user response
+        scenario_text: The sensitive scenario description
+        model_response: Expected model response for comparison
+        evaluation_criteria: Dictionary with evaluation weights
+    
+    Returns:
+        Dictionary with evaluation results
+    """
+    try:
+        print(f"🔄 [EVAL] Starting Stage 6 Exercise 2 evaluation")
+        print(f"📝 [EVAL] Scenario: {scenario_text}")
+        print(f"🎤 [EVAL] User response: {user_text}")
+        print(f"🔑 [EVAL] Expected keywords: {expected_keywords}")
+        
+        # Extract evaluation criteria weights
+        tone_control_weight = evaluation_criteria.get("tone_control", 30)
+        empathy_authority_balance_weight = evaluation_criteria.get("empathy_authority_balance", 25)
+        clarity_communication_weight = evaluation_criteria.get("clarity_communication", 25)
+        conflict_resolution_weight = evaluation_criteria.get("conflict_resolution", 20)
+        
+        # Create sophisticated evaluation prompt
+        evaluation_prompt = f"""
+You are an expert English language evaluator for C2-level sensitive scenario roleplay exercises. Evaluate the following response based on the given criteria.
+
+SCENARIO: {scenario_text}
+
+USER RESPONSE: {user_text}
+
+EXPECTED KEYWORDS: {', '.join(expected_keywords)}
+
+MODEL RESPONSE (for reference): {model_response}
+
+EVALUATION CRITERIA:
+1. Tone Control (Weight: {tone_control_weight}%): Appropriate emotional tone, diplomatic language, professional demeanor
+2. Empathy vs Authority Balance (Weight: {empathy_authority_balance_weight}%): Balancing understanding with assertiveness, showing care while maintaining position
+3. Clarity & Communication (Weight: {clarity_communication_weight}%): Clear, precise language, effective message delivery, professional articulation
+4. Conflict Resolution (Weight: {conflict_resolution_weight}%): Problem-solving approach, constructive dialogue, resolution-oriented communication
+
+Please provide a comprehensive evaluation in the following JSON format:
+
+{{
+    "overall_score": <0-100>,
+    "tone_control_score": <0-100>,
+    "empathy_authority_balance_score": <0-100>,
+    "clarity_communication_score": <0-100>,
+    "conflict_resolution_score": <0-100>,
+    "keyword_matches": <number of keywords used>,
+    "total_keywords": <total number of expected keywords>,
+    "tone_analysis": "<detailed analysis of tone control>",
+    "empathy_authority_analysis": "<detailed analysis of empathy vs authority balance>",
+    "clarity_analysis": "<detailed analysis of clarity and communication>",
+    "conflict_resolution_analysis": "<detailed analysis of conflict resolution approach>",
+    "strengths": ["<list of key strengths>"],
+    "areas_for_improvement": ["<list of specific improvement areas>"],
+    "suggested_improvement": "<comprehensive improvement suggestion>",
+    "is_correct": <true/false based on overall quality>,
+    "completed": <true if score >= 80, false otherwise>
+}}
+
+Focus on C2-level expectations: sophisticated diplomatic language, emotional intelligence, professional communication, and effective conflict resolution strategies.
+"""
+
+        print(f"🔄 [EVAL] Sending evaluation request to ChatGPT")
+        
+        # Get ChatGPT response
+        response = client.chat.completions.create(
+            model="gpt-4",
+            messages=[
+                {"role": "system", "content": "You are an expert English language evaluator for C2-level sensitive scenario roleplay exercises. Provide detailed, professional evaluations in the exact JSON format requested."},
+                {"role": "user", "content": evaluation_prompt}
+            ],
+            temperature=0.3,
+            max_tokens=1500
+        )
+        
+        # Extract and parse the response
+        evaluation_text = response.choices[0].message.content.strip()
+        print(f"📊 [EVAL] ChatGPT response received: {evaluation_text[:200]}...")
+        
+        # Parse JSON response
+        try:
+            evaluation_data = json.loads(evaluation_text)
+            print(f"✅ [EVAL] JSON parsed successfully")
+        except json.JSONDecodeError as e:
+            print(f"❌ [EVAL] JSON parsing error: {str(e)}")
+            # Fallback evaluation
+            return create_fallback_evaluation_sensitive_scenario(user_text, expected_keywords, scenario_text)
+        
+        # Validate and process the evaluation data
+        overall_score = evaluation_data.get("overall_score", 0)
+        tone_control_score = evaluation_data.get("tone_control_score", 0)
+        empathy_authority_balance_score = evaluation_data.get("empathy_authority_balance_score", 0)
+        clarity_communication_score = evaluation_data.get("clarity_communication_score", 0)
+        conflict_resolution_score = evaluation_data.get("conflict_resolution_score", 0)
+        keyword_matches = evaluation_data.get("keyword_matches", 0)
+        total_keywords = evaluation_data.get("total_keywords", len(expected_keywords))
+        
+        # Calculate weighted score
+        weighted_score = (
+            (tone_control_score * tone_control_weight / 100) +
+            (empathy_authority_balance_score * empathy_authority_balance_weight / 100) +
+            (clarity_communication_score * clarity_communication_weight / 100) +
+            (conflict_resolution_score * conflict_resolution_weight / 100)
+        )
+        
+        # Determine completion status
+        is_correct = weighted_score >= 70
+        completed = weighted_score >= 80
+        
+        print(f"📊 [EVAL] Evaluation results:")
+        print(f"   Overall Score: {weighted_score:.1f}")
+        print(f"   Tone Control: {tone_control_score}")
+        print(f"   Empathy vs Authority Balance: {empathy_authority_balance_score}")
+        print(f"   Clarity & Communication: {clarity_communication_score}")
+        print(f"   Conflict Resolution: {conflict_resolution_score}")
+        print(f"   Keyword Matches: {keyword_matches}/{total_keywords}")
+        print(f"   Completed: {completed}")
+        
+        return {
+            "score": round(weighted_score, 1),
+            "tone_control_score": tone_control_score,
+            "empathy_authority_balance_score": empathy_authority_balance_score,
+            "clarity_communication_score": clarity_communication_score,
+            "conflict_resolution_score": conflict_resolution_score,
+            "keyword_matches": keyword_matches,
+            "total_keywords": total_keywords,
+            "fluency_score": tone_control_score,  # For compatibility
+            "grammar_score": clarity_communication_score,  # For compatibility
+            "is_correct": is_correct,
+            "completed": completed,
+            "suggested_improvement": evaluation_data.get("suggested_improvement", ""),
+            "strengths": evaluation_data.get("strengths", []),
+            "areas_for_improvement": evaluation_data.get("areas_for_improvement", []),
+            "tone_analysis": evaluation_data.get("tone_analysis", ""),
+            "empathy_authority_analysis": evaluation_data.get("empathy_authority_analysis", ""),
+            "clarity_analysis": evaluation_data.get("clarity_analysis", ""),
+            "conflict_resolution_analysis": evaluation_data.get("conflict_resolution_analysis", "")
+        }
+        
+    except Exception as e:
+        print(f"❌ [EVAL] Error in Stage 6 Exercise 2 evaluation: {str(e)}")
+        return create_fallback_evaluation_sensitive_scenario(user_text, expected_keywords, scenario_text)
+
+def create_fallback_evaluation_sensitive_scenario(user_text, expected_keywords, scenario_text):
+    """Create a fallback evaluation when ChatGPT fails for sensitive scenarios"""
+    print(f"🔄 [EVAL] Creating fallback evaluation for sensitive scenario")
+    
+    # Simple keyword matching
+    user_words = set(user_text.lower().split())
+    keyword_matches = sum(1 for keyword in expected_keywords if keyword.lower() in user_words)
+    total_keywords = len(expected_keywords)
+    
+    # Basic scoring
+    keyword_score = (keyword_matches / total_keywords) * 100 if total_keywords > 0 else 0
+    length_score = min(len(user_text.split()) / 40 * 100, 100)  # Target: 40+ words for sensitive scenarios
+    overall_score = (keyword_score * 0.4) + (length_score * 0.6)
+    
+    return {
+        "score": round(overall_score, 1),
+        "tone_control_score": 60,
+        "empathy_authority_balance_score": 50,
+        "clarity_communication_score": 60,
+        "conflict_resolution_score": 50,
+        "keyword_matches": keyword_matches,
+        "total_keywords": total_keywords,
+        "fluency_score": 60,
+        "grammar_score": 60,
+        "is_correct": overall_score >= 70,
+        "completed": overall_score >= 80,
+        "suggested_improvement": "Try to use more diplomatic language and include more of the expected keywords in your response.",
+        "strengths": ["Attempted the sensitive scenario"],
+        "areas_for_improvement": ["Need more diplomatic tone", "Include more expected keywords"],
+        "tone_analysis": "Basic response provided",
+        "empathy_authority_analysis": "Simple approach to sensitive situation",
+        "clarity_analysis": f"Used {keyword_matches}/{total_keywords} expected keywords",
+        "conflict_resolution_analysis": "Basic conflict resolution attempt"
+    }
+
+def evaluate_response_ex3_stage6(user_response: str, topic: str, expected_keywords: list, vocabulary_focus: list, academic_expressions: list, model_response: str, expected_structure: str) -> dict:
+    """
+    Evaluate Stage 6 Exercise 3 (Critical Opinion Builder) responses using OpenAI GPT-4o.
+    
+    This function evaluates C2 Advanced level critical opinion building based on:
+    - Argument structure and logical flow
+    - Academic expression usage
+    - Critical thinking depth
+    - Vocabulary sophistication
+    - Balanced viewpoint presentation
+    
+    Args:
+        user_response (str): The user's written opinion response
+        topic (str): The controversial topic they were asked to discuss
+        expected_keywords (list): Expected keywords to include
+        vocabulary_focus (list): Domain-specific vocabulary to evaluate
+        academic_expressions (list): Expected academic expressions to use
+        model_response (str): Example of a well-structured response for comparison
+        expected_structure (str): Expected argument structure
+    
+    Returns:
+        dict: Comprehensive evaluation results with scores and detailed feedback
+    """
+    print(f"🔍 [EVAL] Evaluating Stage 6 Exercise 3 response: {user_response[:100]}...")
+    print(f"📝 [EVAL] Topic: {topic}")
+    print(f"📝 [EVAL] Expected keywords: {expected_keywords}")
+    print(f"📝 [EVAL] Vocabulary focus: {vocabulary_focus}")
+    print(f"📝 [EVAL] Academic expressions: {academic_expressions}")
+    print(f"📝 [EVAL] Expected structure: {expected_structure}")
+    
+    try:
+        # Create comprehensive evaluation prompt
+        evaluation_prompt = f"""
+You are an expert English language evaluator for C2 Advanced level critical opinion building. You are a well experienced prompt engineer.
+
+**TOPIC:** {topic}
+**USER'S RESPONSE:** "{user_response}"
+**MODEL ANSWER FOR REFERENCE:** "{model_response}"
+**EXPECTED STRUCTURE:** {expected_structure}
+**EXPECTED KEYWORDS:** {expected_keywords}
+**VOCABULARY FOCUS:** {vocabulary_focus}
+**ACADEMIC EXPRESSIONS TO USE:** {academic_expressions}
+
+**EVALUATION CRITERIA:**
+1. **Argument Structure (30 points):** How well does the response follow the expected structure (Thesis → Supporting Arguments → Counterpoint → Conclusion)?
+2. **Logical Flow (25 points):** Is there clear logical progression and coherent reasoning throughout the argument?
+3. **Academic Expressions (25 points):** How effectively are academic expressions and transitional phrases used?
+4. **Critical Thinking (20 points):** Does the response demonstrate sophisticated critical thinking and balanced analysis?
+
+**SCORING GUIDELINES:**
+- 90-100: Exceptional critical analysis with sophisticated argumentation
+- 80-89: Excellent argument structure with strong academic language
+- 70-79: Good critical thinking with some areas for improvement
+- 60-69: Satisfactory but needs refinement in structure or expression
+- Below 60: Needs significant improvement in multiple areas
+
+**KEYWORD EVALUATION:**
+- Count exact matches and close synonyms
+- Consider variations in word forms
+- Focus on meaningful usage rather than just inclusion
+- Evaluate natural integration into the argument
+
+**ACADEMIC EXPRESSION EVALUATION:**
+- Assess natural usage of transitional phrases
+- Evaluate appropriateness of academic language
+- Consider variety and sophistication of expressions used
+
+**TASK:** Provide a comprehensive evaluation with specific feedback and suggestions for improvement.
+
+**REQUIRED JSON OUTPUT FORMAT:**
+{{
+    "score": <number between 0-100>,
+    "is_correct": <boolean - true if score >= 75>,
+    "completed": <boolean - true if score >= 80>,
+    "keyword_matches": <number of expected keywords found>,
+    "total_keywords": <total number of expected keywords>,
+    "academic_expressions_used": <number of academic expressions found>,
+    "total_academic_expressions": <total number of expected academic expressions>,
+    "detailed_feedback": {{
+        "argument_structure": "<specific feedback on argument structure>",
+        "logical_flow": "<feedback on logical progression and coherence>",
+        "academic_expressions": "<feedback on academic language usage>",
+        "critical_thinking": "<feedback on critical analysis depth>",
+        "vocabulary_usage": "<feedback on vocabulary sophistication>"
+    }},
+    "suggested_improvement": "<specific suggestions for improvement>",
+    "strengths": ["<list of strengths in the response>"],
+    "areas_for_improvement": ["<list of areas that need work>"],
+    "structure_analysis": {{
+        "thesis_present": <boolean>,
+        "supporting_arguments": <number>,
+        "counterpoint_addressed": <boolean>,
+        "conclusion_present": <boolean>
+    }}
+}}
+"""
+
+        print(f"🤖 [EVAL] Sending evaluation request to ChatGPT...")
+        
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": "You are an expert English language evaluator for C2 Advanced level critical opinion building."},
+                {"role": "user", "content": evaluation_prompt}
+            ],
+            temperature=0.3,
+            max_tokens=1500
+        )
+        
+        evaluation_text = response.choices[0].message.content.strip()
+        print(f"📄 [EVAL] Raw ChatGPT response: {evaluation_text[:200]}...")
+        
+        # Try to extract JSON from the response
+        try:
+            # Look for JSON in the response
+            json_start = evaluation_text.find('{')
+            json_end = evaluation_text.rfind('}') + 1
+            
+            if json_start != -1 and json_end != 0:
+                json_content = evaluation_text[json_start:json_end]
+                evaluation_result = json.loads(json_content)
+                print(f"✅ [EVAL] Successfully parsed JSON evaluation")
+            else:
+                raise ValueError("No JSON found in response")
+                
+        except json.JSONDecodeError as e:
+            print(f"❌ [EVAL] JSON parsing error: {str(e)}")
+            print(f"📄 [EVAL] Attempted to parse: {evaluation_text}")
+            
+            # Fallback evaluation
+            evaluation_result = {
+                "score": 50,
+                "is_correct": False,
+                "completed": False,
+                "keyword_matches": 0,
+                "total_keywords": len(expected_keywords),
+                "academic_expressions_used": 0,
+                "total_academic_expressions": len(academic_expressions),
+                "detailed_feedback": {
+                    "argument_structure": "Unable to evaluate due to processing error",
+                    "logical_flow": "Unable to evaluate due to processing error",
+                    "academic_expressions": "Unable to evaluate due to processing error",
+                    "critical_thinking": "Unable to evaluate due to processing error",
+                    "vocabulary_usage": "Unable to evaluate due to processing error"
+                },
+                "suggested_improvement": "Please try again. Make sure to follow the expected structure and use academic expressions naturally.",
+                "strengths": ["Response provided"],
+                "areas_for_improvement": ["Evaluation processing error"],
+                "structure_analysis": {
+                    "thesis_present": False,
+                    "supporting_arguments": 0,
+                    "counterpoint_addressed": False,
+                    "conclusion_present": False
+                }
+            }
+        
+        # Validate and sanitize the evaluation result
+        score = evaluation_result.get("score", 50)
+        if not isinstance(score, (int, float)) or score < 0 or score > 100:
+            score = 50
+            evaluation_result["score"] = score
+        
+        is_correct = evaluation_result.get("is_correct", score >= 75)
+        completed = evaluation_result.get("completed", score >= 80)
+        
+        # Ensure keyword matches is valid
+        keyword_matches = evaluation_result.get("keyword_matches", 0)
+        total_keywords = evaluation_result.get("total_keywords", len(expected_keywords))
+        
+        if not isinstance(keyword_matches, int) or keyword_matches < 0:
+            keyword_matches = 0
+        if not isinstance(total_keywords, int) or total_keywords <= 0:
+            total_keywords = len(expected_keywords)
+        
+        # Ensure academic expressions count is valid
+        academic_expressions_used = evaluation_result.get("academic_expressions_used", 0)
+        total_academic_expressions = evaluation_result.get("total_academic_expressions", len(academic_expressions))
+        
+        if not isinstance(academic_expressions_used, int) or academic_expressions_used < 0:
+            academic_expressions_used = 0
+        if not isinstance(total_academic_expressions, int) or total_academic_expressions <= 0:
+            total_academic_expressions = len(academic_expressions)
+        
+        evaluation_result.update({
+            "is_correct": is_correct,
+            "completed": completed,
+            "keyword_matches": keyword_matches,
+            "total_keywords": total_keywords,
+            "academic_expressions_used": academic_expressions_used,
+            "total_academic_expressions": total_academic_expressions
+        })
+        
+        print(f"📊 [EVAL] Final evaluation result:")
+        print(f"   - Score: {score}")
+        print(f"   - Is correct: {is_correct}")
+        print(f"   - Completed: {completed}")
+        print(f"   - Keyword matches: {keyword_matches}/{total_keywords}")
+        print(f"   - Academic expressions: {academic_expressions_used}/{total_academic_expressions}")
+        
+        return evaluation_result
+        
+    except Exception as e:
+        print(f"❌ [EVAL] Error in evaluate_response_ex3_stage6: {str(e)}")
+        
+        # Return fallback evaluation
+        return {
+            "score": 50,
+            "is_correct": False,
+            "completed": False,
+            "keyword_matches": 0,
+            "total_keywords": len(expected_keywords),
+            "academic_expressions_used": 0,
+            "total_academic_expressions": len(academic_expressions),
+            "detailed_feedback": {
+                "argument_structure": "Evaluation error occurred",
+                "logical_flow": "Evaluation error occurred",
+                "academic_expressions": "Evaluation error occurred",
+                "critical_thinking": "Evaluation error occurred",
+                "vocabulary_usage": "Evaluation error occurred"
+            },
+            "suggested_improvement": "Please try again. Focus on following the expected structure and using academic expressions naturally.",
+            "strengths": ["Attempted response"],
+            "areas_for_improvement": ["Technical evaluation error"],
+            "structure_analysis": {
+                "thesis_present": False,
+                "supporting_arguments": 0,
+                "counterpoint_addressed": False,
+                "conclusion_present": False
+            }
+        }
+

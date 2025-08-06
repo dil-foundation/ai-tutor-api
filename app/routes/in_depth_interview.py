@@ -1,6 +1,7 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from typing import Dict, Any
 import json
 import os
 import base64
@@ -9,6 +10,7 @@ from app.services.tts import synthesize_speech, synthesize_speech_exercises
 from app.services.stt import transcribe_audio_bytes_eng_only
 from app.services.feedback import evaluate_response_ex3_stage5
 from app.supabase_client import progress_tracker
+from app.auth_middleware import get_current_user, require_student
 
 router = APIRouter()
 
@@ -39,9 +41,10 @@ def get_prompt_by_id(prompt_id: int):
         return None
 
 @router.get("/in-depth-interview-prompts")
-async def get_all_prompts():
+async def get_all_prompts(current_user: Dict[str, Any] = Depends(require_student)):
     """Get all available prompts for In-Depth Interview exercise"""
     print("🔄 [API] GET /in-depth-interview-prompts endpoint called")
+    print(f"👤 [API] Authenticated user: {current_user['email']}")
     try:
         print(f"📁 [API] Reading prompt file from: {IN_DEPTH_INTERVIEW_FILE}")
         with open(IN_DEPTH_INTERVIEW_FILE, 'r', encoding='utf-8') as f:
@@ -53,9 +56,13 @@ async def get_all_prompts():
         raise HTTPException(status_code=500, detail=f"Failed to load prompts: {str(e)}")
 
 @router.get("/in-depth-interview-prompts/{prompt_id}")
-async def get_prompt(prompt_id: int):
+async def get_prompt(
+    prompt_id: int,
+    current_user: Dict[str, Any] = Depends(require_student)
+):
     """Get a specific prompt by ID"""
     print(f"🔄 [API] GET /in-depth-interview-prompts/{prompt_id} endpoint called")
+    print(f"👤 [API] Authenticated user: {current_user['email']}")
     try:
         prompt_data = get_prompt_by_id(prompt_id)
         if not prompt_data:
@@ -90,8 +97,12 @@ and returns the generated audio file as the response.
 """,
     tags=["Stage 5 - Exercise 3 (In-Depth Interview)"]
 )
-async def in_depth_interview(prompt_id: int):
+async def in_depth_interview(
+    prompt_id: int,
+    current_user: Dict[str, Any] = Depends(require_student)
+):
     print(f"🔄 [API] POST /in-depth-interview/{prompt_id} endpoint called")
+    print(f"👤 [API] Authenticated user: {current_user['email']}")
     try:
         prompt_data = get_prompt_by_id(prompt_id)
         if not prompt_data:
@@ -125,13 +136,22 @@ Also records progress tracking data in Supabase database.
 """,
     tags=["Stage 5 - Exercise 3 (In-Depth Interview)"]
 )
-async def evaluate_in_depth_interview(request: AudioEvaluationRequest):
+async def evaluate_in_depth_interview(
+    request: AudioEvaluationRequest,
+    current_user: Dict[str, Any] = Depends(require_student)
+):
     print(f"🔄 [API] POST /evaluate-in-depth-interview endpoint called")
+    print(f"👤 [API] Authenticated user: {current_user['email']}")
     print(f"📝 [API] Request details: prompt_id={request.prompt_id}, filename={request.filename}")
     print(f"📊 [API] Audio data length: {len(request.audio_base64)} characters")
     print(f"👤 [API] User ID: {request.user_id}")
     print(f"⏱️ [API] Time spent: {request.time_spent_seconds} seconds")
     print(f"🌐 [API] Urdu used: {request.urdu_used}")
+    
+    # Verify user is accessing their own data
+    if request.user_id != current_user['id']:
+        print(f"❌ [API] Unauthorized access attempt: {current_user['email']} tried to access user {request.user_id}")
+        raise HTTPException(status_code=403, detail="Unauthorized access to user data")
     
     try:
         # Get the expected prompt and keywords

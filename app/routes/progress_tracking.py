@@ -1,8 +1,9 @@
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 import logging
 from app.supabase_client import progress_tracker
+from app.auth_middleware import get_current_user, require_student
 from datetime import date
 
 logger = logging.getLogger(__name__)
@@ -40,10 +41,19 @@ class ComprehensiveProgressRequest(BaseModel):
     user_id: str
 
 @router.post("/initialize-progress", response_model=ProgressResponse)
-async def initialize_user_progress(request: InitializeProgressRequest):
+async def initialize_user_progress(
+    request: InitializeProgressRequest,
+    current_user: Dict[str, Any] = Depends(require_student)
+):
     """Initialize user progress when they first start using the app"""
     print(f"🔄 [API] POST /initialize-progress called")
     print(f"📝 [API] Request data: {request}")
+    print(f"👤 [API] Authenticated user: {current_user['email']}")
+    
+    # Verify user is accessing their own data
+    if request.user_id != current_user['id']:
+        print(f"❌ [API] Unauthorized access attempt: {current_user['email']} tried to access user {request.user_id}")
+        raise HTTPException(status_code=403, detail="Unauthorized access to user data")
     
     try:
         print(f"🔄 [API] Starting progress initialization for user: {request.user_id}")
@@ -68,10 +78,14 @@ async def initialize_user_progress(request: InitializeProgressRequest):
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @router.post("/record-topic-attempt", response_model=ProgressResponse)
-async def record_topic_attempt(request: TopicAttemptRequest):
+async def record_topic_attempt(
+    request: TopicAttemptRequest,
+    current_user: Dict[str, Any] = Depends(require_student)
+):
     """Record a topic attempt with detailed metrics"""
     print(f"🔄 [API] POST /record-topic-attempt called")
     print(f"📝 [API] Request data: {request}")
+    print(f"👤 [API] Authenticated user: {current_user['email']}")
     print(f"📊 [API] Topic attempt details:")
     print(f"   - User ID: {request.user_id}")
     print(f"   - Stage: {request.stage_id}")
@@ -81,6 +95,11 @@ async def record_topic_attempt(request: TopicAttemptRequest):
     print(f"   - Urdu Used: {request.urdu_used}")
     print(f"   - Time Spent: {request.time_spent_seconds}s")
     print(f"   - Completed: {request.completed}")
+    
+    # Verify user is accessing their own data
+    if request.user_id != current_user['id']:
+        print(f"❌ [API] Unauthorized access attempt: {current_user['email']} tried to access user {request.user_id}")
+        raise HTTPException(status_code=403, detail="Unauthorized access to user data")
     
     try:
         print(f"🔄 [API] Recording topic attempt...")
@@ -127,9 +146,18 @@ async def record_topic_attempt(request: TopicAttemptRequest):
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @router.get("/user-progress/{user_id}", response_model=ProgressResponse)
-async def get_user_progress(user_id: str):
+async def get_user_progress(
+    user_id: str,
+    current_user: Dict[str, Any] = Depends(require_student)
+):
     """Get comprehensive user progress data"""
     print(f"🔄 [API] GET /user-progress/{user_id} called")
+    print(f"👤 [API] Authenticated user: {current_user['email']}")
+    
+    # Verify user is accessing their own data
+    if user_id != current_user['id']:
+        print(f"❌ [API] Unauthorized access attempt: {current_user['email']} tried to access user {user_id}")
+        raise HTTPException(status_code=403, detail="Unauthorized access to user data")
     
     try:
         print(f"🔄 [API] Getting user progress for: {user_id}")
@@ -161,9 +189,18 @@ async def get_user_progress(user_id: str):
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @router.post("/check-unlocks/{user_id}", response_model=ProgressResponse)
-async def check_content_unlocks(user_id: str):
+async def check_content_unlocks(
+    user_id: str,
+    current_user: Dict[str, Any] = Depends(require_student)
+):
     """Check if user should unlock new content based on progress"""
     print(f"🔄 [API] POST /check-unlocks/{user_id} called")
+    print(f"👤 [API] Authenticated user: {current_user['email']}")
+    
+    # Verify user is accessing their own data
+    if user_id != current_user['id']:
+        print(f"❌ [API] Unauthorized access attempt: {current_user['email']} tried to access user {user_id}")
+        raise HTTPException(status_code=403, detail="Unauthorized access to user data")
     
     try:
         print(f"🔄 [API] Checking content unlocks for user: {user_id}")
@@ -194,10 +231,19 @@ async def check_content_unlocks(user_id: str):
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @router.post("/get-current-topic", response_model=ProgressResponse)
-async def get_current_topic_for_exercise(request: GetCurrentTopicRequest):
+async def get_current_topic_for_exercise(
+    request: GetCurrentTopicRequest,
+    current_user: Dict[str, Any] = Depends(require_student)
+):
     """Get the current topic_id for a specific exercise"""
     print(f"🔄 [API] POST /get-current-topic called")
     print(f"📝 [API] Request data: {request}")
+    print(f"👤 [API] Authenticated user: {current_user['email']}")
+    
+    # Verify user is accessing their own data
+    if request.user_id != current_user['id']:
+        print(f"❌ [API] Unauthorized access attempt: {current_user['email']} tried to access user {request.user_id}")
+        raise HTTPException(status_code=403, detail="Unauthorized access to user data")
     
     try:
         print(f"🔄 [API] Getting current topic for user: {request.user_id}, stage: {request.stage_id}, exercise: {request.exercise_id}")
@@ -227,10 +273,19 @@ async def get_current_topic_for_exercise(request: GetCurrentTopicRequest):
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @router.post("/comprehensive-progress", response_model=ProgressResponse)
-async def get_comprehensive_progress(request: ComprehensiveProgressRequest):
+async def get_comprehensive_progress(
+    request: ComprehensiveProgressRequest,
+    current_user: Dict[str, Any] = Depends(require_student)
+):
     """Get comprehensive progress data for the beautiful progress page"""
     print(f"🔄 [API] POST /comprehensive-progress called")
     print(f"📝 [API] Request data: {request}")
+    print(f"👤 [API] Authenticated user: {current_user['email']}")
+    
+    # Verify user is accessing their own data
+    if request.user_id != current_user['id']:
+        print(f"❌ [API] Unauthorized access attempt: {current_user['email']} tried to access user {request.user_id}")
+        raise HTTPException(status_code=403, detail="Unauthorized access to user data")
     
     try:
         print(f"🔄 [API] Getting comprehensive progress for user: {request.user_id}")

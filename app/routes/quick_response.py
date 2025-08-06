@@ -1,14 +1,16 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 import json
 import os
 import base64
 from io import BytesIO
+from typing import Dict, Any
 from app.services.tts import synthesize_speech, synthesize_speech_exercises
 from app.services.stt import transcribe_audio_bytes_eng_only
 from app.services.feedback import evaluate_response_ex2_stage1
 from app.supabase_client import progress_tracker
+from app.auth_middleware import get_current_user, require_student
 router = APIRouter()
 
 PROMPTS_FILE = os.path.join(os.path.dirname(__file__), '..', 'data', 'quick_response_prompts.json')
@@ -39,7 +41,7 @@ def get_prompt_by_id(prompt_id: int):
 
 
 @router.get("/prompts")
-async def get_all_prompts():
+async def get_all_prompts(current_user: Dict[str, Any] = Depends(require_student)):
     """Get all available prompts for Quick Response exercise"""
     print("🔄 [API] GET /prompts endpoint called")
     try:
@@ -53,7 +55,7 @@ async def get_all_prompts():
         raise HTTPException(status_code=500, detail=f"Failed to load prompts: {str(e)}")
 
 @router.get("/prompts/{prompt_id}")
-async def get_prompt(prompt_id: int):
+async def get_prompt(prompt_id: int, current_user: Dict[str, Any] = Depends(require_student)):
     """Get a specific prompt by ID"""
     print(f"🔄 [API] GET /prompts/{prompt_id} endpoint called")
     try:
@@ -88,7 +90,7 @@ and returns the generated audio file as the response.
 """,
     tags=["Stage 1 - Exercise 2 (Quick Response)"]
 )
-async def quick_response(prompt_id: int):
+async def quick_response(prompt_id: int, current_user: Dict[str, Any] = Depends(require_student)):
     print(f"🔄 [API] POST /quick-response/{prompt_id} endpoint called")
     try:
         prompt_data = get_prompt_by_id(prompt_id)
@@ -124,7 +126,10 @@ Also records progress tracking data in Supabase database.
 """,
     tags=["Stage 1 - Exercise 2 (Quick Response)"]
 )
-async def evaluate_quick_response(request: AudioEvaluationRequest):
+async def evaluate_quick_response(
+    request: AudioEvaluationRequest,
+    current_user: Dict[str, Any] = Depends(require_student)
+):
     print(f"🔄 [API] POST /evaluate-quick-response endpoint called")
     print(f"📝 [API] Request details: prompt_id={request.prompt_id}, filename={request.filename}")
     print(f"📊 [API] Audio data length: {len(request.audio_base64)} characters")
@@ -132,17 +137,23 @@ async def evaluate_quick_response(request: AudioEvaluationRequest):
     print(f"⏱️ [API] Time spent: {request.time_spent_seconds} seconds")
     print(f"🌐 [API] Urdu used: {request.urdu_used}")
     
+    # Validate user_id and ensure user can only access their own data
+    if not request.user_id:
+        raise HTTPException(status_code=400, detail="user_id is required")
+    
+    if request.user_id != current_user['id']:
+        raise HTTPException(status_code=403, detail="You can only access your own data")
+    
     try:
-        # Get the expected prompt and answers
+        # Get the expected prompt data
         prompt_data = get_prompt_by_id(request.prompt_id)
         if not prompt_data:
             print(f"❌ [API] Prompt {request.prompt_id} not found")
             raise HTTPException(status_code=404, detail="Prompt not found")
 
         expected_answers = prompt_data['expected_answers']
-        question_text = prompt_data['question']
+        expected_answers_urdu = prompt_data['expected_answers_urdu']
         print(f"✅ [API] Expected answers: {expected_answers}")
-        print(f"✅ [API] Question: '{question_text}'")
 
         # Decode base64 audio
         try:
@@ -160,8 +171,7 @@ async def evaluate_quick_response(request: AudioEvaluationRequest):
                 "success": False,
                 "error": "no_speech_detected",
                 "message": "No speech detected. Please try again.",
-                "expected_answers": expected_answers,
-                "question": question_text
+                "expected_answers": expected_answers
             }
 
         # Transcribe the audio
@@ -178,8 +188,7 @@ async def evaluate_quick_response(request: AudioEvaluationRequest):
                     "success": False,
                     "error": "no_speech_detected",
                     "message": "No clear speech detected. Please speak more clearly.",
-                    "expected_answers": expected_answers,
-                    "question": question_text
+                    "expected_answers": expected_answers
                 }
 
         except Exception as e:
@@ -188,13 +197,12 @@ async def evaluate_quick_response(request: AudioEvaluationRequest):
                 "success": False,
                 "error": "transcription_failed",
                 "message": "Failed to process audio. Please try again.",
-                "expected_answers": expected_answers,
-                "question": question_text
+                "expected_answers": expected_answers
             }
 
         # Evaluate the response
         try:
-            print(f"🔄 [API] Evaluating response: '{user_text}' vs expected answers: {expected_answers}")
+            print(f"🔄 [API] Evaluating response: '{user_text}' vs expected answers")
             evaluation = evaluate_response_ex2_stage1(expected_answers, user_text)
             print(f"✅ [API] Evaluation completed: {evaluation}")
             
@@ -202,7 +210,6 @@ async def evaluate_quick_response(request: AudioEvaluationRequest):
             score = evaluation.get("score", 0)
             is_correct = evaluation.get("is_correct", False)
             completed = evaluation.get("completed", False)
-            suggested_improvement = evaluation.get("suggested_improvement", "")
             
             print(f"📊 [API] Evaluation details: score={score}, is_correct={is_correct}, completed={completed}")
             
@@ -259,11 +266,10 @@ async def evaluate_quick_response(request: AudioEvaluationRequest):
             
             return {
                 "success": True,
-                "question": question_text,
                 "expected_answers": expected_answers,
+                "expected_answers_urdu": expected_answers_urdu,
                 "user_text": user_text,
                 "evaluation": evaluation,
-                "suggested_improvement": suggested_improvement,
                 "progress_recorded": progress_recorded,
                 "unlocked_content": unlocked_content
             }
@@ -275,7 +281,6 @@ async def evaluate_quick_response(request: AudioEvaluationRequest):
                 "error": "evaluation_failed",
                 "message": "Failed to evaluate response. Please try again.",
                 "expected_answers": expected_answers,
-                "question": question_text,
                 "user_text": user_text
             }
 

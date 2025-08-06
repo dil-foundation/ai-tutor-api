@@ -1,12 +1,14 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 import json
 import os
 from app.services.tts import synthesize_speech_exercises
 from app.services.stt import transcribe_audio_bytes_eng_only
 from app.services.feedback import evaluate_response_ex2_stage2
 from app.supabase_client import SupabaseProgressTracker
+from app.supabase_client import progress_tracker
+from app.auth_middleware import get_current_user, require_student
 import base64
 
 router = APIRouter(tags=["quick-answer"])
@@ -42,7 +44,7 @@ class QuestionResponse(BaseModel):
     sentence_structure: str
 
 @router.get("/quick-answer-questions")
-async def get_all_questions():
+async def get_all_questions(current_user: Dict[str, Any] = Depends(require_student)):
     """Get all quick answer questions"""
     try:
         questions = load_questions()
@@ -53,7 +55,7 @@ async def get_all_questions():
         raise HTTPException(status_code=500, detail="Failed to load questions")
 
 @router.get("/quick-answer-questions/{question_id}")
-async def get_question_by_id(question_id: int):
+async def get_question_by_id(question_id: int, current_user: Dict[str, Any] = Depends(require_student)):
     """Get a specific question by ID"""
     try:
         questions = load_questions()
@@ -72,7 +74,7 @@ async def get_question_by_id(question_id: int):
         raise HTTPException(status_code=500, detail="Failed to get question")
 
 @router.post("/quick-answer/{question_id}")
-async def generate_question_audio(question_id: int):
+async def generate_question_audio(question_id: int, current_user: Dict[str, Any] = Depends(require_student)):
     """Generate TTS audio for a specific question"""
     try:
         questions = load_questions()
@@ -107,48 +109,79 @@ async def generate_question_audio(question_id: int):
         raise HTTPException(status_code=500, detail="Failed to generate audio")
 
 @router.post("/evaluate-quick-answer")
-async def evaluate_quick_answer_audio(request: AudioEvaluationRequest):
-    """Evaluate audio response for quick answer exercise"""
+async def evaluate_quick_answer_audio(
+    request: AudioEvaluationRequest,
+    current_user: Dict[str, Any] = Depends(require_student)
+):
+    """Evaluate user's audio recording for quick answer exercise"""
+    print(f"🔄 [QUICK_ANSWER] POST /evaluate-quick-answer called")
+    print(f"📝 [QUICK_ANSWER] Request details: question_id={request.question_id}, filename={request.filename}")
+    print(f"👤 [QUICK_ANSWER] User ID: {request.user_id}")
+    
+    # Validate user_id and ensure user can only access their own data
+    if not request.user_id:
+        raise HTTPException(status_code=400, detail="user_id is required")
+    
+    if request.user_id != current_user['id']:
+        raise HTTPException(status_code=403, detail="You can only access your own data")
+    
     try:
-        print(f"🔄 [QUICK_ANSWER] Starting evaluation for question {request.question_id}")
-        
-        # Load question data
+        # Get the question data
         questions = load_questions()
         question = next((q for q in questions if q["id"] == request.question_id), None)
         
         if not question:
-            print(f"❌ [QUICK_ANSWER] Question {request.question_id} not found for evaluation")
+            print(f"❌ [QUICK_ANSWER] Question {request.question_id} not found")
             raise HTTPException(status_code=404, detail="Question not found")
         
-        # Decode audio
-        try:
-            audio_data = base64.b64decode(request.audio_base64)
-            print(f"✅ [QUICK_ANSWER] Audio decoded successfully, size: {len(audio_data)} bytes")
-        except Exception as e:
-            print(f"❌ [QUICK_ANSWER] Failed to decode audio: {e}")
-            raise HTTPException(status_code=400, detail="Invalid audio data")
+        expected_answers = question['expected_answers']
+        expected_answers_urdu = question['expected_answers_urdu']
+        keywords = question['keywords']
+        keywords_urdu = question['keywords_urdu']
+        question_text = question['question']
         
-        # Check if audio is too short
-        if len(audio_data) < 1000:  # Less than 1KB
-            print(f"⚠️ [QUICK_ANSWER] Audio too short: {len(audio_data)} bytes")
+        print(f"✅ [QUICK_ANSWER] Question: '{question_text}'")
+        print(f"✅ [QUICK_ANSWER] Expected answers: {expected_answers}")
+        print(f"✅ [QUICK_ANSWER] Keywords: {keywords}")
+
+        # Decode base64 audio
+        try:
+            print("🔄 [QUICK_ANSWER] Decoding base64 audio...")
+            audio_bytes = base64.b64decode(request.audio_base64)
+            print(f"✅ [QUICK_ANSWER] Audio decoded, size: {len(audio_bytes)} bytes")
+        except Exception as e:
+            print(f"❌ [QUICK_ANSWER] Error decoding base64 audio: {str(e)}")
+            raise HTTPException(status_code=400, detail="Invalid audio data")
+
+        # Check if audio is too short (silence detection)
+        if len(audio_bytes) < 1000:  # Less than 1KB indicates very short/silent audio
+            print(f"⚠️ [QUICK_ANSWER] Audio too short ({len(audio_bytes)} bytes), likely silent")
             return {
                 "success": False,
-                "question": question["question"],
-                "expected_answers": question["expected_answers"],
-                "error": "audio_too_short",
-                "message": "Audio recording is too short. Please speak more clearly.",
-                "progress_recorded": False
+                "error": "no_speech_detected",
+                "message": "No speech detected. Please try again.",
+                "expected_answers": expected_answers
             }
-        
-        # Transcribe audio
-        print(f"🔄 [QUICK_ANSWER] Transcribing audio...")
-        transcription_result = transcribe_audio_bytes_eng_only(audio_data)
-        
-        user_text = transcription_result.get("text", "").strip()
-        print(f"✅ [QUICK_ANSWER] Transcription successful: '{user_text}'")
-        
-        if not user_text or len(user_text) < 3:
-            print(f"⚠️ [QUICK_ANSWER] Transcribed text too short: '{user_text}'")
+
+        # Transcribe the audio
+        try:
+            print("🔄 [QUICK_ANSWER] Transcribing audio...")
+            transcription_result = transcribe_audio_bytes_eng_only(audio_bytes)
+            user_text = transcription_result.get("text", "").strip()
+            print(f"✅ [QUICK_ANSWER] Transcription result: '{user_text}'")
+            
+            # Check if transcription is empty or too short
+            if not user_text or len(user_text) < 2:
+                print(f"⚠️ [QUICK_ANSWER] Transcription too short or empty: '{user_text}'")
+                return {
+                    "success": False,
+                    "error": "no_speech_detected",
+                    "message": "No clear speech detected. Please speak more clearly.",
+                    "expected_answers": expected_answers
+                }
+
+        except Exception as e:
+            print(f"❌ [QUICK_ANSWER] Error transcribing audio: {str(e)}")
             return {
                 "success": False,
                 "question": question["question"],
@@ -232,7 +265,7 @@ async def evaluate_quick_answer_audio(request: AudioEvaluationRequest):
                 "grammar_score": evaluation.get("grammar_score", 0),
                 "fluency_score": evaluation.get("fluency_score", 0)
             }
-            
+
     except HTTPException:
         raise
     except Exception as e:
