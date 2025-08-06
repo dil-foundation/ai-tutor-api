@@ -3292,3 +3292,235 @@ def create_fallback_evaluation_sensitive_scenario(user_text, expected_keywords, 
         "clarity_analysis": f"Used {keyword_matches}/{total_keywords} expected keywords",
         "conflict_resolution_analysis": "Basic conflict resolution attempt"
     }
+
+def evaluate_response_ex3_stage6(user_response: str, topic: str, expected_keywords: list, vocabulary_focus: list, academic_expressions: list, model_response: str, expected_structure: str) -> dict:
+    """
+    Evaluate Stage 6 Exercise 3 (Critical Opinion Builder) responses using OpenAI GPT-4o.
+    
+    This function evaluates C2 Advanced level critical opinion building based on:
+    - Argument structure and logical flow
+    - Academic expression usage
+    - Critical thinking depth
+    - Vocabulary sophistication
+    - Balanced viewpoint presentation
+    
+    Args:
+        user_response (str): The user's written opinion response
+        topic (str): The controversial topic they were asked to discuss
+        expected_keywords (list): Expected keywords to include
+        vocabulary_focus (list): Domain-specific vocabulary to evaluate
+        academic_expressions (list): Expected academic expressions to use
+        model_response (str): Example of a well-structured response for comparison
+        expected_structure (str): Expected argument structure
+    
+    Returns:
+        dict: Comprehensive evaluation results with scores and detailed feedback
+    """
+    print(f"🔍 [EVAL] Evaluating Stage 6 Exercise 3 response: {user_response[:100]}...")
+    print(f"📝 [EVAL] Topic: {topic}")
+    print(f"📝 [EVAL] Expected keywords: {expected_keywords}")
+    print(f"📝 [EVAL] Vocabulary focus: {vocabulary_focus}")
+    print(f"📝 [EVAL] Academic expressions: {academic_expressions}")
+    print(f"📝 [EVAL] Expected structure: {expected_structure}")
+    
+    try:
+        # Create comprehensive evaluation prompt
+        evaluation_prompt = f"""
+You are an expert English language evaluator for C2 Advanced level critical opinion building. You are a well experienced prompt engineer.
+
+**TOPIC:** {topic}
+**USER'S RESPONSE:** "{user_response}"
+**MODEL ANSWER FOR REFERENCE:** "{model_response}"
+**EXPECTED STRUCTURE:** {expected_structure}
+**EXPECTED KEYWORDS:** {expected_keywords}
+**VOCABULARY FOCUS:** {vocabulary_focus}
+**ACADEMIC EXPRESSIONS TO USE:** {academic_expressions}
+
+**EVALUATION CRITERIA:**
+1. **Argument Structure (30 points):** How well does the response follow the expected structure (Thesis → Supporting Arguments → Counterpoint → Conclusion)?
+2. **Logical Flow (25 points):** Is there clear logical progression and coherent reasoning throughout the argument?
+3. **Academic Expressions (25 points):** How effectively are academic expressions and transitional phrases used?
+4. **Critical Thinking (20 points):** Does the response demonstrate sophisticated critical thinking and balanced analysis?
+
+**SCORING GUIDELINES:**
+- 90-100: Exceptional critical analysis with sophisticated argumentation
+- 80-89: Excellent argument structure with strong academic language
+- 70-79: Good critical thinking with some areas for improvement
+- 60-69: Satisfactory but needs refinement in structure or expression
+- Below 60: Needs significant improvement in multiple areas
+
+**KEYWORD EVALUATION:**
+- Count exact matches and close synonyms
+- Consider variations in word forms
+- Focus on meaningful usage rather than just inclusion
+- Evaluate natural integration into the argument
+
+**ACADEMIC EXPRESSION EVALUATION:**
+- Assess natural usage of transitional phrases
+- Evaluate appropriateness of academic language
+- Consider variety and sophistication of expressions used
+
+**TASK:** Provide a comprehensive evaluation with specific feedback and suggestions for improvement.
+
+**REQUIRED JSON OUTPUT FORMAT:**
+{{
+    "score": <number between 0-100>,
+    "is_correct": <boolean - true if score >= 75>,
+    "completed": <boolean - true if score >= 80>,
+    "keyword_matches": <number of expected keywords found>,
+    "total_keywords": <total number of expected keywords>,
+    "academic_expressions_used": <number of academic expressions found>,
+    "total_academic_expressions": <total number of expected academic expressions>,
+    "detailed_feedback": {{
+        "argument_structure": "<specific feedback on argument structure>",
+        "logical_flow": "<feedback on logical progression and coherence>",
+        "academic_expressions": "<feedback on academic language usage>",
+        "critical_thinking": "<feedback on critical analysis depth>",
+        "vocabulary_usage": "<feedback on vocabulary sophistication>"
+    }},
+    "suggested_improvement": "<specific suggestions for improvement>",
+    "strengths": ["<list of strengths in the response>"],
+    "areas_for_improvement": ["<list of areas that need work>"],
+    "structure_analysis": {{
+        "thesis_present": <boolean>,
+        "supporting_arguments": <number>,
+        "counterpoint_addressed": <boolean>,
+        "conclusion_present": <boolean>
+    }}
+}}
+"""
+
+        print(f"🤖 [EVAL] Sending evaluation request to ChatGPT...")
+        
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": "You are an expert English language evaluator for C2 Advanced level critical opinion building."},
+                {"role": "user", "content": evaluation_prompt}
+            ],
+            temperature=0.3,
+            max_tokens=1500
+        )
+        
+        evaluation_text = response.choices[0].message.content.strip()
+        print(f"📄 [EVAL] Raw ChatGPT response: {evaluation_text[:200]}...")
+        
+        # Try to extract JSON from the response
+        try:
+            # Look for JSON in the response
+            json_start = evaluation_text.find('{')
+            json_end = evaluation_text.rfind('}') + 1
+            
+            if json_start != -1 and json_end != 0:
+                json_content = evaluation_text[json_start:json_end]
+                evaluation_result = json.loads(json_content)
+                print(f"✅ [EVAL] Successfully parsed JSON evaluation")
+            else:
+                raise ValueError("No JSON found in response")
+                
+        except json.JSONDecodeError as e:
+            print(f"❌ [EVAL] JSON parsing error: {str(e)}")
+            print(f"📄 [EVAL] Attempted to parse: {evaluation_text}")
+            
+            # Fallback evaluation
+            evaluation_result = {
+                "score": 50,
+                "is_correct": False,
+                "completed": False,
+                "keyword_matches": 0,
+                "total_keywords": len(expected_keywords),
+                "academic_expressions_used": 0,
+                "total_academic_expressions": len(academic_expressions),
+                "detailed_feedback": {
+                    "argument_structure": "Unable to evaluate due to processing error",
+                    "logical_flow": "Unable to evaluate due to processing error",
+                    "academic_expressions": "Unable to evaluate due to processing error",
+                    "critical_thinking": "Unable to evaluate due to processing error",
+                    "vocabulary_usage": "Unable to evaluate due to processing error"
+                },
+                "suggested_improvement": "Please try again. Make sure to follow the expected structure and use academic expressions naturally.",
+                "strengths": ["Response provided"],
+                "areas_for_improvement": ["Evaluation processing error"],
+                "structure_analysis": {
+                    "thesis_present": False,
+                    "supporting_arguments": 0,
+                    "counterpoint_addressed": False,
+                    "conclusion_present": False
+                }
+            }
+        
+        # Validate and sanitize the evaluation result
+        score = evaluation_result.get("score", 50)
+        if not isinstance(score, (int, float)) or score < 0 or score > 100:
+            score = 50
+            evaluation_result["score"] = score
+        
+        is_correct = evaluation_result.get("is_correct", score >= 75)
+        completed = evaluation_result.get("completed", score >= 80)
+        
+        # Ensure keyword matches is valid
+        keyword_matches = evaluation_result.get("keyword_matches", 0)
+        total_keywords = evaluation_result.get("total_keywords", len(expected_keywords))
+        
+        if not isinstance(keyword_matches, int) or keyword_matches < 0:
+            keyword_matches = 0
+        if not isinstance(total_keywords, int) or total_keywords <= 0:
+            total_keywords = len(expected_keywords)
+        
+        # Ensure academic expressions count is valid
+        academic_expressions_used = evaluation_result.get("academic_expressions_used", 0)
+        total_academic_expressions = evaluation_result.get("total_academic_expressions", len(academic_expressions))
+        
+        if not isinstance(academic_expressions_used, int) or academic_expressions_used < 0:
+            academic_expressions_used = 0
+        if not isinstance(total_academic_expressions, int) or total_academic_expressions <= 0:
+            total_academic_expressions = len(academic_expressions)
+        
+        evaluation_result.update({
+            "is_correct": is_correct,
+            "completed": completed,
+            "keyword_matches": keyword_matches,
+            "total_keywords": total_keywords,
+            "academic_expressions_used": academic_expressions_used,
+            "total_academic_expressions": total_academic_expressions
+        })
+        
+        print(f"📊 [EVAL] Final evaluation result:")
+        print(f"   - Score: {score}")
+        print(f"   - Is correct: {is_correct}")
+        print(f"   - Completed: {completed}")
+        print(f"   - Keyword matches: {keyword_matches}/{total_keywords}")
+        print(f"   - Academic expressions: {academic_expressions_used}/{total_academic_expressions}")
+        
+        return evaluation_result
+        
+    except Exception as e:
+        print(f"❌ [EVAL] Error in evaluate_response_ex3_stage6: {str(e)}")
+        
+        # Return fallback evaluation
+        return {
+            "score": 50,
+            "is_correct": False,
+            "completed": False,
+            "keyword_matches": 0,
+            "total_keywords": len(expected_keywords),
+            "academic_expressions_used": 0,
+            "total_academic_expressions": len(academic_expressions),
+            "detailed_feedback": {
+                "argument_structure": "Evaluation error occurred",
+                "logical_flow": "Evaluation error occurred",
+                "academic_expressions": "Evaluation error occurred",
+                "critical_thinking": "Evaluation error occurred",
+                "vocabulary_usage": "Evaluation error occurred"
+            },
+            "suggested_improvement": "Please try again. Focus on following the expected structure and using academic expressions naturally.",
+            "strengths": ["Attempted response"],
+            "areas_for_improvement": ["Technical evaluation error"],
+            "structure_analysis": {
+                "thesis_present": False,
+                "supporting_arguments": 0,
+                "counterpoint_addressed": False,
+                "conclusion_present": False
+            }
+        }
+
