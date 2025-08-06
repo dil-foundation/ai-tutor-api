@@ -1,14 +1,16 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 import json
 import os
 import base64
 from io import BytesIO
+from typing import Dict, Any
 from app.services.tts import synthesize_speech, synthesize_speech_exercises
 from app.services.stt import transcribe_audio_bytes_eng_only
 from app.services.feedback import evaluate_response_ex2_stage3
 from app.supabase_client import progress_tracker
+from app.auth_middleware import get_current_user, require_student
 
 router = APIRouter()
 
@@ -39,7 +41,7 @@ def get_scenario_by_id(scenario_id: int):
         return None
 
 @router.get("/group-dialogue-scenarios")
-async def get_all_scenarios():
+async def get_all_scenarios(current_user: Dict[str, Any] = Depends(require_student)):
     """Get all available scenarios for Group Dialogue exercise"""
     print("🔄 [API] GET /group-dialogue-scenarios endpoint called")
     try:
@@ -53,7 +55,7 @@ async def get_all_scenarios():
         raise HTTPException(status_code=500, detail=f"Failed to load scenarios: {str(e)}")
 
 @router.get("/group-dialogue-scenarios/{scenario_id}")
-async def get_scenario(scenario_id: int):
+async def get_scenario(scenario_id: int, current_user: Dict[str, Any] = Depends(require_student)):
     """Get a specific scenario by ID"""
     print(f"🔄 [API] GET /group-dialogue-scenarios/{scenario_id} endpoint called")
     try:
@@ -94,7 +96,7 @@ and returns the generated audio file as the response.
 """,
     tags=["Stage 3 - Exercise 2 (Group Dialogue)"]
 )
-async def group_dialogue(scenario_id: int):
+async def group_dialogue(scenario_id: int, current_user: Dict[str, Any] = Depends(require_student)):
     print(f"🔄 [API] POST /group-dialogue/{scenario_id} endpoint called")
     try:
         scenario_data = get_scenario_by_id(scenario_id)
@@ -145,9 +147,19 @@ Also records progress tracking data in Supabase database.
 """,
     tags=["Stage 3 - Exercise 2 (Group Dialogue)"]
 )
-async def evaluate_group_dialogue(request: AudioEvaluationRequest):
+async def evaluate_group_dialogue(
+    request: AudioEvaluationRequest,
+    current_user: Dict[str, Any] = Depends(require_student)
+):
     print(f"🔄 [API] POST /evaluate-group-dialogue endpoint called")
     print(f"📊 [API] Request details: scenario_id={request.scenario_id}, user_id={request.user_id}")
+    
+    # Validate user_id and ensure user can only access their own data
+    if not request.user_id:
+        raise HTTPException(status_code=400, detail="user_id is required")
+    
+    if request.user_id != current_user['id']:
+        raise HTTPException(status_code=403, detail="You can only access your own data")
     
     try:
         # Get scenario data
@@ -307,9 +319,17 @@ async def evaluate_group_dialogue(request: AudioEvaluationRequest):
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @router.get("/group-dialogue-progress/{user_id}")
-async def get_user_progress(user_id: str):
+async def get_user_progress(
+    user_id: str,
+    current_user: Dict[str, Any] = Depends(require_student)
+):
     """Get user's progress for Group Dialogue exercise"""
     print(f"🔄 [API] GET /group-dialogue-progress/{user_id} endpoint called")
+    
+    # Ensure user can only access their own data
+    if user_id != current_user['id']:
+        raise HTTPException(status_code=403, detail="You can only access your own data")
+    
     try:
         # Get topic progress for this specific exercise
         topic_progress = await progress_tracker.get_user_topic_progress(user_id, stage_id=3, exercise_id=2)
@@ -332,9 +352,17 @@ async def get_user_progress(user_id: str):
         raise HTTPException(status_code=500, detail=f"Failed to get progress: {str(e)}")
 
 @router.get("/group-dialogue-current-topic/{user_id}")
-async def get_current_topic(user_id: str):
+async def get_current_topic(
+    user_id: str,
+    current_user: Dict[str, Any] = Depends(require_student)
+):
     """Get user's current topic for Group Dialogue exercise"""
     print(f"🔄 [API] GET /group-dialogue-current-topic/{user_id} endpoint called")
+    
+    # Ensure user can only access their own data
+    if user_id != current_user['id']:
+        raise HTTPException(status_code=403, detail="You can only access your own data")
+    
     try:
         topic_data = await progress_tracker.get_current_topic_for_exercise(user_id, stage_id=3, exercise_id=2)
         print(f"✅ [API] Current topic retrieved: {topic_data}")

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 import json
 import base64
 import logging
@@ -8,6 +8,7 @@ from app.services.tts import synthesize_speech_exercises
 from app.services.feedback import evaluate_response_ex3_stage4
 from app.supabase_client import SupabaseProgressTracker
 from app.services.stt import transcribe_audio_bytes_eng_only
+from app.auth_middleware import get_current_user, require_student
 import os
 
 router = APIRouter(tags=["Stage 4 - Exercise 3 (News Summary)"])
@@ -38,7 +39,7 @@ class AudioEvaluationRequest(BaseModel):
     description="Retrieve all available news summary items for Stage 4 Exercise 3",
     tags=["Stage 4 - Exercise 3 (News Summary)"]
 )
-async def get_news_summary_items():
+async def get_news_summary_items(current_user: Dict[str, Any] = Depends(require_student)):
     """Get all news summary items"""
     try:
         news_items = load_news_summary_data()
@@ -53,7 +54,7 @@ async def get_news_summary_items():
     description="Retrieve a specific news summary item by ID",
     tags=["Stage 4 - Exercise 3 (News Summary)"]
 )
-async def get_news_summary_item(news_id: int):
+async def get_news_summary_item(news_id: int, current_user: Dict[str, Any] = Depends(require_student)):
     """Get a specific news summary item by ID"""
     try:
         news_items = load_news_summary_data()
@@ -76,7 +77,10 @@ async def get_news_summary_item(news_id: int):
     description="Generate audio pronunciation for a specific news summary item",
     tags=["Stage 4 - Exercise 3 (News Summary)"]
 )
-async def generate_news_summary_audio(news_id: int):
+async def generate_news_summary_audio(
+    news_id: int,
+    current_user: Dict[str, Any] = Depends(require_student)
+):
     """Generate audio for a specific news summary item"""
     try:
         news_items = load_news_summary_data()
@@ -118,11 +122,21 @@ Also records progress tracking data in Supabase database.
 """,
     tags=["Stage 4 - Exercise 3 (News Summary)"]
 )
-async def evaluate_news_summary(request: AudioEvaluationRequest):
+async def evaluate_news_summary(
+    request: AudioEvaluationRequest,
+    current_user: Dict[str, Any] = Depends(require_student)
+):
     """Evaluate user's news summary response"""
     try:
         print(f"🔄 [API] POST /evaluate-news-summary endpoint called")
         print(f"📊 [API] Request details: news_id={request.news_id}, user_id={request.user_id}")
+        
+        # Validate user_id and ensure user can only access their own data
+        if not request.user_id:
+            raise HTTPException(status_code=400, detail="user_id is required")
+        
+        if request.user_id != current_user['id']:
+            raise HTTPException(status_code=403, detail="You can only access your own data")
         
         # Load news item data
         news_items = load_news_summary_data()
@@ -214,8 +228,16 @@ async def evaluate_news_summary(request: AudioEvaluationRequest):
     description="Retrieve the user's progress for Stage 4 Exercise 3 (News Summary)",
     tags=["Stage 4 - Exercise 3 (News Summary)"]
 )
-async def get_news_summary_progress(user_id: str):
+async def get_news_summary_progress(
+    user_id: str,
+    current_user: Dict[str, Any] = Depends(require_student)
+):
     """Get user's news summary progress"""
+    
+    # Ensure user can only access their own data
+    if user_id != current_user['id']:
+        raise HTTPException(status_code=403, detail="You can only access your own data")
+    
     try:
         print(f"🔄 [API] GET /news-summary-progress/{user_id} endpoint called")
         
@@ -237,8 +259,16 @@ async def get_news_summary_progress(user_id: str):
     description="Retrieve the current news summary item the user should practice",
     tags=["Stage 4 - Exercise 3 (News Summary)"]
 )
-async def get_current_news_summary_item(user_id: str):
+async def get_current_news_summary_item(
+    user_id: str,
+    current_user: Dict[str, Any] = Depends(require_student)
+):
     """Get current news summary item for user"""
+    
+    # Ensure user can only access their own data
+    if user_id != current_user['id']:
+        raise HTTPException(status_code=403, detail="You can only access your own data")
+    
     try:
         print(f"🔄 [API] GET /news-summary-current-item/{user_id} endpoint called")
         

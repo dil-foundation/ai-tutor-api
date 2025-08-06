@@ -15,18 +15,30 @@ from app.services.feedback import evaluate_response_ex3_stage2
 from app.services.stt import transcribe_audio_bytes_eng_only
 from app.supabase_client import progress_tracker
 from app.redis_client import redis_client
+from app.auth_middleware import get_current_user, require_student
 import json
 import base64
-from typing import List
+from typing import List, Dict, Any
 
 router = APIRouter()
 
 @router.get("/roleplay-scenarios", response_model=ScenariosResponse)
-async def get_roleplay_scenarios(user_id: str, db: Session = Depends(get_db)):
+async def get_roleplay_scenarios(
+    user_id: str, 
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(require_student)
+):
     """
     Get all available roleplay scenarios with completion status for the user
     """
     print(f"🔄 [ROLEPLAY] GET /roleplay-scenarios called for user: {user_id}")
+    
+    # Validate user_id and ensure user can only access their own data
+    if not user_id:
+        raise HTTPException(status_code=400, detail="user_id is required")
+    
+    if user_id != current_user['id']:
+        raise HTTPException(status_code=403, detail="You can only access your own data")
     
     try:
         # Get all scenarios
@@ -84,7 +96,7 @@ async def get_roleplay_scenarios(user_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"Failed to get scenarios: {str(e)}")
 
 @router.get("/roleplay-scenarios/{scenario_id}")
-async def get_scenario_by_id(scenario_id: int):
+async def get_scenario_by_id(scenario_id: int, current_user: Dict[str, Any] = Depends(require_student)):
     """
     Get specific scenario by ID
     """
@@ -105,12 +117,22 @@ async def get_scenario_by_id(scenario_id: int):
         raise HTTPException(status_code=500, detail=f"Failed to get scenario: {str(e)}")
 
 @router.post("/roleplay/start", response_model=RoleplayResponse)
-async def start_roleplay(request: RoleplayStartRequest):
+async def start_roleplay(
+    request: RoleplayStartRequest,
+    current_user: Dict[str, Any] = Depends(require_student)
+):
     """
     Start a new roleplay session for a specific scenario
     """
     print(f"🔄 [ROLEPLAY] POST /roleplay/start called for scenario: {request.scenario_id}")
     print(f"👤 [ROLEPLAY] User ID: {request.user_id}")
+    
+    # Validate user_id and ensure user can only access their own data
+    if not request.user_id:
+        raise HTTPException(status_code=400, detail="user_id is required")
+    
+    if request.user_id != current_user['id']:
+        raise HTTPException(status_code=403, detail="You can only access your own data")
     
     try:
         # Get scenario
@@ -148,7 +170,10 @@ async def start_roleplay(request: RoleplayStartRequest):
         raise HTTPException(status_code=500, detail=f"Failed to start roleplay: {str(e)}")
 
 @router.post("/roleplay/respond", response_model=RoleplayResponse)
-async def continue_roleplay(reply: RoleplayUserReply):
+async def continue_roleplay(
+    reply: RoleplayUserReply,
+    current_user: Dict[str, Any] = Depends(require_student)
+):
     """
     Continue roleplay conversation with user input (text or audio)
     """
@@ -156,6 +181,13 @@ async def continue_roleplay(reply: RoleplayUserReply):
     print(f"📝 [ROLEPLAY] Session ID: {reply.session_id}")
     print(f"👤 [ROLEPLAY] User ID: {reply.user_id}")
     print(f"📝 [ROLEPLAY] Input type: {reply.input_type}")
+    
+    # Validate user_id and ensure user can only access their own data
+    if not reply.user_id:
+        raise HTTPException(status_code=400, detail="user_id is required")
+    
+    if reply.user_id != current_user['id']:
+        raise HTTPException(status_code=403, detail="You can only access your own data")
     
     try:
         user_input = reply.user_input
@@ -217,7 +249,7 @@ async def continue_roleplay(reply: RoleplayUserReply):
         raise HTTPException(status_code=500, detail=f"Failed to continue roleplay: {str(e)}")
 
 @router.get("/roleplay/history/{session_id}", response_model=ConversationHistoryResponse)
-async def get_roleplay_history(session_id: str):
+async def get_roleplay_history(session_id: str, current_user: Dict[str, Any] = Depends(require_student)):
     """
     Get conversation history for a session
     """
@@ -258,7 +290,11 @@ async def get_roleplay_history(session_id: str):
         raise HTTPException(status_code=500, detail=f"Failed to get history: {str(e)}")
 
 @router.post("/roleplay/evaluate", response_model=RoleplayEvaluationResponse)
-async def evaluate_roleplay_session(request: RoleplayEvaluationRequest, db: Session = Depends(get_db)):
+async def evaluate_roleplay_session(
+    request: RoleplayEvaluationRequest, 
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(require_student)
+):
     """
     Evaluate a completed roleplay session
     """
@@ -266,6 +302,13 @@ async def evaluate_roleplay_session(request: RoleplayEvaluationRequest, db: Sess
     print(f"📝 [ROLEPLAY] Session ID: {request.session_id}")
     print(f"👤 [ROLEPLAY] User ID: {request.user_id}")
     print(f"⏱️ [ROLEPLAY] Time spent: {request.time_spent_seconds} seconds")
+    
+    # Validate user_id and ensure user can only access their own data
+    if not request.user_id:
+        raise HTTPException(status_code=400, detail="user_id is required")
+    
+    if request.user_id != current_user['id']:
+        raise HTTPException(status_code=403, detail="You can only access your own data")
     
     try:
         # Get session data from Redis

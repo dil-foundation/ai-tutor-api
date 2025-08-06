@@ -1,12 +1,13 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 import json
 import base64
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from app.services.feedback import evaluate_response_ex3_stage3
 from app.services.stt import transcribe_audio_bytes_eng_only
 from app.services.tts import synthesize_speech_exercises
 from app.supabase_client import progress_tracker
+from app.auth_middleware import get_current_user, require_student
 import os
 
 router = APIRouter()
@@ -47,7 +48,7 @@ def get_scenario_by_id(scenario_id: int):
     description="Retrieve all available problem-solving scenarios for Stage 3 Exercise 3",
     tags=["Stage 3 - Exercise 3 (Problem-Solving)"]
 )
-async def get_problem_solving_scenarios():
+async def get_problem_solving_scenarios(current_user: Dict[str, Any] = Depends(require_student)):
     """Get all problem-solving scenarios"""
     print("🔄 [API] GET /problem-solving-scenarios endpoint called")
     
@@ -69,7 +70,7 @@ async def get_problem_solving_scenarios():
     description="Retrieve a specific problem-solving scenario by ID",
     tags=["Stage 3 - Exercise 3 (Problem-Solving)"]
 )
-async def get_problem_solving_scenario(scenario_id: int):
+async def get_problem_solving_scenario(scenario_id: int, current_user: Dict[str, Any] = Depends(require_student)):
     """Get a specific problem-solving scenario by ID"""
     print(f"🔄 [API] GET /problem-solving-scenarios/{scenario_id} endpoint called")
     
@@ -93,7 +94,10 @@ async def get_problem_solving_scenario(scenario_id: int):
     description="Generate audio narration for a specific problem-solving scenario",
     tags=["Stage 3 - Exercise 3 (Problem-Solving)"]
 )
-async def generate_problem_solving_audio(request: AudioGenerationRequest):
+async def generate_problem_solving_audio(
+    request: AudioGenerationRequest,
+    current_user: Dict[str, Any] = Depends(require_student)
+):
     """Generate audio for a problem-solving scenario"""
     print(f"🔄 [API] POST /problem-solving/{request.scenario_id} endpoint called")
     
@@ -141,10 +145,20 @@ Also records progress tracking data in Supabase database.
 """,
     tags=["Stage 3 - Exercise 3 (Problem-Solving)"]
 )
-async def evaluate_problem_solving(request: AudioEvaluationRequest):
+async def evaluate_problem_solving(
+    request: AudioEvaluationRequest,
+    current_user: Dict[str, Any] = Depends(require_student)
+):
     """Evaluate user's response for problem-solving scenario"""
     print(f"🔄 [API] POST /evaluate-problem-solving endpoint called")
     print(f"📊 [API] Request details: scenario_id={request.scenario_id}, user_id={request.user_id}")
+    
+    # Validate user_id and ensure user can only access their own data
+    if not request.user_id:
+        raise HTTPException(status_code=400, detail="user_id is required")
+    
+    if request.user_id != current_user['id']:
+        raise HTTPException(status_code=403, detail="You can only access your own data")
     
     try:
         # Get scenario data
@@ -321,9 +335,16 @@ async def evaluate_problem_solving(request: AudioEvaluationRequest):
     description="Retrieve the user's progress for Stage 3 Exercise 3 (Problem-Solving)",
     tags=["Stage 3 - Exercise 3 (Problem-Solving)"]
 )
-async def get_problem_solving_progress(user_id: str):
+async def get_problem_solving_progress(
+    user_id: str,
+    current_user: Dict[str, Any] = Depends(require_student)
+):
     """Get user's problem-solving progress"""
     print(f"🔄 [API] GET /problem-solving-progress/{user_id} endpoint called")
+    
+    # Ensure user can only access their own data
+    if user_id != current_user['id']:
+        raise HTTPException(status_code=403, detail="You can only access your own data")
     
     try:
         # Get user's progress for Stage 3 Exercise 3
@@ -363,9 +384,16 @@ async def get_problem_solving_progress(user_id: str):
     description="Retrieve the user's current topic for Stage 3 Exercise 3 (Problem-Solving)",
     tags=["Stage 3 - Exercise 3 (Problem-Solving)"]
 )
-async def get_problem_solving_current_topic(user_id: str):
+async def get_problem_solving_current_topic(
+    user_id: str,
+    current_user: Dict[str, Any] = Depends(require_student)
+):
     """Get user's current problem-solving topic"""
     print(f"🔄 [API] GET /problem-solving-current-topic/{user_id} endpoint called")
+    
+    # Ensure user can only access their own data
+    if user_id != current_user['id']:
+        raise HTTPException(status_code=403, detail="You can only access your own data")
     
     try:
         # Get user's current topic for Stage 3 Exercise 3
@@ -398,3 +426,5 @@ async def get_problem_solving_current_topic(user_id: str):
             "current_topic_id": 1,
             "total_topics": 5
         } 
+
+        

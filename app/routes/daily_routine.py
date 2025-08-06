@@ -1,14 +1,16 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 import json
 import os
 import base64
 from io import BytesIO
+from typing import Dict, Any
 from app.services.tts import synthesize_speech, synthesize_speech_exercises
 from app.services.stt import transcribe_audio_bytes_eng_only
 from app.services.feedback import evaluate_response_ex1_stage2
 from app.supabase_client import progress_tracker
+from app.auth_middleware import get_current_user, require_student
 router = APIRouter()
 
 DAILY_ROUTINE_FILE = os.path.join(os.path.dirname(__file__), '..', 'data', 'daily_routine_narration.json')
@@ -39,7 +41,7 @@ def get_phrase_by_id(phrase_id: int):
 
 
 @router.get("/daily-routine-phrases")
-async def get_all_phrases():
+async def get_all_phrases(current_user: Dict[str, Any] = Depends(require_student)):
     """Get all available phrases for Daily Routine exercise"""
     print("🔄 [API] GET /daily-routine-phrases endpoint called")
     try:
@@ -53,7 +55,7 @@ async def get_all_phrases():
         raise HTTPException(status_code=500, detail=f"Failed to load phrases: {str(e)}")
 
 @router.get("/daily-routine-phrases/{phrase_id}")
-async def get_phrase(phrase_id: int):
+async def get_phrase(phrase_id: int, current_user: Dict[str, Any] = Depends(require_student)):
     """Get a specific phrase by ID"""
     print(f"🔄 [API] GET /daily-routine-phrases/{phrase_id} endpoint called")
     try:
@@ -92,7 +94,7 @@ and returns the generated audio file as the response.
 """,
     tags=["Stage 2 - Exercise 1 (Daily Routine)"]
 )
-async def daily_routine(phrase_id: int):
+async def daily_routine(phrase_id: int, current_user: Dict[str, Any] = Depends(require_student)):
     print(f"🔄 [API] POST /daily-routine/{phrase_id} endpoint called")
     try:
         phrase_data = get_phrase_by_id(phrase_id)
@@ -128,13 +130,23 @@ Also records progress tracking data in Supabase database.
 """,
     tags=["Stage 2 - Exercise 1 (Daily Routine)"]
 )
-async def evaluate_daily_routine(request: AudioEvaluationRequest):
+async def evaluate_daily_routine(
+    request: AudioEvaluationRequest,
+    current_user: Dict[str, Any] = Depends(require_student)
+):
     print(f"🔄 [API] POST /evaluate-daily-routine endpoint called")
     print(f"📝 [API] Request details: phrase_id={request.phrase_id}, filename={request.filename}")
     print(f"📊 [API] Audio data length: {len(request.audio_base64)} characters")
     print(f"👤 [API] User ID: {request.user_id}")
     print(f"⏱️ [API] Time spent: {request.time_spent_seconds} seconds")
     print(f"🌐 [API] Urdu used: {request.urdu_used}")
+    
+    # Validate user_id and ensure user can only access their own data
+    if not request.user_id:
+        raise HTTPException(status_code=400, detail="user_id is required")
+    
+    if request.user_id != current_user['id']:
+        raise HTTPException(status_code=403, detail="You can only access your own data")
     
     try:
         # Get the expected phrase and keywords
