@@ -42,6 +42,7 @@ from app.routes import (
     critical_thinking,
     academic_presentation,
     in_depth_interview,
+    spontaneous_speech,
     quiz_parser,
     gpt_quiz_parser,
     progress_tracking
@@ -123,6 +124,7 @@ app.include_router(news_summary.router, prefix="/api", tags=["Stage 4 - Exercise
 app.include_router(critical_thinking.router, prefix="/api", tags=["Stage 5 - Exercise 1 (Critical Thinking Dialogues)"])
 app.include_router(academic_presentation.router, prefix="/api", tags=["Stage 5 - Exercise 2 (Academic Presentation)"])
 app.include_router(in_depth_interview.router, prefix="/api", tags=["Stage 5 - Exercise 3 (In-Depth Interview)"])
+app.include_router(spontaneous_speech.router, prefix="/api", tags=["Stage 6 - Exercise 1 (Spontaneous Speech)"])
 app.include_router(quiz_parser.router, prefix="/api", tags=["Quiz Parser"])
 
 # Stage 2 exercises
