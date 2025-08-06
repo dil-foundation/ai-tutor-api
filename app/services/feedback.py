@@ -2994,7 +2994,7 @@ Focus on C2-level expectations: sophisticated language, complex ideas, nuanced a
         print(f"🔄 [EVAL] Sending evaluation request to ChatGPT")
         
         # Get ChatGPT response
-        response = client.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="gpt-4",
             messages=[
                 {"role": "system", "content": "You are an expert English language evaluator for C2-level spontaneous speech exercises. Provide detailed, professional evaluations in the exact JSON format requested."},
@@ -3105,4 +3105,190 @@ def create_fallback_evaluation(user_text, expected_keywords, topic_text):
         "thought_analysis": "Simple response structure",
         "vocabulary_analysis": f"Used {keyword_matches}/{total_keywords} expected keywords",
         "coherence_analysis": "Basic organization"
+    }
+
+
+
+def evaluate_response_ex2_stage6(expected_keywords, user_text, scenario_text, model_response, evaluation_criteria):
+    """
+    Evaluate Stage 6 Exercise 2 (Roleplay - Handle a Sensitive Scenario) responses using ChatGPT.
+    
+    Args:
+        expected_keywords: List of expected keywords from the scenario
+        user_text: Transcribed user response
+        scenario_text: The sensitive scenario description
+        model_response: Expected model response for comparison
+        evaluation_criteria: Dictionary with evaluation weights
+    
+    Returns:
+        Dictionary with evaluation results
+    """
+    try:
+        print(f"🔄 [EVAL] Starting Stage 6 Exercise 2 evaluation")
+        print(f"📝 [EVAL] Scenario: {scenario_text}")
+        print(f"🎤 [EVAL] User response: {user_text}")
+        print(f"🔑 [EVAL] Expected keywords: {expected_keywords}")
+        
+        # Extract evaluation criteria weights
+        tone_control_weight = evaluation_criteria.get("tone_control", 30)
+        empathy_authority_balance_weight = evaluation_criteria.get("empathy_authority_balance", 25)
+        clarity_communication_weight = evaluation_criteria.get("clarity_communication", 25)
+        conflict_resolution_weight = evaluation_criteria.get("conflict_resolution", 20)
+        
+        # Create sophisticated evaluation prompt
+        evaluation_prompt = f"""
+You are an expert English language evaluator for C2-level sensitive scenario roleplay exercises. Evaluate the following response based on the given criteria.
+
+SCENARIO: {scenario_text}
+
+USER RESPONSE: {user_text}
+
+EXPECTED KEYWORDS: {', '.join(expected_keywords)}
+
+MODEL RESPONSE (for reference): {model_response}
+
+EVALUATION CRITERIA:
+1. Tone Control (Weight: {tone_control_weight}%): Appropriate emotional tone, diplomatic language, professional demeanor
+2. Empathy vs Authority Balance (Weight: {empathy_authority_balance_weight}%): Balancing understanding with assertiveness, showing care while maintaining position
+3. Clarity & Communication (Weight: {clarity_communication_weight}%): Clear, precise language, effective message delivery, professional articulation
+4. Conflict Resolution (Weight: {conflict_resolution_weight}%): Problem-solving approach, constructive dialogue, resolution-oriented communication
+
+Please provide a comprehensive evaluation in the following JSON format:
+
+{{
+    "overall_score": <0-100>,
+    "tone_control_score": <0-100>,
+    "empathy_authority_balance_score": <0-100>,
+    "clarity_communication_score": <0-100>,
+    "conflict_resolution_score": <0-100>,
+    "keyword_matches": <number of keywords used>,
+    "total_keywords": <total number of expected keywords>,
+    "tone_analysis": "<detailed analysis of tone control>",
+    "empathy_authority_analysis": "<detailed analysis of empathy vs authority balance>",
+    "clarity_analysis": "<detailed analysis of clarity and communication>",
+    "conflict_resolution_analysis": "<detailed analysis of conflict resolution approach>",
+    "strengths": ["<list of key strengths>"],
+    "areas_for_improvement": ["<list of specific improvement areas>"],
+    "suggested_improvement": "<comprehensive improvement suggestion>",
+    "is_correct": <true/false based on overall quality>,
+    "completed": <true if score >= 80, false otherwise>
+}}
+
+Focus on C2-level expectations: sophisticated diplomatic language, emotional intelligence, professional communication, and effective conflict resolution strategies.
+"""
+
+        print(f"🔄 [EVAL] Sending evaluation request to ChatGPT")
+        
+        # Get ChatGPT response
+        response = client.chat.completions.create(
+            model="gpt-4",
+            messages=[
+                {"role": "system", "content": "You are an expert English language evaluator for C2-level sensitive scenario roleplay exercises. Provide detailed, professional evaluations in the exact JSON format requested."},
+                {"role": "user", "content": evaluation_prompt}
+            ],
+            temperature=0.3,
+            max_tokens=1500
+        )
+        
+        # Extract and parse the response
+        evaluation_text = response.choices[0].message.content.strip()
+        print(f"📊 [EVAL] ChatGPT response received: {evaluation_text[:200]}...")
+        
+        # Parse JSON response
+        try:
+            evaluation_data = json.loads(evaluation_text)
+            print(f"✅ [EVAL] JSON parsed successfully")
+        except json.JSONDecodeError as e:
+            print(f"❌ [EVAL] JSON parsing error: {str(e)}")
+            # Fallback evaluation
+            return create_fallback_evaluation_sensitive_scenario(user_text, expected_keywords, scenario_text)
+        
+        # Validate and process the evaluation data
+        overall_score = evaluation_data.get("overall_score", 0)
+        tone_control_score = evaluation_data.get("tone_control_score", 0)
+        empathy_authority_balance_score = evaluation_data.get("empathy_authority_balance_score", 0)
+        clarity_communication_score = evaluation_data.get("clarity_communication_score", 0)
+        conflict_resolution_score = evaluation_data.get("conflict_resolution_score", 0)
+        keyword_matches = evaluation_data.get("keyword_matches", 0)
+        total_keywords = evaluation_data.get("total_keywords", len(expected_keywords))
+        
+        # Calculate weighted score
+        weighted_score = (
+            (tone_control_score * tone_control_weight / 100) +
+            (empathy_authority_balance_score * empathy_authority_balance_weight / 100) +
+            (clarity_communication_score * clarity_communication_weight / 100) +
+            (conflict_resolution_score * conflict_resolution_weight / 100)
+        )
+        
+        # Determine completion status
+        is_correct = weighted_score >= 70
+        completed = weighted_score >= 80
+        
+        print(f"📊 [EVAL] Evaluation results:")
+        print(f"   Overall Score: {weighted_score:.1f}")
+        print(f"   Tone Control: {tone_control_score}")
+        print(f"   Empathy vs Authority Balance: {empathy_authority_balance_score}")
+        print(f"   Clarity & Communication: {clarity_communication_score}")
+        print(f"   Conflict Resolution: {conflict_resolution_score}")
+        print(f"   Keyword Matches: {keyword_matches}/{total_keywords}")
+        print(f"   Completed: {completed}")
+        
+        return {
+            "score": round(weighted_score, 1),
+            "tone_control_score": tone_control_score,
+            "empathy_authority_balance_score": empathy_authority_balance_score,
+            "clarity_communication_score": clarity_communication_score,
+            "conflict_resolution_score": conflict_resolution_score,
+            "keyword_matches": keyword_matches,
+            "total_keywords": total_keywords,
+            "fluency_score": tone_control_score,  # For compatibility
+            "grammar_score": clarity_communication_score,  # For compatibility
+            "is_correct": is_correct,
+            "completed": completed,
+            "suggested_improvement": evaluation_data.get("suggested_improvement", ""),
+            "strengths": evaluation_data.get("strengths", []),
+            "areas_for_improvement": evaluation_data.get("areas_for_improvement", []),
+            "tone_analysis": evaluation_data.get("tone_analysis", ""),
+            "empathy_authority_analysis": evaluation_data.get("empathy_authority_analysis", ""),
+            "clarity_analysis": evaluation_data.get("clarity_analysis", ""),
+            "conflict_resolution_analysis": evaluation_data.get("conflict_resolution_analysis", "")
+        }
+        
+    except Exception as e:
+        print(f"❌ [EVAL] Error in Stage 6 Exercise 2 evaluation: {str(e)}")
+        return create_fallback_evaluation_sensitive_scenario(user_text, expected_keywords, scenario_text)
+
+def create_fallback_evaluation_sensitive_scenario(user_text, expected_keywords, scenario_text):
+    """Create a fallback evaluation when ChatGPT fails for sensitive scenarios"""
+    print(f"🔄 [EVAL] Creating fallback evaluation for sensitive scenario")
+    
+    # Simple keyword matching
+    user_words = set(user_text.lower().split())
+    keyword_matches = sum(1 for keyword in expected_keywords if keyword.lower() in user_words)
+    total_keywords = len(expected_keywords)
+    
+    # Basic scoring
+    keyword_score = (keyword_matches / total_keywords) * 100 if total_keywords > 0 else 0
+    length_score = min(len(user_text.split()) / 40 * 100, 100)  # Target: 40+ words for sensitive scenarios
+    overall_score = (keyword_score * 0.4) + (length_score * 0.6)
+    
+    return {
+        "score": round(overall_score, 1),
+        "tone_control_score": 60,
+        "empathy_authority_balance_score": 50,
+        "clarity_communication_score": 60,
+        "conflict_resolution_score": 50,
+        "keyword_matches": keyword_matches,
+        "total_keywords": total_keywords,
+        "fluency_score": 60,
+        "grammar_score": 60,
+        "is_correct": overall_score >= 70,
+        "completed": overall_score >= 80,
+        "suggested_improvement": "Try to use more diplomatic language and include more of the expected keywords in your response.",
+        "strengths": ["Attempted the sensitive scenario"],
+        "areas_for_improvement": ["Need more diplomatic tone", "Include more expected keywords"],
+        "tone_analysis": "Basic response provided",
+        "empathy_authority_analysis": "Simple approach to sensitive situation",
+        "clarity_analysis": f"Used {keyword_matches}/{total_keywords} expected keywords",
+        "conflict_resolution_analysis": "Basic conflict resolution attempt"
     }
