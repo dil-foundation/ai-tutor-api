@@ -206,7 +206,7 @@ async def evaluate_listen_reply(
         # Evaluate the response
         try:
             print(f"🔄 [API] Evaluating response: '{user_text}' vs expected keywords")
-            evaluation = evaluate_response_ex3_stage1(expected_keywords, user_text)
+            evaluation = evaluate_response_ex3_stage1(expected_keywords, user_text, ai_prompt)
             print(f"✅ [API] Evaluation completed: {evaluation}")
             
             # Extract evaluation details for progress tracking
