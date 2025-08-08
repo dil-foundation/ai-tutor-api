@@ -49,6 +49,7 @@ from app.routes import (
     quiz_parser,
     gpt_quiz_parser,
     progress_tracking,
+    admin_dashboard,
     messaging
 )
 from .database import get_db, engine
@@ -156,6 +157,8 @@ app.include_router(english_only_ws.router, prefix="/api", tags=["WebSocket - Eng
 # Progress tracking routes (NEW - Comprehensive Progress System)
 app.include_router(progress_tracking.router, prefix="/api/progress", tags=["Progress Tracking"])
 
+# Admin dashboard routes (NEW - Admin Dashboard System)
+app.include_router(admin_dashboard.router, tags=["Admin Dashboard"])
 # Messaging system routes (NEW - Real-time Messaging)
 app.include_router(messaging.router, prefix="/api", tags=["Messaging System"])
 
