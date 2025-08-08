@@ -158,7 +158,21 @@ def require_role(required_role: str):
         return user
     return role_checker
 
+def require_any_role(allowed_roles: list):
+    """
+    Decorator to require any of the specified user roles
+    
+    Args:
+        allowed_roles: List of allowed roles (e.g., ["admin", "teacher"])
+    """
+    def role_checker(user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
+        if user.get("role") not in allowed_roles:
+            raise HTTPException(status_code=403, detail=f"One of the following roles required: {', '.join(allowed_roles)}")
+        return user
+    return role_checker
+
 # Role-specific dependencies
 require_student = require_role("student")
 require_teacher = require_role("teacher")
-require_admin = require_role("admin") 
+require_admin = require_role("admin")
+require_admin_or_teacher = require_any_role(["admin", "teacher"]) 
