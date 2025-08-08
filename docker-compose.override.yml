@@ -7,4 +7,4 @@ services:
       # Mount the entire app directory for development
       - ./app:/app/app
       - ./credentials:/app/credentials
-    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips=*", "--reload", "--log-level", "debug"] 
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips=*", "--reload", "--log-level", "warning"] 
