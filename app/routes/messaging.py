@@ -11,7 +11,7 @@ This module provides comprehensive messaging functionality including:
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException, Depends, Query, UploadFile, File, Form
 from fastapi.security import HTTPBearer
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
 from datetime import datetime, timedelta
@@ -708,30 +708,129 @@ async def delete_conversation(
     conversation_id: str,
     current_user = Depends(get_current_user)
 ):
-    """Delete conversation (soft delete)"""
+    """Delete conversation and all related data (hard delete)"""
+    logger.info(f"🔍 [DELETE_CONVERSATION] User {current_user.id} attempting to delete conversation {conversation_id}")
+    
     try:
-        # Check if user is creator
-        conversation = supabase_client.table('conversations')\
+        # Check if conversation exists
+        conversation_result = supabase_client.table('conversations')\
             .select('*')\
             .eq('id', conversation_id)\
-            .eq('created_by', current_user.id)\
             .execute()
         
-        if not conversation.data:
-            raise HTTPException(status_code=403, detail="Not the creator of this conversation")
+        if not conversation_result.data:
+            logger.warning(f"⚠️ [DELETE_CONVERSATION] Conversation {conversation_id} not found")
+            raise HTTPException(status_code=404, detail="Conversation not found")
         
-        # Soft delete
-        supabase_client.table('conversations')\
-            .update({'is_deleted': True})\
+        conversation = conversation_result.data[0]
+        logger.info(f"🔍 [DELETE_CONVERSATION] Found conversation: created_by={conversation['created_by']}, type={conversation.get('type')}")
+        
+        # Check if user is creator or admin
+        participant_check = supabase_client.table('conversation_participants')\
+            .select('*')\
+            .eq('conversation_id', conversation_id)\
+            .eq('user_id', current_user.id)\
+            .is_('left_at', 'null')\
+            .execute()
+        
+        if not participant_check.data:
+            logger.warning(f"⚠️ [DELETE_CONVERSATION] User {current_user.id} is not a participant in conversation {conversation_id}")
+            raise HTTPException(status_code=403, detail="Not a participant in this conversation")
+        
+        participant = participant_check.data[0]
+        is_creator = conversation['created_by'] == current_user.id
+        is_admin = participant['role'] in ['admin', 'moderator']
+        
+        if not (is_creator or is_admin):
+            logger.warning(f"⚠️ [DELETE_CONVERSATION] User {current_user.id} lacks permission to delete conversation {conversation_id}. Role: {participant['role']}, Is Creator: {is_creator}")
+            raise HTTPException(status_code=403, detail="Insufficient permissions to delete this conversation")
+        
+        logger.info(f"✅ [DELETE_CONVERSATION] User {current_user.id} authorized to delete conversation {conversation_id}")
+        
+        # Get all participants for WebSocket notification
+        participants_result = supabase_client.table('conversation_participants')\
+            .select('user_id')\
+            .eq('conversation_id', conversation_id)\
+            .is_('left_at', 'null')\
+            .execute()
+        
+        participant_user_ids = [p['user_id'] for p in participants_result.data] if participants_result.data else []
+        logger.info(f"🔍 [DELETE_CONVERSATION] Found {len(participant_user_ids)} participants to notify")
+        
+        # Get all message IDs for deletion
+        messages_result = supabase_client.table('messages')\
+            .select('id')\
+            .eq('conversation_id', conversation_id)\
+            .execute()
+        
+        message_ids = [msg['id'] for msg in messages_result.data] if messages_result.data else []
+        logger.info(f"🔍 [DELETE_CONVERSATION] Found {len(message_ids)} messages to delete")
+        
+        # Perform database operations in sequence (Supabase doesn't support transactions in the same way)
+        # Delete message status records first (foreign key dependency)
+        if message_ids:
+            logger.info(f"🔍 [DELETE_CONVERSATION] Deleting {len(message_ids)} message status records")
+            delete_status_result = supabase_client.table('message_status')\
+                .delete()\
+                .in_('message_id', message_ids)\
+                .execute()
+            logger.info(f"✅ [DELETE_CONVERSATION] Deleted message status records: {delete_status_result.data}")
+        
+        # Delete messages
+        if message_ids:
+            logger.info(f"🔍 [DELETE_CONVERSATION] Deleting {len(message_ids)} messages")
+            delete_messages_result = supabase_client.table('messages')\
+                .delete()\
+                .in_('id', message_ids)\
+                .execute()
+            logger.info(f"✅ [DELETE_CONVERSATION] Deleted messages: {delete_messages_result.data}")
+        
+        # Delete conversation participants
+        logger.info(f"🔍 [DELETE_CONVERSATION] Deleting conversation participants")
+        delete_participants_result = supabase_client.table('conversation_participants')\
+            .delete()\
+            .eq('conversation_id', conversation_id)\
+            .execute()
+        logger.info(f"✅ [DELETE_CONVERSATION] Deleted conversation participants: {delete_participants_result.data}")
+        
+        # Delete the conversation
+        logger.info(f"🔍 [DELETE_CONVERSATION] Deleting conversation {conversation_id}")
+        delete_conversation_result = supabase_client.table('conversations')\
+            .delete()\
             .eq('id', conversation_id)\
             .execute()
+        logger.info(f"✅ [DELETE_CONVERSATION] Deleted conversation: {delete_conversation_result.data}")
         
-        return {"message": "Conversation deleted successfully"}
+        # Broadcast WebSocket event to all participants
+        if participant_user_ids:
+            deletion_event = {
+                'type': 'conversation_deleted',
+                'conversation_id': conversation_id,
+                'deleted_by': current_user.id,
+                'timestamp': datetime.now().isoformat()
+            }
+            
+            logger.info(f"🔍 [DELETE_CONVERSATION] Broadcasting deletion event to {len(participant_user_ids)} participants")
+            try:
+                # Send to each participant individually since they might not be in the conversation room anymore
+                for user_id in participant_user_ids:
+                    if user_id != current_user.id:  # Don't send to the user who deleted it
+                        await manager.send_personal_message(deletion_event, user_id)
+                        logger.info(f"✅ [DELETE_CONVERSATION] Sent deletion event to user {user_id}")
+            except Exception as broadcast_error:
+                logger.error(f"❌ [DELETE_CONVERSATION] Error broadcasting deletion event: {str(broadcast_error)}")
+                # Don't fail the request if broadcasting fails
+        
+        logger.info(f"✅ [DELETE_CONVERSATION] Successfully deleted conversation {conversation_id} and all related data")
+        
+        # Return 204 No Content
+        return Response(status_code=204)
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error deleting conversation: {str(e)}")
+        logger.error(f"❌ [DELETE_CONVERSATION] Unexpected error deleting conversation {conversation_id}: {str(e)}")
+        logger.error(f"❌ [DELETE_CONVERSATION] Error traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail="Failed to delete conversation")
 
 # =====================================================
