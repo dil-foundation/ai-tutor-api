@@ -10,6 +10,31 @@ import json
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin", tags=["Admin Dashboard"])
 
+def _get_date_range(time_range: str) -> tuple:
+    """
+    Calculate start and end dates based on time range
+    """
+    today = date.today()
+    
+    if time_range == "today":
+        start_date = today
+        end_date = today
+    elif time_range == "this_week":
+        start_date = today - timedelta(days=today.weekday())
+        end_date = today
+    elif time_range == "this_month":
+        start_date = today.replace(day=1)
+        end_date = today
+    elif time_range == "all_time":
+        start_date = None
+        end_date = None
+    else:
+        # Default to all_time if invalid time_range
+        start_date = None
+        end_date = None
+    
+    return start_date, end_date
+
 # Pydantic models for request/response
 class AdminDashboardResponse(BaseModel):
     success: bool
@@ -77,10 +102,10 @@ async def get_admin_dashboard_overview(
     print(f"👤 [ADMIN] Authenticated user: {current_user['email']} (Role: {current_user.get('role', 'unknown')})")
     
     try:
-        # Get all required metrics
-        key_metrics = await _get_key_metrics()
-        learn_usage = await _get_learn_feature_usage()
-        most_accessed_lessons = await _get_most_accessed_lessons()
+        # Get all required metrics with time range filtering
+        key_metrics = await _get_key_metrics(time_range)
+        learn_usage = await _get_learn_feature_usage(time_range)
+        most_accessed_lessons = await _get_most_accessed_lessons(time_range=time_range)
         
         dashboard_data = {
             "key_metrics": key_metrics,
@@ -179,16 +204,18 @@ async def get_most_accessed_lessons(
 
 @router.get("/reports/practice-stage-performance", response_model=AdminDashboardResponse)
 async def get_practice_stage_performance(
+    time_range: str = "all_time",
     current_user: Dict[str, Any] = Depends(require_admin_or_teacher)
 ):
     """
     Get practice stage performance data for bar chart
     """
     print(f"🔄 [ADMIN] GET /admin/reports/practice-stage-performance called")
+    print(f"📝 [ADMIN] Time range: {time_range}")
     print(f"👤 [ADMIN] Authenticated user: {current_user['email']} (Role: {current_user.get('role', 'unknown')})")
     
     try:
-        stage_performance = await _get_practice_stage_performance()
+        stage_performance = await _get_practice_stage_performance(time_range)
         
         return AdminDashboardResponse(
             success=True,
@@ -203,16 +230,18 @@ async def get_practice_stage_performance(
 
 @router.get("/reports/user-engagement-overview", response_model=AdminDashboardResponse)
 async def get_user_engagement_overview(
+    time_range: str = "all_time",
     current_user: Dict[str, Any] = Depends(require_admin_or_teacher)
 ):
     """
     Get user engagement overview data for donut chart
     """
     print(f"🔄 [ADMIN] GET /admin/reports/user-engagement-overview called")
+    print(f"📝 [ADMIN] Time range: {time_range}")
     print(f"👤 [ADMIN] Authenticated user: {current_user['email']} (Role: {current_user.get('role', 'unknown')})")
     
     try:
-        engagement_data = await _get_user_engagement_overview()
+        engagement_data = await _get_user_engagement_overview(time_range)
         
         return AdminDashboardResponse(
             success=True,
@@ -227,16 +256,18 @@ async def get_user_engagement_overview(
 
 @router.get("/reports/time-usage-patterns", response_model=AdminDashboardResponse)
 async def get_time_usage_patterns(
+    time_range: str = "all_time",
     current_user: Dict[str, Any] = Depends(require_admin_or_teacher)
 ):
     """
     Get time of day usage patterns for line chart
     """
     print(f"🔄 [ADMIN] GET /admin/reports/time-usage-patterns called")
+    print(f"📝 [ADMIN] Time range: {time_range}")
     print(f"👤 [ADMIN] Authenticated user: {current_user['email']} (Role: {current_user.get('role', 'unknown')})")
     
     try:
-        time_patterns = await _get_time_usage_patterns()
+        time_patterns = await _get_time_usage_patterns(time_range)
         
         return AdminDashboardResponse(
             success=True,
@@ -251,6 +282,7 @@ async def get_time_usage_patterns(
 
 @router.get("/reports/top-content-accessed", response_model=AdminDashboardResponse)
 async def get_top_content_accessed(
+    time_range: str = "all_time",
     limit: int = 5,
     current_user: Dict[str, Any] = Depends(require_admin_or_teacher)
 ):
@@ -258,11 +290,12 @@ async def get_top_content_accessed(
     Get top content accessed with views, scores, and trends
     """
     print(f"🔄 [ADMIN] GET /admin/reports/top-content-accessed called")
+    print(f"📝 [ADMIN] Time range: {time_range}")
     print(f"👤 [ADMIN] Authenticated user: {current_user['email']} (Role: {current_user.get('role', 'unknown')})")
     print(f"📊 [ADMIN] Limit: {limit}")
     
     try:
-        top_content = await _get_top_content_accessed(limit)
+        top_content = await _get_top_content_accessed(limit, time_range)
         
         return AdminDashboardResponse(
             success=True,
@@ -277,20 +310,22 @@ async def get_top_content_accessed(
 
 @router.get("/reports/analytics-overview", response_model=AdminDashboardResponse)
 async def get_analytics_overview(
+    time_range: str = "all_time",
     current_user: Dict[str, Any] = Depends(require_admin_or_teacher)
 ):
     """
     Get comprehensive analytics overview for Reports & Analytics page
     """
     print(f"🔄 [ADMIN] GET /admin/reports/analytics-overview called")
+    print(f"📝 [ADMIN] Time range: {time_range}")
     print(f"👤 [ADMIN] Authenticated user: {current_user['email']} (Role: {current_user.get('role', 'unknown')})")
     
     try:
         # Get all analytics data
-        stage_performance = await _get_practice_stage_performance()
-        engagement_data = await _get_user_engagement_overview()
-        time_patterns = await _get_time_usage_patterns()
-        top_content = await _get_top_content_accessed(5)
+        stage_performance = await _get_practice_stage_performance(time_range)
+        engagement_data = await _get_user_engagement_overview(time_range)
+        time_patterns = await _get_time_usage_patterns(time_range)
+        top_content = await _get_top_content_accessed(5, time_range)
         
         analytics_data = {
             "practice_stage_performance": stage_performance,
@@ -311,12 +346,14 @@ async def get_analytics_overview(
         logger.error(f"Error in get_analytics_overview: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
-async def _get_key_metrics() -> Dict[str, Any]:
+async def _get_key_metrics(time_range: str = "all_time") -> Dict[str, Any]:
     """
-    Get key metrics for admin dashboard
+    Get key metrics for admin dashboard with time range filtering
     """
     try:
-        print(f"🔄 [ADMIN] Calculating key metrics...")
+        print(f"🔄 [ADMIN] Calculating key metrics for time range: {time_range}...")
+        
+        start_date, end_date = _get_date_range(time_range)
         
         # Get total users count from auth.users table
         try:
@@ -328,9 +365,15 @@ async def _get_key_metrics() -> Dict[str, Any]:
             total_users_result = supabase.table('ai_tutor_user_progress_summary').select('user_id', count='exact').execute()
             total_users = total_users_result.count if total_users_result.count is not None else 0
         
-        # Get students count (users with progress data)
-        students_result = supabase.table('ai_tutor_user_progress_summary').select('user_id', count='exact').execute()
-        students_count = students_result.count if students_result.count is not None else 0
+        # Get students count (users with progress data) - filtered by time range
+        if start_date and end_date:
+            students_result = supabase.table('ai_tutor_user_progress_summary').select(
+                'user_id'
+            ).gte('updated_at', start_date.isoformat()).lte('updated_at', end_date.isoformat()).execute()
+        else:
+            students_result = supabase.table('ai_tutor_user_progress_summary').select('user_id', count='exact').execute()
+        
+        students_count = len(students_result.data) if students_result.data else 0
         
         # Calculate teachers count (total users - students)
         teachers_count = max(0, total_users - students_count)
@@ -339,13 +382,24 @@ async def _get_key_metrics() -> Dict[str, Any]:
         students_percentage = round((students_count / total_users * 100) if total_users > 0 else 0, 1)
         teachers_percentage = round((teachers_count / total_users * 100) if total_users > 0 else 0, 1)
         
-        # Get active today count (users who had activity today)
-        today = date.today().isoformat()
-        active_today_result = supabase.table('ai_tutor_daily_learning_analytics').select(
-            'user_id'
-        ).eq('analytics_date', today).execute()
+        # Get active users count based on time range
+        if time_range == "today":
+            active_date = date.today().isoformat()
+            active_result = supabase.table('ai_tutor_daily_learning_analytics').select(
+                'user_id'
+            ).eq('analytics_date', active_date).execute()
+        elif start_date and end_date:
+            active_result = supabase.table('ai_tutor_daily_learning_analytics').select(
+                'user_id'
+            ).gte('analytics_date', start_date.isoformat()).lte('analytics_date', end_date.isoformat()).execute()
+        else:
+            # For all_time, get users active in the last 30 days
+            thirty_days_ago = (date.today() - timedelta(days=30)).isoformat()
+            active_result = supabase.table('ai_tutor_daily_learning_analytics').select(
+                'user_id'
+            ).gte('analytics_date', thirty_days_ago).execute()
         
-        active_today = len(active_today_result.data) if active_today_result.data else 0
+        active_users = len(active_result.data) if active_result.data else 0
         
         metrics = {
             "total_users": total_users,
@@ -353,14 +407,14 @@ async def _get_key_metrics() -> Dict[str, Any]:
             "students_percentage": students_percentage,
             "teachers": teachers_count,
             "teachers_percentage": teachers_percentage,
-            "active_today": active_today
+            "active_today": active_users
         }
         
-        print(f"📊 [ADMIN] Key metrics calculated:")
+        print(f"📊 [ADMIN] Key metrics calculated for {time_range}:")
         print(f"   - Total Users: {total_users}")
         print(f"   - Students: {students_count} ({students_percentage}%)")
         print(f"   - Teachers: {teachers_count} ({teachers_percentage}%)")
-        print(f"   - Active Today: {active_today}")
+        print(f"   - Active Users: {active_users}")
         
         return metrics
         
@@ -369,29 +423,48 @@ async def _get_key_metrics() -> Dict[str, Any]:
         logger.error(f"Error calculating key metrics: {str(e)}")
         raise
 
-async def _get_learn_feature_usage() -> Dict[str, Any]:
+async def _get_learn_feature_usage(time_range: str = "all_time") -> Dict[str, Any]:
     """
-    Get Learn feature usage summary
+    Get Learn feature usage summary with time range filtering
     """
     try:
-        print(f"🔄 [ADMIN] Calculating Learn feature usage...")
+        print(f"🔄 [ADMIN] Calculating Learn feature usage for time range: {time_range}...")
         
-        today = date.today().isoformat()
-        week_start = (date.today() - timedelta(days=date.today().weekday())).isoformat()
+        start_date, end_date = _get_date_range(time_range)
         
-        # Get today's access count (users who accessed Learn feature today)
-        today_access_result = supabase.table('ai_tutor_daily_learning_analytics').select(
-            'user_id'
-        ).eq('analytics_date', today).execute()
+        # Get access count based on time range
+        if time_range == "today":
+            access_date = date.today().isoformat()
+            access_result = supabase.table('ai_tutor_daily_learning_analytics').select(
+                'user_id'
+            ).eq('analytics_date', access_date).execute()
+            today_access = len(access_result.data) if access_result.data else 0
+        elif start_date and end_date:
+            access_result = supabase.table('ai_tutor_daily_learning_analytics').select(
+                'user_id'
+            ).gte('analytics_date', start_date.isoformat()).lte('analytics_date', end_date.isoformat()).execute()
+            today_access = len(access_result.data) if access_result.data else 0
+        else:
+            # For all_time, get last 7 days
+            week_start = (date.today() - timedelta(days=7)).isoformat()
+            access_result = supabase.table('ai_tutor_daily_learning_analytics').select(
+                'user_id'
+            ).gte('analytics_date', week_start).execute()
+            today_access = len(access_result.data) if access_result.data else 0
         
-        today_access = len(today_access_result.data) if today_access_result.data else 0
+        # Get total engagement for the period
+        if start_date and end_date:
+            total_result = supabase.table('ai_tutor_daily_learning_analytics').select(
+                'user_id'
+            ).gte('analytics_date', start_date.isoformat()).lte('analytics_date', end_date.isoformat()).execute()
+        else:
+            # For all_time, get last 30 days
+            thirty_days_ago = (date.today() - timedelta(days=30)).isoformat()
+            total_result = supabase.table('ai_tutor_daily_learning_analytics').select(
+                'user_id'
+            ).gte('analytics_date', thirty_days_ago).execute()
         
-        # Get this week's total engagement
-        this_week_result = supabase.table('ai_tutor_daily_learning_analytics').select(
-            'user_id'
-        ).gte('analytics_date', week_start).execute()
-        
-        this_week = len(this_week_result.data) if this_week_result.data else 0
+        this_week = len(total_result.data) if total_result.data else 0
         
         usage_data = {
             "today_access": today_access,
@@ -409,18 +482,24 @@ async def _get_learn_feature_usage() -> Dict[str, Any]:
         logger.error(f"Error calculating Learn feature usage: {str(e)}")
         raise
 
-async def _get_most_accessed_lessons(limit: int = 5) -> List[Dict[str, Any]]:
+async def _get_most_accessed_lessons(limit: int = 5, time_range: str = "all_time") -> List[Dict[str, Any]]:
     """
-    Get most accessed practice lessons
+    Get most accessed practice lessons with time range filtering
     """
     try:
-        print(f"🔄 [ADMIN] Calculating most accessed lessons...")
+        print(f"🔄 [ADMIN] Calculating most accessed lessons for time range: {time_range}...")
         
-        # Get lesson access data from topic progress
-        # This will give us the most accessed topics/exercises
-        lessons_result = supabase.table('ai_tutor_user_topic_progress').select(
-            'stage_id, exercise_id, topic_id'
-        ).execute()
+        start_date, end_date = _get_date_range(time_range)
+        
+        # Get lesson access data from topic progress with time filtering
+        if start_date and end_date:
+            lessons_result = supabase.table('ai_tutor_user_topic_progress').select(
+                'stage_id, exercise_id, topic_id'
+            ).gte('created_at', start_date.isoformat()).lte('created_at', end_date.isoformat()).execute()
+        else:
+            lessons_result = supabase.table('ai_tutor_user_topic_progress').select(
+                'stage_id, exercise_id, topic_id'
+            ).execute()
         
         if not lessons_result.data:
             print(f"ℹ️ [ADMIN] No lesson access data found")
@@ -505,32 +584,44 @@ async def _get_most_accessed_lessons(limit: int = 5) -> List[Dict[str, Any]]:
                 "icon": lesson_info["icon"]
             })
         
-        print(f"📊 [ADMIN] Most accessed lessons calculated: {len(formatted_lessons)} lessons")
-        
+        print(f"✅ [ADMIN] Most accessed lessons calculated successfully")
         return formatted_lessons
         
     except Exception as e:
-        print(f"❌ [ADMIN] Error calculating most accessed lessons: {str(e)}")
-        logger.error(f"Error calculating most accessed lessons: {str(e)}")
-        raise
+        print(f"❌ [ADMIN] Error in _get_most_accessed_lessons: {str(e)}")
+        logger.error(f"Error in _get_most_accessed_lessons: {str(e)}")
+        return []
 
 # NEW FUNCTIONS for Reports & Analytics Page
 
-async def _get_practice_stage_performance() -> List[Dict[str, Any]]:
+async def _get_practice_stage_performance(time_range: str = "all_time") -> List[Dict[str, Any]]:
     """
-    Get practice stage performance data for bar chart
+    Get practice stage performance data for bar chart with time range filtering
     """
     try:
-        print(f"🔄 [ADMIN] Calculating practice stage performance...")
+        print(f"🔄 [ADMIN] Calculating practice stage performance for time range: {time_range}...")
         
-        # Get total users count
-        total_users_result = supabase.table('ai_tutor_user_progress_summary').select('user_id', count='exact').execute()
-        total_users = total_users_result.count if total_users_result.count is not None else 0
+        start_date, end_date = _get_date_range(time_range)
         
-        # Get user stage progress data
-        stage_progress_result = supabase.table('ai_tutor_user_stage_progress').select(
-            'stage_id, user_id, progress_percentage, completed'
-        ).execute()
+        # Get total users count with time filtering
+        if start_date and end_date:
+            total_users_result = supabase.table('ai_tutor_user_progress_summary').select(
+                'user_id'
+            ).gte('updated_at', start_date.isoformat()).lte('updated_at', end_date.isoformat()).execute()
+            total_users = len(total_users_result.data) if total_users_result.data else 0
+        else:
+            total_users_result = supabase.table('ai_tutor_user_progress_summary').select('user_id', count='exact').execute()
+            total_users = total_users_result.count if total_users_result.count is not None else 0
+        
+        # Get user stage progress data with time filtering
+        if start_date and end_date:
+            stage_progress_result = supabase.table('ai_tutor_user_stage_progress').select(
+                'stage_id, user_id, progress_percentage, completed'
+            ).gte('updated_at', start_date.isoformat()).lte('updated_at', end_date.isoformat()).execute()
+        else:
+            stage_progress_result = supabase.table('ai_tutor_user_stage_progress').select(
+                'stage_id, user_id, progress_percentage, completed'
+            ).execute()
         
         if not stage_progress_result.data:
             print(f"ℹ️ [ADMIN] No stage progress data found")
@@ -585,56 +676,67 @@ async def _get_practice_stage_performance() -> List[Dict[str, Any]]:
         logger.error(f"Error calculating practice stage performance: {str(e)}")
         raise
 
-async def _get_user_engagement_overview() -> List[Dict[str, Any]]:
+async def _get_user_engagement_overview(time_range: str = "all_time") -> List[Dict[str, Any]]:
     """
-    Get user engagement overview data for donut chart (Practice vs Learn)
+    Get user engagement overview data for donut chart (Practice vs Learn) with time range filtering
     """
     try:
-        print(f"🔄 [ADMIN] Calculating user engagement overview...")
+        print(f"🔄 [ADMIN] Calculating user engagement overview for time range: {time_range}...")
         
-        # Get total users count
-        total_users_result = supabase.table('ai_tutor_user_progress_summary').select('user_id', count='exact').execute()
-        total_users = total_users_result.count if total_users_result.count is not None else 0
+        start_date, end_date = _get_date_range(time_range)
         
-        if total_users == 0:
-            return []
+        # Get total users count with time filtering
+        if start_date and end_date:
+            total_users_result = supabase.table('ai_tutor_user_progress_summary').select(
+                'user_id'
+            ).gte('updated_at', start_date.isoformat()).lte('updated_at', end_date.isoformat()).execute()
+            total_users = len(total_users_result.data) if total_users_result.data else 0
+        else:
+            total_users_result = supabase.table('ai_tutor_user_progress_summary').select('user_id', count='exact').execute()
+            total_users = total_users_result.count if total_users_result.count is not None else 0
         
-        # Get practice users (users with topic progress)
-        practice_users_result = supabase.table('ai_tutor_user_topic_progress').select(
-            'user_id'
-        ).execute()
+        # Get practice users (users with topic progress) with time filtering
+        if start_date and end_date:
+            practice_users_result = supabase.table('ai_tutor_user_topic_progress').select(
+                'user_id'
+            ).gte('created_at', start_date.isoformat()).lte('created_at', end_date.isoformat()).execute()
+        else:
+            practice_users_result = supabase.table('ai_tutor_user_topic_progress').select('user_id').execute()
         
         practice_users = len(set([record['user_id'] for record in practice_users_result.data])) if practice_users_result.data else 0
         
-        # Get learn users (users with daily analytics)
-        learn_users_result = supabase.table('ai_tutor_daily_learning_analytics').select(
-            'user_id'
-        ).execute()
+        # Get learn users (users with daily analytics) with time filtering
+        if start_date and end_date:
+            learn_users_result = supabase.table('ai_tutor_daily_learning_analytics').select(
+                'user_id'
+            ).gte('analytics_date', start_date.isoformat()).lte('analytics_date', end_date.isoformat()).execute()
+        else:
+            learn_users_result = supabase.table('ai_tutor_daily_learning_analytics').select('user_id').execute()
         
         learn_users = len(set([record['user_id'] for record in learn_users_result.data])) if learn_users_result.data else 0
         
         # Calculate percentages
-        practice_percentage = round((practice_users / total_users * 100), 1) if total_users > 0 else 0
-        learn_percentage = round((learn_users / total_users * 100), 1) if total_users > 0 else 0
+        practice_percentage = round((practice_users / total_users * 100) if total_users > 0 else 0, 1)
+        learn_percentage = round((learn_users / total_users * 100) if total_users > 0 else 0, 1)
         
         engagement_data = [
             {
                 'category': 'Practice',
                 'percentage': practice_percentage,
                 'user_count': practice_users,
-                'color': '#3B82F6'  # Blue
+                'color': '#4CAF50'
             },
             {
                 'category': 'Learn',
                 'percentage': learn_percentage,
                 'user_count': learn_users,
-                'color': '#10B981'  # Green
+                'color': '#2196F3'
             }
         ]
         
-        print(f"📊 [ADMIN] User engagement overview calculated:")
-        print(f"   - Practice: {practice_users} users ({practice_percentage}%)")
-        print(f"   - Learn: {learn_users} users ({learn_percentage}%)")
+        print(f"📊 [ADMIN] User engagement overview calculated for {time_range}:")
+        print(f"   - Practice Users: {practice_users} ({practice_percentage}%)")
+        print(f"   - Learn Users: {learn_users} ({learn_percentage}%)")
         
         return engagement_data
         
@@ -643,21 +745,34 @@ async def _get_user_engagement_overview() -> List[Dict[str, Any]]:
         logger.error(f"Error calculating user engagement overview: {str(e)}")
         raise
 
-async def _get_time_usage_patterns() -> List[Dict[str, Any]]:
+async def _get_time_usage_patterns(time_range: str = "all_time") -> List[Dict[str, Any]]:
     """
-    Get time of day usage patterns for line chart
+    Get time of day usage patterns for line chart with time range filtering
     """
     try:
-        print(f"🔄 [ADMIN] Calculating time usage patterns...")
+        print(f"🔄 [ADMIN] Calculating time usage patterns for time range: {time_range}...")
         
-        # Get user activity data from daily analytics
-        today = date.today().isoformat()
-        daily_analytics_result = supabase.table('ai_tutor_daily_learning_analytics').select(
-            'user_id, total_time_minutes, sessions_count'
-        ).eq('analytics_date', today).execute()
+        start_date, end_date = _get_date_range(time_range)
+        
+        # Get user activity data from daily analytics with time filtering
+        if time_range == "today":
+            analytics_date = date.today().isoformat()
+            daily_analytics_result = supabase.table('ai_tutor_daily_learning_analytics').select(
+                'user_id, total_time_minutes, sessions_count'
+            ).eq('analytics_date', analytics_date).execute()
+        elif start_date and end_date:
+            daily_analytics_result = supabase.table('ai_tutor_daily_learning_analytics').select(
+                'user_id, total_time_minutes, sessions_count'
+            ).gte('analytics_date', start_date.isoformat()).lte('analytics_date', end_date.isoformat()).execute()
+        else:
+            # For all_time, get last 7 days
+            week_start = (date.today() - timedelta(days=7)).isoformat()
+            daily_analytics_result = supabase.table('ai_tutor_daily_learning_analytics').select(
+                'user_id, total_time_minutes, sessions_count'
+            ).gte('analytics_date', week_start).execute()
         
         if not daily_analytics_result.data:
-            print(f"ℹ️ [ADMIN] No daily analytics data found for today")
+            print(f"ℹ️ [ADMIN] No daily analytics data found for {time_range}")
             # Return mock data for demonstration
             return _get_mock_time_patterns()
         
@@ -705,17 +820,24 @@ async def _get_time_usage_patterns() -> List[Dict[str, Any]]:
         logger.error(f"Error calculating time usage patterns: {str(e)}")
         raise
 
-async def _get_top_content_accessed(limit: int = 5) -> List[Dict[str, Any]]:
+async def _get_top_content_accessed(limit: int = 5, time_range: str = "all_time") -> List[Dict[str, Any]]:
     """
-    Get top content accessed with views, scores, and trends
+    Get top content accessed with views, scores, and trends with time range filtering
     """
     try:
-        print(f"🔄 [ADMIN] Calculating top content accessed...")
+        print(f"🔄 [ADMIN] Calculating top content accessed for time range: {time_range}...")
         
-        # Get topic progress data
-        topic_progress_result = supabase.table('ai_tutor_user_topic_progress').select(
-            'stage_id, exercise_id, topic_id, score, completed, total_time_seconds'
-        ).execute()
+        start_date, end_date = _get_date_range(time_range)
+        
+        # Get topic progress data with time filtering
+        if start_date and end_date:
+            topic_progress_result = supabase.table('ai_tutor_user_topic_progress').select(
+                'stage_id, exercise_id, topic_id, score, completed, total_time_seconds'
+            ).gte('created_at', start_date.isoformat()).lte('created_at', end_date.isoformat()).execute()
+        else:
+            topic_progress_result = supabase.table('ai_tutor_user_topic_progress').select(
+                'stage_id, exercise_id, topic_id, score, completed, total_time_seconds'
+            ).execute()
         
         if not topic_progress_result.data:
             print(f"ℹ️ [ADMIN] No topic progress data found")
