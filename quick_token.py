@@ -22,8 +22,8 @@ def get_token():
     supabase = create_client(url, key)
     
     # Test credentials (replace with your actual credentials)
-    email = "mkarthikeyan00100010@gmail.com"  # Replace with your email
-    password = "Aug@1234"   # Replace with your password
+    email = "arunyuvraj1998@gmail.com"  # Replace with your email
+    password = "Arun@123"   # Replace with your password
     
     try:
         response = supabase.auth.sign_in_with_password({
