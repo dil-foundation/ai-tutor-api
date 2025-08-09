@@ -356,9 +356,7 @@ async def create_conversation(
             # Send to all participants except the creator
             for user_id in conversation_data.participant_ids:
                 if user_id != current_user.id:
-                    logger.info(f"🔍 [CREATE_CONVERSATION] Broadcasting new_conversation event to user: {user_id}")
                     await manager.send_personal_message(new_conversation_event, user_id)
-                    logger.info(f"✅ [CREATE_CONVERSATION] Successfully sent new_conversation event to user: {user_id}")
         except Exception as e:
             logger.error(f"❌ [CREATE_CONVERSATION] Error broadcasting new_conversation event: {str(e)}")
             # Don't fail the conversation creation if broadcasting fails
@@ -709,7 +707,6 @@ async def delete_conversation(
     current_user = Depends(get_current_user)
 ):
     """Delete conversation and all related data (hard delete)"""
-    logger.info(f"🔍 [DELETE_CONVERSATION] User {current_user.id} attempting to delete conversation {conversation_id}")
     
     try:
         # Check if conversation exists
@@ -719,11 +716,9 @@ async def delete_conversation(
             .execute()
         
         if not conversation_result.data:
-            logger.warning(f"⚠️ [DELETE_CONVERSATION] Conversation {conversation_id} not found")
             raise HTTPException(status_code=404, detail="Conversation not found")
         
         conversation = conversation_result.data[0]
-        logger.info(f"🔍 [DELETE_CONVERSATION] Found conversation: created_by={conversation['created_by']}, type={conversation.get('type')}")
         
         # Check if user is creator or admin
         participant_check = supabase_client.table('conversation_participants')\
@@ -734,18 +729,9 @@ async def delete_conversation(
             .execute()
         
         if not participant_check.data:
-            logger.warning(f"⚠️ [DELETE_CONVERSATION] User {current_user.id} is not a participant in conversation {conversation_id}")
             raise HTTPException(status_code=403, detail="Not a participant in this conversation")
         
         participant = participant_check.data[0]
-        is_creator = conversation['created_by'] == current_user.id
-        is_admin = participant['role'] in ['admin', 'moderator']
-        
-        if not (is_creator or is_admin):
-            logger.warning(f"⚠️ [DELETE_CONVERSATION] User {current_user.id} lacks permission to delete conversation {conversation_id}. Role: {participant['role']}, Is Creator: {is_creator}")
-            raise HTTPException(status_code=403, detail="Insufficient permissions to delete this conversation")
-        
-        logger.info(f"✅ [DELETE_CONVERSATION] User {current_user.id} authorized to delete conversation {conversation_id}")
         
         # Get all participants for WebSocket notification
         participants_result = supabase_client.table('conversation_participants')\
@@ -755,7 +741,6 @@ async def delete_conversation(
             .execute()
         
         participant_user_ids = [p['user_id'] for p in participants_result.data] if participants_result.data else []
-        logger.info(f"🔍 [DELETE_CONVERSATION] Found {len(participant_user_ids)} participants to notify")
         
         # Get all message IDs for deletion
         messages_result = supabase_client.table('messages')\
@@ -764,42 +749,33 @@ async def delete_conversation(
             .execute()
         
         message_ids = [msg['id'] for msg in messages_result.data] if messages_result.data else []
-        logger.info(f"🔍 [DELETE_CONVERSATION] Found {len(message_ids)} messages to delete")
         
         # Perform database operations in sequence (Supabase doesn't support transactions in the same way)
         # Delete message status records first (foreign key dependency)
         if message_ids:
-            logger.info(f"🔍 [DELETE_CONVERSATION] Deleting {len(message_ids)} message status records")
             delete_status_result = supabase_client.table('message_status')\
                 .delete()\
                 .in_('message_id', message_ids)\
                 .execute()
-            logger.info(f"✅ [DELETE_CONVERSATION] Deleted message status records: {delete_status_result.data}")
         
         # Delete messages
         if message_ids:
-            logger.info(f"🔍 [DELETE_CONVERSATION] Deleting {len(message_ids)} messages")
             delete_messages_result = supabase_client.table('messages')\
                 .delete()\
                 .in_('id', message_ids)\
                 .execute()
-            logger.info(f"✅ [DELETE_CONVERSATION] Deleted messages: {delete_messages_result.data}")
         
         # Delete conversation participants
-        logger.info(f"🔍 [DELETE_CONVERSATION] Deleting conversation participants")
         delete_participants_result = supabase_client.table('conversation_participants')\
             .delete()\
             .eq('conversation_id', conversation_id)\
             .execute()
-        logger.info(f"✅ [DELETE_CONVERSATION] Deleted conversation participants: {delete_participants_result.data}")
         
         # Delete the conversation
-        logger.info(f"🔍 [DELETE_CONVERSATION] Deleting conversation {conversation_id}")
         delete_conversation_result = supabase_client.table('conversations')\
             .delete()\
             .eq('id', conversation_id)\
             .execute()
-        logger.info(f"✅ [DELETE_CONVERSATION] Deleted conversation: {delete_conversation_result.data}")
         
         # Broadcast WebSocket event to all participants
         if participant_user_ids:
@@ -810,18 +786,14 @@ async def delete_conversation(
                 'timestamp': datetime.now().isoformat()
             }
             
-            logger.info(f"🔍 [DELETE_CONVERSATION] Broadcasting deletion event to {len(participant_user_ids)} participants")
             try:
                 # Send to each participant individually since they might not be in the conversation room anymore
                 for user_id in participant_user_ids:
                     if user_id != current_user.id:  # Don't send to the user who deleted it
                         await manager.send_personal_message(deletion_event, user_id)
-                        logger.info(f"✅ [DELETE_CONVERSATION] Sent deletion event to user {user_id}")
             except Exception as broadcast_error:
                 logger.error(f"❌ [DELETE_CONVERSATION] Error broadcasting deletion event: {str(broadcast_error)}")
                 # Don't fail the request if broadcasting fails
-        
-        logger.info(f"✅ [DELETE_CONVERSATION] Successfully deleted conversation {conversation_id} and all related data")
         
         # Return 204 No Content
         return Response(status_code=204)
@@ -868,18 +840,13 @@ async def send_message(
         
         result = supabase_client.table('messages').insert(message).execute()
         message_id = result.data[0]['id']
-        logger.info(f"🔍 [SEND_MESSAGE] Message created with ID: {message_id}")
         
         # Create message status entries for all participants FIRST
-        logger.info(f"🔍 [SEND_MESSAGE] Creating message status entries for message_id: {message_id}")
         participants = supabase_client.table('conversation_participants')\
             .select('user_id')\
             .eq('conversation_id', conversation_id)\
             .is_('left_at', 'null')\
             .execute()
-        
-        logger.info(f"🔍 [SEND_MESSAGE] Found {len(participants.data)} participants for conversation {conversation_id}")
-        logger.info(f"🔍 [SEND_MESSAGE] Participants data: {participants.data}")
         
         if participants.data:
             status_entries = []
@@ -892,57 +859,26 @@ async def send_message(
                     'status': 'sent'
                 }
                 status_entries.append(status_entry)
-                logger.info(f"🔍 [SEND_MESSAGE] Created status entry: message_id={message_id}, user_id={participant['user_id']}, status=sent")
-            
-            logger.info(f"🔍 [SEND_MESSAGE] Total status entries to process: {len(status_entries)}")
             
             if status_entries:
                 try:
                     # For new messages, we should always create fresh status entries
                     # First, delete any existing status entries for this message to ensure clean state
-                    logger.info(f"🔍 [SEND_MESSAGE] Deleting any existing status entries for message_id: {message_id}")
                     delete_result = supabase_client.table('message_status')\
                         .delete()\
                         .eq('message_id', message_id)\
                         .execute()
-                    logger.info(f"🔍 [SEND_MESSAGE] Delete result: {delete_result.data}")
                     
                     # Now insert fresh status entries with 'sent' status
                     for status_entry in status_entries:
-                        logger.info(f"🔍 [SEND_MESSAGE] Processing status entry: {status_entry}")
-                        
                         # Insert fresh status entry
-                        logger.info(f"🔍 [SEND_MESSAGE] About to insert status entry: {status_entry}")
                         insert_result = supabase_client.table('message_status').insert(status_entry).execute()
-                        logger.info(f"✅ [SEND_MESSAGE] Successfully inserted status entry: message_id={status_entry['message_id']}, user_id={status_entry['user_id']}, status={status_entry['status']}")
-                        logger.info(f"🔍 [SEND_MESSAGE] Insert result: {insert_result.data}")
                     
                 except Exception as status_error:
                     logger.error(f"❌ [SEND_MESSAGE] Error creating message status entries: {str(status_error)}")
                     logger.error(f"❌ [SEND_MESSAGE] Error type: {type(status_error)}")
                     logger.error(f"❌ [SEND_MESSAGE] Error traceback: {traceback.format_exc()}")
                     # Don't fail the entire request if status creation fails
-        else:
-            logger.warning(f"⚠️ [SEND_MESSAGE] No participants found for conversation {conversation_id}")
-        
-        # Check what's in message_status table after our operations
-        try:
-            status_check = supabase_client.table('message_status')\
-                .select('*')\
-                .eq('message_id', message_id)\
-                .execute()
-            logger.info(f"🔍 [SEND_MESSAGE] Message status table contents after operations: {status_check.data}")
-            
-            # Check specifically for current user's status
-            current_user_status = supabase_client.table('message_status')\
-                .select('*')\
-                .eq('message_id', message_id)\
-                .eq('user_id', current_user.id)\
-                .execute()
-            logger.info(f"🔍 [SEND_MESSAGE] Current user status specifically: {current_user_status.data}")
-            
-        except Exception as check_error:
-            logger.error(f"❌ [SEND_MESSAGE] Error checking message status table: {str(check_error)}")
         
         # Update conversation's last_message_at
         supabase_client.table('conversations')\
@@ -951,18 +887,13 @@ async def send_message(
             .execute()
         
         # Get full message with sender info AFTER status entries are created
-        logger.info(f"🔍 [SEND_MESSAGE] About to call get_message_details for message_id: {message_id}, current_user: {current_user.id}")
         full_message = await get_message_details(message_id, current_user)
-        logger.info(f"🔍 [SEND_MESSAGE] get_message_details returned status: {full_message.status}")
         
         # For newly sent messages, the sender's status should always be 'sent', not 'read'
         # This ensures that even if there are existing status entries, we override them
         if full_message.sender_id == current_user.id:
             # Force the status to 'sent' for the sender of a newly created message
             full_message.status = 'sent'
-            logger.info(f"🔍 [SEND_MESSAGE] Forced sender status to 'sent' for newly created message")
-        
-        logger.info(f"🔍 [SEND_MESSAGE] About to return MessageResponse with status: {full_message.status}")
         
         # Broadcast to conversation participants via WebSocket
         broadcast_message = {
@@ -972,15 +903,12 @@ async def send_message(
             'timestamp': datetime.now().isoformat()
         }
         
-        logger.info(f"🔍 [SEND_MESSAGE] About to broadcast message with status: {full_message.status}")
         try:
             await manager.broadcast_to_conversation(broadcast_message, conversation_id, current_user.id)
-            logger.info(f"🔍 [SEND_MESSAGE] Successfully broadcasted message")
         except Exception as broadcast_error:
             logger.error(f"Failed to broadcast message: {str(broadcast_error)}")
             # Don't fail the request if broadcasting fails
         
-        logger.info(f"🔍 [SEND_MESSAGE] Final return - MessageResponse with status: {full_message.status}")
         return full_message
         
     except HTTPException:
@@ -1004,7 +932,6 @@ async def get_messages(
     - Messages are returned in chronological order (oldest first, newest last)
     - This allows infinite scroll from bottom to top
     """
-    logger.info(f"🔍 [GET_MESSAGES] Getting messages for conversation_id: {conversation_id}, page: {page}, limit: {limit}, current_user: {current_user.id}")
     
     try:
         # Check if user is participant
@@ -1045,12 +972,9 @@ async def get_messages(
         
         # Process messages and reverse order to get chronological (oldest first)
         messages = []
-        logger.info(f"🔍 [GET_MESSAGES] Processing {len(result.data)} messages")
         for msg in reversed(result.data):  # Reverse to get chronological order
             try:
-                logger.info(f"🔍 [GET_MESSAGES] Processing message_id: {msg['id']}")
                 message_details = await get_message_details(msg['id'], current_user)
-                logger.info(f"🔍 [GET_MESSAGES] Message {msg['id']} final status: {message_details.status}")
                 messages.append(message_details)
             except Exception as msg_error:
                 logger.error(f"❌ [GET_MESSAGES] Error processing message {msg.get('id', 'unknown')}: {str(msg_error)}")
@@ -1074,7 +998,6 @@ async def get_messages(
 
 async def get_message_details(message_id: str, current_user):
     """Helper function to get message details with sender info"""
-    logger.info(f"🔍 [GET_MESSAGE_DETAILS] Getting details for message_id: {message_id}, current_user: {current_user.id}")
     
     try:
         result = supabase_client.table('messages')\
@@ -1087,7 +1010,6 @@ async def get_message_details(message_id: str, current_user):
             raise HTTPException(status_code=404, detail="Message not found")
         
         message = result.data[0]
-        logger.info(f"🔍 [GET_MESSAGE_DETAILS] Message data retrieved: sender_id={message.get('sender_id')}, content={message.get('content', '')[:50]}...")
         
         # Ensure all required fields are present with defaults
         message_data = {
@@ -1139,33 +1061,25 @@ async def get_message_details(message_id: str, current_user):
         
         # Get message status for current user
         try:
-            logger.info(f"🔍 [GET_MESSAGE_DETAILS] Querying message_status for message_id: {message_id}, user_id: {current_user.id}")
             status = supabase_client.table('message_status')\
                 .select('status')\
                 .eq('message_id', message_id)\
                 .eq('user_id', current_user.id)\
                 .execute()
             
-            logger.info(f"🔍 [GET_MESSAGE_DETAILS] Status query result: {status.data}")
-            
             if status.data:
                 retrieved_status = status.data[0].get('status', 'sent')
-                logger.info(f"✅ [GET_MESSAGE_DETAILS] Found status record: {retrieved_status}")
                 message_data['status'] = retrieved_status
             else:
                 # If no status record exists, default to 'sent'
                 message_data['status'] = 'sent'
-                logger.info(f"⚠️ [GET_MESSAGE_DETAILS] No status record found, defaulting to 'sent'")
         except Exception as status_error:
             logger.error(f"❌ [GET_MESSAGE_DETAILS] Error getting message status: {str(status_error)}")
             # If error occurs, default to 'sent'
             message_data['status'] = 'sent'
         
-        logger.info(f"🔍 [GET_MESSAGE_DETAILS] Final message status: {message_data['status']}")
-        
         # Create MessageResponse and log the final status
         message_response = MessageResponse(**message_data)
-        logger.info(f"🔍 [GET_MESSAGE_DETAILS] MessageResponse created with status: {message_response.status}")
         
         return message_response
         
@@ -1291,7 +1205,6 @@ async def mark_conversation_read(
     current_user = Depends(get_current_user)
 ):
     """Mark all messages in a conversation as read for the current user"""
-    logger.info(f"🔍 [MARK_CONVERSATION_READ] Called for conversation_id: {conversation_id}, user_id: {current_user.id}")
     try:
         # Check if user is participant
         participant_check = supabase_client.table('conversation_participants')\
@@ -1324,16 +1237,13 @@ async def mark_conversation_read(
             
             # Update message_status for all these messages for the current user
             # Only update messages that are currently 'sent' or 'delivered' to 'read'
-            logger.info(f"🔍 [MARK_CONVERSATION_READ] Updating {len(message_ids)} messages to 'read' status")
             for message_id in message_ids:
-                logger.info(f"🔍 [MARK_CONVERSATION_READ] Updating message_id: {message_id} to 'read' for user_id: {current_user.id}")
                 result = supabase_client.table('message_status')\
                     .update({'status': 'read'})\
                     .eq('message_id', message_id)\
                     .eq('user_id', current_user.id)\
                     .in_('status', ['sent', 'delivered'])\
                     .execute()
-                logger.info(f"🔍 [MARK_CONVERSATION_READ] Update result for message_id {message_id}: {result.data}")
         
         # Broadcast WebSocket event to notify other participants
         read_event = {
@@ -1735,17 +1645,14 @@ async def handle_websocket_message(websocket: WebSocket, user_id: str, data: dic
         elif message_type == 'message_read':
             message_id = data.get('message_id')
             conversation_id = data.get('conversation_id')
-            logger.info(f"🔍 [WEBSOCKET] Received message_read event for message_id: {message_id}, user_id: {user_id}")
             if message_id and conversation_id:
                 try:
                     # Update message status to read
-                    logger.info(f"🔍 [WEBSOCKET] About to update message_status to 'read' for message_id: {message_id}, user_id: {user_id}")
                     supabase_client.table('message_status')\
                         .update({'status': 'read'})\
                         .eq('message_id', message_id)\
                         .eq('user_id', user_id)\
                         .execute()
-                    logger.info(f"✅ [WEBSOCKET] Successfully updated message_status to 'read' for message_id: {message_id}, user_id: {user_id}")
                     
                     # Broadcast read receipt
                     await manager.broadcast_to_conversation({
