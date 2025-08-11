@@ -532,6 +532,170 @@ async def get_stuck_students(
         logger.error(f"Error in get_stuck_students: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
+@router.get("/dashboard/inactive-students", response_model=TeacherDashboardResponse)
+async def get_inactive_students(
+    stage_id: Optional[int] = None,
+    days_threshold: int = 30,
+    time_range: str = "all_time",
+    current_user: Dict[str, Any] = Depends(require_admin_or_teacher)
+):
+    """
+    Get students who have been inactive for a specified number of days
+    """
+    print(f"🔄 [TEACHER] GET /teacher/dashboard/inactive-students called")
+    print(f"👤 [TEACHER] Authenticated user: {current_user['email']} (Role: {current_user.get('role', 'unknown')})")
+    print(f"📊 [TEACHER] Stage ID: {stage_id}, Days Threshold: {days_threshold}")
+    
+    try:
+        inactive_students_data = await _get_inactive_students(stage_id, days_threshold, time_range)
+        
+        return TeacherDashboardResponse(
+            success=True,
+            data=inactive_students_data,
+            message="Inactive students data retrieved successfully"
+        )
+        
+    except Exception as e:
+        print(f"❌ [TEACHER] Error in get_inactive_students: {str(e)}")
+        logger.error(f"Error in get_inactive_students: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+@router.get("/dashboard/progress-overview", response_model=TeacherDashboardResponse)
+async def get_student_progress_overview(
+    search_query: Optional[str] = None,
+    stage_id: Optional[int] = None,
+    lesson_id: Optional[int] = None,
+    time_range: str = "all_time",
+    current_user: Dict[str, Any] = Depends(require_admin_or_teacher)
+):
+    """
+    Get comprehensive student progress overview for the Progress tab
+    """
+    print(f"🔄 [TEACHER] GET /teacher/dashboard/progress-overview called")
+    print(f"👤 [TEACHER] Authenticated user: {current_user['email']} (Role: {current_user.get('role', 'unknown')})")
+    print(f"📊 [TEACHER] Search: {search_query}, Stage: {stage_id}, Lesson: {lesson_id}")
+    
+    try:
+        progress_data = await _get_student_progress_overview(search_query, stage_id, lesson_id, time_range)
+        
+        return TeacherDashboardResponse(
+            success=True,
+            data=progress_data,
+            message="Student progress overview retrieved successfully"
+        )
+        
+    except Exception as e:
+        print(f"❌ [TEACHER] Error in get_student_progress_overview: {str(e)}")
+        logger.error(f"Error in get_student_progress_overview: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+@router.get("/dashboard/progress-metrics", response_model=TeacherDashboardResponse)
+async def get_progress_metrics(
+    stage_id: Optional[int] = None,
+    time_range: str = "all_time",
+    current_user: Dict[str, Any] = Depends(require_admin_or_teacher)
+):
+    """
+    Get key progress metrics (Total Students, Average Completion, Average Score, Students at Risk)
+    """
+    print(f"🔄 [TEACHER] GET /teacher/dashboard/progress-metrics called")
+    print(f"👤 [TEACHER] Authenticated user: {current_user['email']} (Role: {current_user.get('role', 'unknown')})")
+    print(f"📊 [TEACHER] Stage ID: {stage_id}, Time Range: {time_range}")
+    
+    try:
+        metrics_data = await _get_progress_metrics(stage_id, time_range)
+        
+        return TeacherDashboardResponse(
+            success=True,
+            data=metrics_data,
+            message="Progress metrics retrieved successfully"
+        )
+        
+    except Exception as e:
+        print(f"❌ [TEACHER] Error in get_progress_metrics: {str(e)}")
+        logger.error(f"Error in get_progress_metrics: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+@router.get("/dashboard/stages", response_model=TeacherDashboardResponse)
+async def get_available_stages(
+    current_user: Dict[str, Any] = Depends(require_admin_or_teacher)
+):
+    """
+    Get all available stages for filtering
+    """
+    print(f"🔄 [TEACHER] GET /teacher/dashboard/stages called")
+    print(f"👤 [TEACHER] Authenticated user: {current_user['email']} (Role: {current_user.get('role', 'unknown')})")
+    
+    try:
+        stages_data = _get_available_stages()
+        
+        return TeacherDashboardResponse(
+            success=True,
+            data={"stages": stages_data},
+            message="Available stages retrieved successfully"
+        )
+        
+    except Exception as e:
+        print(f"❌ [TEACHER] Error in get_available_stages: {str(e)}")
+        logger.error(f"Error in get_available_stages: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+@router.get("/dashboard/lessons/{stage_id}", response_model=TeacherDashboardResponse)
+async def get_lessons_by_stage(
+    stage_id: int,
+    current_user: Dict[str, Any] = Depends(require_admin_or_teacher)
+):
+    """
+    Get lessons available for a specific stage
+    """
+    print(f"🔄 [TEACHER] GET /teacher/dashboard/lessons/{stage_id} called")
+    print(f"👤 [TEACHER] Authenticated user: {current_user['email']} (Role: {current_user.get('role', 'unknown')})")
+    print(f"📊 [TEACHER] Stage ID: {stage_id}")
+    
+    try:
+        lessons_data = _get_lessons_by_stage(stage_id)
+        
+        return TeacherDashboardResponse(
+            success=True,
+            data={"lessons": lessons_data},
+            message=f"Lessons for stage {stage_id} retrieved successfully"
+        )
+        
+    except Exception as e:
+        print(f"❌ [TEACHER] Error in get_lessons_by_stage: {str(e)}")
+        logger.error(f"Error in get_lessons_by_stage: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+@router.get("/dashboard/export-progress", response_model=TeacherDashboardResponse)
+async def export_progress_data(
+    format_type: str = "csv",
+    search_query: Optional[str] = None,
+    stage_id: Optional[int] = None,
+    lesson_id: Optional[int] = None,
+    time_range: str = "all_time",
+    current_user: Dict[str, Any] = Depends(require_admin_or_teacher)
+):
+    """
+    Export progress data in CSV or PDF format
+    """
+    print(f"🔄 [TEACHER] GET /teacher/dashboard/export-progress called")
+    print(f"👤 [TEACHER] Authenticated user: {current_user['email']} (Role: {current_user.get('role', 'unknown')})")
+    print(f"📊 [TEACHER] Format: {format_type}, Search: {search_query}, Stage: {stage_id}")
+    
+    try:
+        export_data = await _export_progress_data(format_type, search_query, stage_id, lesson_id, time_range)
+        
+        return TeacherDashboardResponse(
+            success=True,
+            data=export_data,
+            message=f"Progress data exported successfully in {format_type.upper()} format"
+        )
+        
+    except Exception as e:
+        print(f"❌ [TEACHER] Error in export_progress_data: {str(e)}")
+        logger.error(f"Error in export_progress_data: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
 async def _get_behavior_insights(time_range: str = "all_time") -> Dict[str, Any]:
     """
     Get behavior insights (only features possible with existing database)
@@ -790,23 +954,16 @@ async def _get_low_engagement_insight(start_date: Optional[date], end_date: Opti
 
 async def _get_inactivity_insight(start_date: Optional[date], end_date: Optional[date]) -> Dict[str, Any]:
     """
-    Get inactivity insight (POSSIBLE - using daily learning analytics)
+    Get inactivity insight (POSSIBLE - using daily learning analytics and progress summary)
     """
     try:
-        # Get users with no activity in last 30 days
-        thirty_days_ago = (date.today() - timedelta(days=30)).isoformat()
+        print(f"🔄 [TEACHER] Calculating inactivity insight...")
         
-        # Get recent activity
-        recent_activity_query = supabase.table('ai_tutor_daily_learning_analytics').select(
-            'user_id'
-        ).gte('analytics_date', thirty_days_ago)
+        # Get inactive students data using the helper function
+        inactive_students_data = await _get_inactive_students(None, 30, "all_time")
+        inactive_count = inactive_students_data.get('total_affected', 0)
         
-        if start_date and end_date:
-            recent_activity_query = recent_activity_query.gte('analytics_date', start_date.isoformat()).lte('analytics_date', end_date.isoformat())
-        
-        recent_activity_result = recent_activity_query.execute()
-        
-        # Get total users
+        # Get total users for percentage calculation
         total_users_result = supabase.table('ai_tutor_user_progress_summary').select('user_id').execute()
         total_users = len(total_users_result.data) if total_users_result.data else 0
         
@@ -817,21 +974,20 @@ async def _get_inactivity_insight(start_date: Optional[date], end_date: Optional
                 "affected_students": 0
             }
         
-        # Calculate inactivity
-        active_users = len(set([record['user_id'] for record in recent_activity_result.data])) if recent_activity_result.data else 0
-        inactive_users = total_users - active_users
+        # Calculate inactivity rate
+        inactivity_rate = round((inactive_count / total_users * 100), 1) if total_users > 0 else 0
         
-        if inactive_users > (total_users * 0.2):  # More than 20% inactive
+        if inactive_count > (total_users * 0.2):  # More than 20% inactive
             return {
                 "has_alert": True,
-                "message": f"High inactivity detected: {inactive_users} inactive students",
-                "affected_students": inactive_users,
-                "inactivity_rate": round((inactive_users / total_users * 100), 1)
+                "message": f"High inactivity detected: {inactive_count} inactive students ({inactivity_rate}%)",
+                "affected_students": inactive_count,
+                "inactivity_rate": inactivity_rate
             }
         else:
             return {
                 "has_alert": False,
-                "message": f"Inactivity is normal: {round((inactive_users / total_users * 100), 1)}%",
+                "message": f"Inactivity is normal: {inactivity_rate}%",
                 "affected_students": 0
             }
             
@@ -1039,6 +1195,542 @@ async def _get_stuck_students(stage_id: Optional[int], days_threshold: int, time
             "total_affected": 0,
             "error": str(e)
         }
+
+async def _get_inactive_students(stage_id: Optional[int], days_threshold: int, time_range: str) -> Dict[str, Any]:
+    """
+    Get detailed list of students who have been inactive for a specified number of days
+    """
+    try:
+        print(f"🔄 [TEACHER] Getting inactive students with threshold: {days_threshold} days")
+        
+        start_date, end_date = _get_date_range(time_range)
+        
+        # Calculate the cutoff date for inactive students
+        cutoff_date = (date.today() - timedelta(days=days_threshold)).isoformat()
+        
+        # Build query for progress summary
+        query = supabase.table('ai_tutor_user_progress_summary').select(
+            'user_id, current_stage, current_exercise, last_activity_date, overall_progress_percentage, created_at'
+        )
+        
+        if stage_id:
+            query = query.eq('current_stage', stage_id)
+        
+        if start_date and end_date:
+            query = query.gte('updated_at', start_date.isoformat()).lte('updated_at', end_date.isoformat())
+        
+        result = query.execute()
+        
+        if not result.data:
+            return {
+                "students": [],
+                "total_affected": 0,
+                "stage_filter": stage_id,
+                "days_threshold": days_threshold
+            }
+        
+        # Get recent activity data for comparison
+        recent_activity_query = supabase.table('ai_tutor_daily_learning_analytics').select(
+            'user_id'
+        ).gte('analytics_date', cutoff_date)
+        
+        if start_date and end_date:
+            recent_activity_query = recent_activity_query.gte('analytics_date', start_date.isoformat()).lte('analytics_date', end_date.isoformat())
+        
+        recent_activity_result = recent_activity_query.execute()
+        active_users = set([record['user_id'] for record in recent_activity_result.data]) if recent_activity_result.data else set()
+        
+        # Filter inactive students
+        inactive_students = []
+        for record in result.data:
+            user_id = record['user_id']
+            last_activity = record.get('last_activity_date')
+            
+            # Skip if user has recent activity
+            if user_id in active_users:
+                continue
+            
+            # Check if user is inactive based on last activity
+            if last_activity:
+                try:
+                    last_activity_date = datetime.strptime(last_activity, '%Y-%m-%d').date()
+                    days_inactive = (date.today() - last_activity_date).days
+                    
+                    if days_inactive >= days_threshold:
+                        # Get real student name
+                        student_name = await _get_student_name(user_id)
+                        
+                        # Get current lesson name
+                        current_stage = record.get('current_stage', 1)
+                        current_lesson = _get_current_lesson_name(current_stage)
+                        
+                        student_info = {
+                            'user_id': user_id,
+                            'student_name': student_name,
+                            'current_stage': _get_stage_display_name(current_stage),
+                            'days_inactive': days_inactive,
+                            'current_lesson': current_lesson,
+                            'progress_percentage': record.get('overall_progress_percentage', 0),
+                            'last_activity': last_activity
+                        }
+                        inactive_students.append(student_info)
+                        
+                except (ValueError, TypeError):
+                    # Skip if date parsing fails
+                    continue
+        
+        # Sort by days inactive (highest first)
+        inactive_students.sort(key=lambda x: x['days_inactive'], reverse=True)
+        
+        return {
+            "students": inactive_students,
+            "total_affected": len(inactive_students),
+            "stage_filter": stage_id,
+            "days_threshold": days_threshold,
+            "time_range": time_range
+        }
+        
+    except Exception as e:
+        print(f"❌ [TEACHER] Error in _get_inactive_students: {str(e)}")
+        logger.error(f"Error in _get_inactive_students: {str(e)}")
+        return {
+            "students": [],
+            "total_affected": 0,
+            "error": str(e)
+        }
+
+async def _get_student_progress_overview(search_query: Optional[str], stage_id: Optional[int], lesson_id: Optional[int], time_range: str) -> Dict[str, Any]:
+    """
+    Get comprehensive student progress overview with detailed student data
+    """
+    try:
+        print(f"🔄 [TEACHER] Getting student progress overview...")
+        
+        start_date, end_date = _get_date_range(time_range)
+        
+        # Build base query for student progress
+        base_query = supabase.table('ai_tutor_user_progress_summary').select(
+            'user_id, current_stage, current_exercise, overall_progress_percentage, last_activity_date, total_time_spent_minutes, total_exercises_completed'
+        )
+        
+        # Apply filters
+        if stage_id:
+            base_query = base_query.eq('current_stage', stage_id)
+        
+        if start_date and end_date:
+            base_query = base_query.gte('updated_at', start_date.isoformat()).lte('updated_at', end_date.isoformat())
+        
+        result = base_query.execute()
+        
+        if not result.data:
+            return {
+                "students": [],
+                "total_students": 0,
+                "avg_completion_percentage": 0,
+                "avg_score": 0,
+                "students_at_risk_count": 0,
+                "filters_applied": {
+                    "search_query": search_query,
+                    "stage_id": stage_id,
+                    "lesson_id": lesson_id,
+                    "time_range": time_range
+                }
+            }
+        
+        # Process student data
+        students_data = []
+        total_completion = 0
+        total_score = 0
+        at_risk_count = 0
+        
+        for record in result.data:
+            user_id = record['user_id']
+            
+            # Get student name and email
+            student_name = await _get_student_name(user_id)
+            student_email = await _get_student_email(user_id)
+            
+            # Get current stage and lesson info
+            current_stage = record.get('current_stage', 1)
+            current_exercise = record.get('current_exercise', 1)
+            
+            # Calculate average score from exercise progress
+            avg_score = await _get_student_average_score(user_id, current_stage)
+            
+            # Generate AI feedback
+            ai_feedback = await _generate_ai_feedback(record, avg_score)
+            
+            # Get last activity
+            last_activity = record.get('last_activity_date', 'Unknown')
+            
+            # Calculate progress percentage
+            progress_percentage = record.get('overall_progress_percentage', 0)
+            total_completion += progress_percentage
+            total_score += avg_score
+            
+            # Check if student is at risk
+            is_at_risk = progress_percentage < 50 or avg_score < 60
+            if is_at_risk:
+                at_risk_count += 1
+            
+            # Apply search filter if provided
+            if search_query:
+                search_lower = search_query.lower()
+                if (search_lower not in student_name.lower() and 
+                    search_lower not in student_email.lower()):
+                    continue
+            
+            student_info = {
+                'user_id': user_id,
+                'student_name': student_name,
+                'email': student_email,
+                'current_stage': _get_stage_display_name(current_stage),
+                'current_lesson': _get_current_lesson_name(current_stage),
+                'avg_score': round(avg_score, 1),
+                'ai_feedback': ai_feedback['text'],
+                'feedback_sentiment': ai_feedback['sentiment'],
+                'last_active': last_activity,
+                'progress_percentage': round(progress_percentage, 1),
+                'is_at_risk': is_at_risk,
+                'total_time_minutes': record.get('total_time_spent_minutes', 0),
+                'exercises_completed': record.get('total_exercises_completed', 0)
+            }
+            
+            students_data.append(student_info)
+        
+        # Calculate averages
+        total_students = len(students_data)
+        avg_completion = round(total_completion / len(result.data), 1) if result.data else 0
+        avg_score = round(total_score / len(result.data), 1) if result.data else 0
+        
+        # Sort students by progress (highest first)
+        students_data.sort(key=lambda x: x['progress_percentage'], reverse=True)
+        
+        return {
+            "students": students_data,
+            "total_students": total_students,
+            "avg_completion_percentage": avg_completion,
+            "avg_score": avg_score,
+            "students_at_risk_count": at_risk_count,
+            "filters_applied": {
+                "search_query": search_query,
+                "stage_id": stage_id,
+                "lesson_id": lesson_id,
+                "time_range": time_range
+            }
+        }
+        
+    except Exception as e:
+        print(f"❌ [TEACHER] Error in _get_student_progress_overview: {str(e)}")
+        logger.error(f"Error in _get_student_progress_overview: {str(e)}")
+        raise
+
+async def _get_student_email(user_id: str) -> str:
+    """
+    Get student email from user_profiles table
+    """
+    try:
+        profile_result = supabase.table('user_profiles').select('email').eq('user_id', user_id).execute()
+        
+        if profile_result.data and len(profile_result.data) > 0:
+            return profile_result.data[0].get('email', 'No email')
+        
+        return 'No email'
+        
+    except Exception as e:
+        print(f"⚠️ [TEACHER] Error getting email for {user_id}: {str(e)}")
+        return 'No email'
+
+async def _get_student_average_score(user_id: str, stage_id: int) -> float:
+    """
+    Get student's average score for a specific stage
+    """
+    try:
+        # Get scores from exercise progress
+        score_result = supabase.table('ai_tutor_user_exercise_progress').select(
+            'average_score, best_score'
+        ).eq('user_id', user_id).eq('stage_id', stage_id).execute()
+        
+        if not score_result.data:
+            return 0.0
+        
+        # Calculate average of all available scores
+        scores = []
+        for record in score_result.data:
+            if record.get('average_score'):
+                scores.append(float(record['average_score']))
+            if record.get('best_score'):
+                scores.append(float(record['best_score']))
+        
+        if not scores:
+            return 0.0
+        
+        return round(sum(scores) / len(scores), 1)
+        
+    except Exception as e:
+        print(f"⚠️ [TEACHER] Error getting average score for {user_id}: {str(e)}")
+        return 0.0
+
+async def _generate_ai_feedback(progress_record: Dict[str, Any], avg_score: float) -> Dict[str, Any]:
+    """
+    Generate AI feedback based on student progress data
+    """
+    try:
+        progress_percentage = progress_record.get('overall_progress_percentage', 0)
+        current_stage = progress_record.get('current_stage', 1)
+        exercises_completed = progress_record.get('total_exercises_completed', 0)
+        time_spent = progress_record.get('total_time_spent_minutes', 0)
+        
+        # Determine feedback sentiment and text based on performance
+        if progress_percentage >= 80 and avg_score >= 85:
+            sentiment = "positive"
+            if current_stage >= 4:
+                feedback = "Exceptional performance across all areas. Ready for advanced challenges and leadership roles."
+            elif current_stage >= 2:
+                feedback = "Shows excellent progress in conversational skills and demonstrates strong learning potential."
+            else:
+                feedback = "Making excellent progress in foundational skills. Keep up the great work!"
+                
+        elif progress_percentage >= 60 and avg_score >= 70:
+            sentiment = "positive"
+            if current_stage >= 3:
+                feedback = "Making steady progress with good understanding of concepts. Continue practicing for mastery."
+            else:
+                feedback = "Shows good progress in basic skills. Regular practice will lead to significant improvement."
+                
+        elif progress_percentage >= 40 and avg_score >= 60:
+            sentiment = "mixed"
+            if current_stage >= 3:
+                feedback = "Making steady progress but struggling with complex concepts. Additional support and practice needed."
+            else:
+                feedback = "Basic understanding demonstrated but needs more consistent practice to build confidence."
+                
+        else:
+            sentiment = "negative"
+            if current_stage >= 2:
+                feedback = "Needs more consistent practice and additional support. Consider reviewing foundational concepts."
+            else:
+                feedback = "Requires focused attention on basic skills. Regular practice sessions recommended."
+        
+        # Add stage-specific recommendations
+        stage_recommendations = {
+            1: "Focus on daily conversation practice and basic vocabulary building.",
+            2: "Work on roleplay scenarios and storytelling to improve fluency.",
+            3: "Practice problem-solving dialogues and critical thinking exercises.",
+            4: "Engage in abstract topic discussions and interview preparation.",
+            5: "Focus on in-depth interview skills and academic presentations.",
+            6: "Practice spontaneous speech and handle sensitive scenarios confidently."
+        }
+        
+        if current_stage in stage_recommendations:
+            feedback += f" {stage_recommendations[current_stage]}"
+        
+        return {
+            "text": feedback,
+            "sentiment": sentiment,
+            "progress_level": "high" if progress_percentage >= 80 else "medium" if progress_percentage >= 60 else "low"
+        }
+        
+    except Exception as e:
+        print(f"⚠️ [TEACHER] Error generating AI feedback: {str(e)}")
+        return {
+            "text": "Progress data analysis in progress. Continue with current learning path.",
+            "sentiment": "neutral",
+            "progress_level": "unknown"
+        }
+
+async def _get_progress_metrics(stage_id: Optional[int], time_range: str) -> Dict[str, Any]:
+    """
+    Get key progress metrics (Total Students, Average Completion, Average Score, Students at Risk)
+    """
+    try:
+        print(f"🔄 [TEACHER] Getting progress metrics for stage: {stage_id}, time_range: {time_range}")
+        
+        start_date, end_date = _get_date_range(time_range)
+        
+        # 1. Total Students
+        total_students_query = supabase.table('ai_tutor_user_progress_summary').select(
+            'user_id'
+        ).execute()
+        total_students = len(total_students_query.data) if total_students_query.data else 0
+        
+        # 2. Average Completion Percentage
+        completion_query = supabase.table('ai_tutor_user_progress_summary').select(
+            'overall_progress_percentage'
+        ).execute()
+        completion_data = [record.get('overall_progress_percentage', 0) for record in completion_query.data]
+        avg_completion = round(sum(completion_data) / len(completion_data), 1) if completion_data else 0
+        
+        # 3. Average Score
+        score_query = supabase.table('ai_tutor_user_progress_summary').select(
+            'overall_progress_percentage'
+        ).execute()
+        score_data = [record.get('overall_progress_percentage', 0) for record in score_query.data]
+        avg_score = round(sum(score_data) / len(score_data), 1) if score_data else 0
+        
+        # 4. Students at Risk (defined as students with < 50% completion)
+        at_risk_students = []
+        if start_date and end_date:
+            at_risk_query = supabase.table('ai_tutor_user_progress_summary').select(
+                'user_id, overall_progress_percentage'
+            ).gte('updated_at', start_date.isoformat()).lte('updated_at', end_date.isoformat())
+        else:
+            at_risk_query = supabase.table('ai_tutor_user_progress_summary').select(
+                'user_id, overall_progress_percentage'
+            )
+        
+        if stage_id:
+            at_risk_query = at_risk_query.eq('current_stage', stage_id)
+        
+        at_risk_result = at_risk_query.execute()
+        
+        for record in at_risk_result.data:
+            user_id = record['user_id']
+            completion_percentage = record.get('overall_progress_percentage', 0)
+            if completion_percentage < 50:
+                student_name = await _get_student_name(user_id)
+                at_risk_students.append({
+                    'user_id': user_id,
+                    'student_name': student_name,
+                    'completion_percentage': completion_percentage
+                })
+        
+        metrics_data = {
+            "total_students": total_students,
+            "avg_completion_percentage": avg_completion,
+            "avg_score": avg_score,
+            "students_at_risk": at_risk_students,
+            "time_range": time_range
+        }
+        
+        print(f"📊 [TEACHER] Progress metrics calculated:")
+        print(f"   - Total Students: {total_students}")
+        print(f"   - Avg Completion: {avg_completion}%")
+        print(f"   - Avg Score: {avg_score}%")
+        print(f"   - Students at Risk: {len(at_risk_students)}")
+        print(f"   - Time Range: {time_range}")
+        
+        return metrics_data
+        
+    except Exception as e:
+        print(f"❌ [TEACHER] Error in _get_progress_metrics: {str(e)}")
+        logger.error(f"Error in _get_progress_metrics: {str(e)}")
+        raise
+
+def _get_available_stages() -> List[Dict[str, Any]]:
+    """
+    Get all available stages for filtering in the Progress tab.
+    This is a placeholder and would ideally fetch from a stages table.
+    """
+    return [
+        {"id": 1, "name": "All Stages"},
+        {"id": 2, "name": "Stage 2"},
+        {"id": 3, "name": "Stage 3"},
+        {"id": 4, "name": "Stage 4"},
+        {"id": 5, "name": "Stage 5"},
+        {"id": 6, "name": "Stage 6"}
+    ]
+
+def _get_lessons_by_stage(stage_id: int) -> List[Dict[str, Any]]:
+    """
+    Get lessons available for a specific stage.
+    This is a placeholder and would ideally fetch from a lessons table.
+    """
+    if stage_id == 1:
+        return [
+            {"id": 1, "name": "Daily Routine Conversations", "stage": "Stage 1"},
+            {"id": 2, "name": "Basic Conversation Starters", "stage": "Stage 1"},
+            {"id": 3, "name": "Quick Response Practice", "stage": "Stage 1"}
+        ]
+    elif stage_id == 2:
+        return [
+            {"id": 1, "name": "Roleplay Simulation", "stage": "Stage 2"},
+            {"id": 2, "name": "Storytelling", "stage": "Stage 2"},
+            {"id": 3, "name": "Group Dialogue", "stage": "Stage 2"}
+        ]
+    elif stage_id == 3:
+        return [
+            {"id": 1, "name": "Problem Solving", "stage": "Stage 3"},
+            {"id": 2, "name": "Critical Thinking Dialogues", "stage": "Stage 3"},
+            {"id": 3, "name": "Academic Presentations", "stage": "Stage 3"}
+        ]
+    elif stage_id == 4:
+        return [
+            {"id": 1, "name": "Abstract Topic Discussion", "stage": "Stage 4"},
+            {"id": 2, "name": "Job Interview Practice", "stage": "Stage 4"},
+            {"id": 3, "name": "News Summary", "stage": "Stage 4"}
+        ]
+    elif stage_id == 5:
+        return [
+            {"id": 1, "name": "In-depth Interview", "stage": "Stage 5"},
+            {"id": 2, "name": "Academic Presentation", "stage": "Stage 5"},
+            {"id": 3, "name": "Critical Opinion Builder", "stage": "Stage 5"}
+        ]
+    elif stage_id == 6:
+        return [
+            {"id": 1, "name": "Spontaneous Speech", "stage": "Stage 6"},
+            {"id": 2, "name": "Sensitive Scenario", "stage": "Stage 6"},
+            {"id": 3, "name": "Advanced Roleplay", "stage": "Stage 6"}
+        ]
+    else:
+        return []
+
+async def _export_progress_data(format_type: str, search_query: Optional[str], stage_id: Optional[int], lesson_id: Optional[int], time_range: str) -> Dict[str, Any]:
+    """
+    Export real progress data in CSV or PDF format
+    """
+    print(f"🔄 [TEACHER] Exporting progress data in {format_type.upper()} format...")
+    
+    try:
+        # Fetch real student progress data using the existing helper function
+        progress_data = await _get_student_progress_overview(
+            search_query=search_query,
+            stage_id=stage_id,
+            lesson_id=lesson_id,
+            time_range=time_range
+        )
+        
+        # Format data for export
+        data_to_export = []
+        for student in progress_data.get('students', []):
+            export_record = {
+                "user_id": student['user_id'],
+                "student_name": student['student_name'],
+                "email": student['email'],
+                "current_stage": student['current_stage'],
+                "current_lesson": student['current_lesson'],
+                "avg_score": student['avg_score'],
+                "progress_percentage": student['progress_percentage'],
+                "ai_feedback": student['ai_feedback'],
+                "feedback_sentiment": student['feedback_sentiment'],
+                "last_active": student['last_active'],
+                "is_at_risk": student['is_at_risk'],
+                "total_time_minutes": student['total_time_minutes'],
+                "exercises_completed": student['exercises_completed']
+            }
+            data_to_export.append(export_record)
+        
+        print(f"   - Exporting {len(data_to_export)} real student records")
+        print(f"   - Search Query: {search_query}")
+        print(f"   - Stage Filter: {stage_id}")
+        print(f"   - Lesson Filter: {lesson_id}")
+        print(f"   - Time Range: {time_range}")
+        
+        if format_type == "csv":
+            # In a real app, you'd use a library like pandas or a CSV generation library
+            # For demonstration, we'll just return the data as a dict
+            return {"data": data_to_export, "format": "csv"}
+        elif format_type == "pdf":
+            # In a real app, you'd use a PDF generation library like ReportLab or FPDF
+            # For demonstration, we'll just return the data as a dict
+            return {"data": data_to_export, "format": "pdf"}
+        else:
+            raise HTTPException(status_code=400, detail=f"Unsupported format: {format_type}")
+            
+    except Exception as e:
+        print(f"❌ [TEACHER] Error in _export_progress_data: {str(e)}")
+        logger.error(f"Error in _export_progress_data: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error exporting progress data: {str(e)}")
 
 def _get_current_lesson_name(stage_id: int) -> str:
     """Get lesson name based on stage ID"""
