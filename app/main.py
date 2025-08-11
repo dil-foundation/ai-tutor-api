@@ -50,6 +50,7 @@ from app.routes import (
     gpt_quiz_parser,
     progress_tracking,
     admin_dashboard,
+    teacher_dashboard,
     messaging
 )
 from .database import get_db, engine
@@ -159,6 +160,10 @@ app.include_router(progress_tracking.router, prefix="/api/progress", tags=["Prog
 
 # Admin dashboard routes (NEW - Admin Dashboard System)
 app.include_router(admin_dashboard.router, tags=["Admin Dashboard"])
+
+# Teacher dashboard routes (NEW - Teacher Dashboard System)
+app.include_router(teacher_dashboard.router, tags=["Teacher Dashboard"])
+
 # Messaging system routes (NEW - Real-time Messaging)
 app.include_router(messaging.router, prefix="/api", tags=["Messaging System"])
 
