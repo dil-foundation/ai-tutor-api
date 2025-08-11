@@ -398,7 +398,7 @@ async def _calculate_engagement_change(time_range: str, current_engagement: floa
             
         else:
             # For other time ranges, return a default positive change
-            return "+12% from last week"
+            return "+0% from last week"
         
         # Calculate change
         if time_range == "this_week":
@@ -408,13 +408,13 @@ async def _calculate_engagement_change(time_range: str, current_engagement: floa
             change = current_engagement - last_month_engagement
             change_text = f"{'+' if change >= 0 else ''}{round(change, 0)}% from last month"
         else:
-            change_text = "+12% from last week"
+            change_text = "+0% from last week"
         
         return change_text
         
     except Exception as e:
         print(f"⚠️ [TEACHER] Error calculating engagement change: {str(e)}")
-        return "+12% from last week"
+        return "+0% from last week"
 
 def _get_time_period_label(time_range: str) -> str:
     """Get time period label for display"""
@@ -450,6 +450,708 @@ def _calculate_lesson_trend(access_count: int) -> str:
         return "Stable"
     else:
         return "Down"
+
+@router.get("/dashboard/behavior-insights", response_model=TeacherDashboardResponse)
+async def get_behavior_insights(
+    time_range: str = "all_time",
+    current_user: Dict[str, Any] = Depends(require_admin_or_teacher)
+):
+    """
+    Get behavior insights for teacher dashboard (only features possible with existing database)
+    """
+    print(f"🔄 [TEACHER] GET /teacher/dashboard/behavior-insights called")
+    print(f"👤 [TEACHER] Authenticated user: {current_user['email']} (Role: {current_user.get('role', 'unknown')})")
+    
+    try:
+        behavior_insights = await _get_behavior_insights(time_range)
+        
+        return TeacherDashboardResponse(
+            success=True,
+            data=behavior_insights,
+            message="Behavior insights retrieved successfully"
+        )
+        
+    except Exception as e:
+        print(f"❌ [TEACHER] Error in get_behavior_insights: {str(e)}")
+        logger.error(f"Error in get_behavior_insights: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+@router.get("/dashboard/high-retry-students", response_model=TeacherDashboardResponse)
+async def get_high_retry_students(
+    stage_id: Optional[int] = None,
+    retry_threshold: int = 5,
+    time_range: str = "all_time",
+    current_user: Dict[str, Any] = Depends(require_admin_or_teacher)
+):
+    """
+    Get students with high retry rates (excessive retries)
+    """
+    print(f"🔄 [TEACHER] GET /teacher/dashboard/high-retry-students called")
+    print(f"👤 [TEACHER] Authenticated user: {current_user['email']} (Role: {current_user.get('role', 'unknown')})")
+    print(f"📊 [TEACHER] Stage ID: {stage_id}, Retry Threshold: {retry_threshold}")
+    
+    try:
+        high_retry_data = await _get_high_retry_students(stage_id, retry_threshold, time_range)
+        
+        return TeacherDashboardResponse(
+            success=True,
+            data=high_retry_data,
+            message="High retry students data retrieved successfully"
+        )
+        
+    except Exception as e:
+        print(f"❌ [TEACHER] Error in get_high_retry_students: {str(e)}")
+        logger.error(f"Error in get_high_retry_students: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+@router.get("/dashboard/stuck-students", response_model=TeacherDashboardResponse)
+async def get_stuck_students(
+    stage_id: Optional[int] = None,
+    days_threshold: int = 7,
+    time_range: str = "all_time",
+    current_user: Dict[str, Any] = Depends(require_admin_or_teacher)
+):
+    """
+    Get students who are stuck at their current stage for a specified number of days
+    """
+    print(f"🔄 [TEACHER] GET /teacher/dashboard/stuck-students called")
+    print(f"👤 [TEACHER] Authenticated user: {current_user['email']} (Role: {current_user.get('role', 'unknown')})")
+    print(f"📊 [TEACHER] Stage ID: {stage_id}, Days Threshold: {days_threshold}")
+    
+    try:
+        stuck_students_data = await _get_stuck_students(stage_id, days_threshold, time_range)
+        
+        return TeacherDashboardResponse(
+            success=True,
+            data=stuck_students_data,
+            message="Stuck students data retrieved successfully"
+        )
+        
+    except Exception as e:
+        print(f"❌ [TEACHER] Error in get_stuck_students: {str(e)}")
+        logger.error(f"Error in get_stuck_students: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+async def _get_behavior_insights(time_range: str = "all_time") -> Dict[str, Any]:
+    """
+    Get behavior insights (only features possible with existing database)
+    """
+    try:
+        print(f"🔄 [TEACHER] Calculating behavior insights for time range: {time_range}...")
+        
+        start_date, end_date = _get_date_range(time_range)
+        
+        # 1. High Retry Rate Detection (POSSIBLE - using attempt_num)
+        high_retry_insight = await _get_high_retry_insight(start_date, end_date)
+        
+        # 2. Low Engagement Detection (POSSIBLE - using daily analytics)
+        low_engagement_insight = await _get_low_engagement_insight(start_date, end_date)
+        
+        # 3. Inactivity Detection (POSSIBLE - using daily analytics)
+        inactivity_insight = await _get_inactivity_insight(start_date, end_date)
+        
+        # 4. Students Stuck at Stages Detection (POSSIBLE - using progress summary and activity data)
+        stuck_students_insight = await _get_stuck_students_insight(start_date, end_date)
+        
+        behavior_insights = {
+            "high_retry_rate": high_retry_insight,
+            "low_engagement": low_engagement_insight,
+            "inactivity": inactivity_insight,
+            "stuck_students": stuck_students_insight,
+            "total_flags": sum([
+                1 if high_retry_insight['has_alert'] else 0,
+                1 if low_engagement_insight['has_alert'] else 0,
+                1 if inactivity_insight['has_alert'] else 0,
+                1 if stuck_students_insight['has_alert'] else 0
+            ])
+        }
+        
+        print(f"✅ [TEACHER] Behavior insights calculated successfully")
+        return behavior_insights
+        
+    except Exception as e:
+        print(f"❌ [TEACHER] Error calculating behavior insights: {str(e)}")
+        logger.error(f"Error calculating behavior insights: {str(e)}")
+        raise
+
+async def _get_high_retry_insight(start_date: Optional[date], end_date: Optional[date]) -> Dict[str, Any]:
+    """
+    Get high retry rate insight (POSSIBLE - using attempt_num from topic progress)
+    """
+    try:
+        # Get students with high retry rates (more than 5 attempts on any topic)
+        retry_query = supabase.table('ai_tutor_user_topic_progress').select(
+            'user_id, stage_id, exercise_id, topic_id, attempt_num'
+        )
+        
+        if start_date and end_date:
+            retry_query = retry_query.gte('created_at', start_date.isoformat()).lte('created_at', end_date.isoformat())
+        
+        retry_result = retry_query.execute()
+        
+        if not retry_result.data:
+            return {
+                "has_alert": False,
+                "message": "No retry data available",
+                "affected_students": 0
+            }
+        
+        # Group by user and count total attempts
+        user_attempts = {}
+        for record in retry_result.data:
+            user_id = record['user_id']
+            if user_id not in user_attempts:
+                user_attempts[user_id] = {
+                    'total_attempts': 0,
+                    'stages': set(),
+                    'topics': set()
+                }
+            
+            user_attempts[user_id]['total_attempts'] += record['attempt_num']
+            user_attempts[user_id]['stages'].add(record['stage_id'])
+            user_attempts[user_id]['topics'].add(record['topic_id'])
+        
+        # Find students with excessive retries (>5 attempts)
+        excessive_retry_students = []
+        for user_id, data in user_attempts.items():
+            if data['total_attempts'] > 5:  # Threshold for excessive retries
+                # Get real student name from auth.users table
+                student_name = await _get_student_name(user_id)
+                
+                excessive_retry_students.append({
+                    'user_id': user_id,
+                    'student_name': student_name,
+                    'total_attempts': data['total_attempts'],
+                    'stages_affected': list(data['stages']),
+                    'topics_affected': len(data['topics'])
+                })
+        
+        if not excessive_retry_students:
+            return {
+                "has_alert": False,
+                "message": "No excessive retries detected",
+                "affected_students": 0
+            }
+        
+        return {
+            "has_alert": True,
+            "message": f"{len(excessive_retry_students)} students showing excessive retries",
+            "affected_students": len(excessive_retry_students),
+            "details": excessive_retry_students
+        }
+        
+    except Exception as e:
+        print(f"⚠️ [TEACHER] Error calculating high retry insight: {str(e)}")
+        return {
+            "has_alert": False,
+            "message": "Error calculating retry insight",
+            "affected_students": 0
+        }
+
+async def _get_high_retry_students(stage_id: Optional[int], retry_threshold: int, time_range: str) -> Dict[str, Any]:
+    """
+    Get detailed list of students with high retry rates (POSSIBLE - using attempt_num)
+    """
+    try:
+        print(f"🔄 [TEACHER] Getting high retry students with threshold: {retry_threshold}")
+        
+        start_date, end_date = _get_date_range(time_range)
+        
+        # Build query for topic progress
+        query = supabase.table('ai_tutor_user_topic_progress').select(
+            'user_id, stage_id, exercise_id, topic_id, attempt_num, created_at'
+        )
+        
+        if stage_id:
+            query = query.eq('stage_id', stage_id)
+        
+        if start_date and end_date:
+            query = query.gte('created_at', start_date.isoformat()).lte('created_at', end_date.isoformat())
+        
+        result = query.execute()
+        
+        if not result.data:
+            return {
+                "students": [],
+                "total_affected": 0,
+                "stage_filter": stage_id,
+                "retry_threshold": retry_threshold
+            }
+        
+        # Group by user and calculate retry statistics
+        user_retries = {}
+        for record in result.data:
+            user_id = record['user_id']
+            if user_id not in user_retries:
+                user_retries[user_id] = {
+                    'total_attempts': 0,
+                    'topics_attempted': set(),
+                    'stages_worked_on': set(),
+                    'last_activity': record['created_at']
+                }
+            
+            user_retries[user_id]['total_attempts'] += record['attempt_num']
+            user_retries[user_id]['topics_attempted'].add(record['topic_id'])
+            user_retries[user_id]['stages_worked_on'].add(record['stage_id'])
+        
+        # Filter students above threshold
+        high_retry_students = []
+        for user_id, data in user_retries.items():
+            if data['total_attempts'] >= retry_threshold:
+                # Get real student name from auth.users table
+                student_name = await _get_student_name(user_id)
+                
+                student_info = {
+                    'user_id': user_id,
+                    'student_name': student_name,
+                    'retries': data['total_attempts'],
+                    'current_lesson': _get_current_lesson_name(list(data['stages_worked_on'])[0] if data['stages_worked_on'] else 1),
+                    'stages_affected': list(data['stages_worked_on']),
+                    'topics_affected': len(data['topics_attempted']),
+                    'last_activity': data['last_activity']
+                }
+                high_retry_students.append(student_info)
+        
+        # Sort by retry count (highest first)
+        high_retry_students.sort(key=lambda x: x['retries'], reverse=True)
+        
+        return {
+            "students": high_retry_students,
+            "total_affected": len(high_retry_students),
+            "stage_filter": stage_id,
+            "retry_threshold": retry_threshold,
+            "time_range": time_range
+        }
+        
+    except Exception as e:
+        print(f"❌ [TEACHER] Error in _get_high_retry_students: {str(e)}")
+        logger.error(f"Error in _get_high_retry_students: {str(e)}")
+        return {
+            "students": [],
+            "total_affected": 0,
+            "error": str(e)
+        }
+
+async def _get_low_engagement_insight(start_date: Optional[date], end_date: Optional[date]) -> Dict[str, Any]:
+    """
+    Get low engagement insight (POSSIBLE - using daily learning analytics)
+    """
+    try:
+        # Get students with low engagement (no activity in last 7 days)
+        seven_days_ago = (date.today() - timedelta(days=7)).isoformat()
+        
+        # Get users with recent activity
+        recent_activity_query = supabase.table('ai_tutor_daily_learning_analytics').select(
+            'user_id'
+        ).gte('analytics_date', seven_days_ago)
+        
+        if start_date and end_date:
+            recent_activity_query = recent_activity_query.gte('analytics_date', start_date.isoformat()).lte('analytics_date', end_date.isoformat())
+        
+        recent_activity_result = recent_activity_query.execute()
+        
+        # Get total users
+        total_users_result = supabase.table('ai_tutor_user_progress_summary').select('user_id').execute()
+        total_users = len(total_users_result.data) if total_users_result.data else 0
+        
+        if total_users == 0:
+            return {
+                "has_alert": False,
+                "message": "No user data available",
+                "affected_students": 0
+            }
+        
+        # Calculate low engagement
+        active_users = len(set([record['user_id'] for record in recent_activity_result.data])) if recent_activity_result.data else 0
+        low_engagement_users = total_users - active_users
+        engagement_rate = (active_users / total_users * 100) if total_users > 0 else 0
+        
+        if engagement_rate < 50:  # Threshold for low engagement
+            return {
+                "has_alert": True,
+                "message": f"Low engagement detected: {low_engagement_users} inactive students",
+                "affected_students": low_engagement_users,
+                "engagement_rate": round(engagement_rate, 1)
+            }
+        else:
+            return {
+                "has_alert": False,
+                "message": f"Engagement is healthy: {round(engagement_rate, 1)}%",
+                "affected_students": 0
+            }
+            
+    except Exception as e:
+        print(f"⚠️ [TEACHER] Error calculating low engagement insight: {str(e)}")
+        return {
+            "has_alert": False,
+            "message": "Error calculating engagement insight",
+            "affected_students": 0
+        }
+
+async def _get_inactivity_insight(start_date: Optional[date], end_date: Optional[date]) -> Dict[str, Any]:
+    """
+    Get inactivity insight (POSSIBLE - using daily learning analytics)
+    """
+    try:
+        # Get users with no activity in last 30 days
+        thirty_days_ago = (date.today() - timedelta(days=30)).isoformat()
+        
+        # Get recent activity
+        recent_activity_query = supabase.table('ai_tutor_daily_learning_analytics').select(
+            'user_id'
+        ).gte('analytics_date', thirty_days_ago)
+        
+        if start_date and end_date:
+            recent_activity_query = recent_activity_query.gte('analytics_date', start_date.isoformat()).lte('analytics_date', end_date.isoformat())
+        
+        recent_activity_result = recent_activity_query.execute()
+        
+        # Get total users
+        total_users_result = supabase.table('ai_tutor_user_progress_summary').select('user_id').execute()
+        total_users = len(total_users_result.data) if total_users_result.data else 0
+        
+        if total_users == 0:
+            return {
+                "has_alert": False,
+                "message": "No user data available",
+                "affected_students": 0
+            }
+        
+        # Calculate inactivity
+        active_users = len(set([record['user_id'] for record in recent_activity_result.data])) if recent_activity_result.data else 0
+        inactive_users = total_users - active_users
+        
+        if inactive_users > (total_users * 0.2):  # More than 20% inactive
+            return {
+                "has_alert": True,
+                "message": f"High inactivity detected: {inactive_users} inactive students",
+                "affected_students": inactive_users,
+                "inactivity_rate": round((inactive_users / total_users * 100), 1)
+            }
+        else:
+            return {
+                "has_alert": False,
+                "message": f"Inactivity is normal: {round((inactive_users / total_users * 100), 1)}%",
+                "affected_students": 0
+            }
+            
+    except Exception as e:
+        print(f"⚠️ [TEACHER] Error calculating inactivity insight: {str(e)}")
+        return {
+            "has_alert": False,
+            "message": "Error calculating inactivity insight",
+            "affected_students": 0
+        }
+
+async def _get_stuck_students_insight(start_date: Optional[date], end_date: Optional[date]) -> Dict[str, Any]:
+    """
+    Get stuck students insight (POSSIBLE - using progress summary and activity data)
+    """
+    try:
+        # Get students who haven't progressed from their current stage in 7+ days
+        seven_days_ago = (date.today() - timedelta(days=7)).isoformat()
+        
+        # Get users with recent activity in the last 7 days
+        recent_activity_query = supabase.table('ai_tutor_daily_learning_analytics').select(
+            'user_id'
+        ).gte('analytics_date', seven_days_ago)
+        
+        if start_date and end_date:
+            recent_activity_query = recent_activity_query.gte('analytics_date', start_date.isoformat()).lte('analytics_date', end_date.isoformat())
+        
+        recent_activity_result = recent_activity_query.execute()
+        
+        # Get all users with their current stage and last activity
+        all_users_query = supabase.table('ai_tutor_user_progress_summary').select(
+            'user_id, current_stage, current_exercise, last_activity_date, overall_progress_percentage'
+        )
+        
+        if start_date and end_date:
+            all_users_query = all_users_query.gte('updated_at', start_date.isoformat()).lte('updated_at', end_date.isoformat())
+        
+        all_users_result = all_users_query.execute()
+        
+        if not all_users_result.data:
+            return {
+                "has_alert": False,
+                "message": "No user data available",
+                "affected_students": 0
+            }
+        
+        # Calculate stuck students
+        active_users = set([record['user_id'] for record in recent_activity_result.data]) if recent_activity_result.data else set()
+        stuck_students = []
+        
+        for user_record in all_users_result.data:
+            user_id = user_record['user_id']
+            current_stage = user_record.get('current_stage', 1)
+            last_activity = user_record.get('last_activity_date')
+            
+            # Check if user has been inactive for 7+ days
+            if last_activity:
+                try:
+                    last_activity_date = datetime.strptime(last_activity, '%Y-%m-%d').date()
+                    days_inactive = (date.today() - last_activity_date).days
+                    
+                    if days_inactive >= 7 and user_id not in active_users:
+                        # Get real student name
+                        student_name = await _get_student_name(user_id)
+                        
+                        # Get current lesson name
+                        current_lesson = _get_current_lesson_name(current_stage)
+                        
+                        stuck_students.append({
+                            'user_id': user_id,
+                            'student_name': student_name,
+                            'current_stage': _get_stage_display_name(current_stage),
+                            'days_stuck': days_inactive,
+                            'current_lesson': current_lesson,
+                            'progress_percentage': user_record.get('overall_progress_percentage', 0)
+                        })
+                except (ValueError, TypeError):
+                    # Skip if date parsing fails
+                    continue
+        
+        if not stuck_students:
+            return {
+                "has_alert": False,
+                "message": "No students stuck at stages detected",
+                "affected_students": 0
+            }
+        
+        # Sort by days stuck (highest first)
+        stuck_students.sort(key=lambda x: x['days_stuck'], reverse=True)
+        
+        return {
+            "has_alert": True,
+            "message": f"{len(stuck_students)} students haven't progressed from their current stage in 7+ days",
+            "affected_students": len(stuck_students),
+            "details": stuck_students
+        }
+        
+    except Exception as e:
+        print(f"⚠️ [TEACHER] Error calculating stuck students insight: {str(e)}")
+        return {
+            "has_alert": False,
+            "message": "Error calculating stuck students insight",
+            "affected_students": 0
+        }
+
+async def _get_stuck_students(stage_id: Optional[int], days_threshold: int, time_range: str) -> Dict[str, Any]:
+    """
+    Get detailed list of students stuck at stages (POSSIBLE - using progress summary and activity data)
+    """
+    try:
+        print(f"🔄 [TEACHER] Getting stuck students with threshold: {days_threshold} days")
+        
+        start_date, end_date = _get_date_range(time_range)
+        
+        # Calculate the cutoff date for stuck students
+        cutoff_date = (date.today() - timedelta(days=days_threshold)).isoformat()
+        
+        # Build query for progress summary
+        query = supabase.table('ai_tutor_user_progress_summary').select(
+            'user_id, current_stage, current_exercise, last_activity_date, overall_progress_percentage, created_at'
+        )
+        
+        if stage_id:
+            query = query.eq('current_stage', stage_id)
+        
+        if start_date and end_date:
+            query = query.gte('updated_at', start_date.isoformat()).lte('updated_at', end_date.isoformat())
+        
+        result = query.execute()
+        
+        if not result.data:
+            return {
+                "students": [],
+                "total_affected": 0,
+                "stage_filter": stage_id,
+                "days_threshold": days_threshold
+            }
+        
+        # Get recent activity data for comparison
+        recent_activity_query = supabase.table('ai_tutor_daily_learning_analytics').select(
+            'user_id'
+        ).gte('analytics_date', cutoff_date)
+        
+        if start_date and end_date:
+            recent_activity_query = recent_activity_query.gte('analytics_date', start_date.isoformat()).lte('analytics_date', end_date.isoformat())
+        
+        recent_activity_result = recent_activity_query.execute()
+        active_users = set([record['user_id'] for record in recent_activity_result.data]) if recent_activity_result.data else set()
+        
+        # Filter stuck students
+        stuck_students = []
+        for record in result.data:
+            user_id = record['user_id']
+            last_activity = record.get('last_activity_date')
+            
+            # Skip if user has recent activity
+            if user_id in active_users:
+                continue
+            
+            # Check if user is stuck based on last activity
+            if last_activity:
+                try:
+                    last_activity_date = datetime.strptime(last_activity, '%Y-%m-%d').date()
+                    days_inactive = (date.today() - last_activity_date).days
+                    
+                    if days_inactive >= days_threshold:
+                        # Get real student name
+                        student_name = await _get_student_name(user_id)
+                        
+                        # Get current lesson name
+                        current_stage = record.get('current_stage', 1)
+                        current_lesson = _get_current_lesson_name(current_stage)
+                        
+                        student_info = {
+                            'user_id': user_id,
+                            'student_name': student_name,
+                            'current_stage': _get_stage_display_name(current_stage),
+                            'days_stuck': days_inactive,
+                            'current_lesson': current_lesson,
+                            'progress_percentage': record.get('overall_progress_percentage', 0),
+                            'last_activity': last_activity
+                        }
+                        stuck_students.append(student_info)
+                        
+                except (ValueError, TypeError):
+                    # Skip if date parsing fails
+                    continue
+        
+        # Sort by days stuck (highest first)
+        stuck_students.sort(key=lambda x: x['days_stuck'], reverse=True)
+        
+        return {
+            "students": stuck_students,
+            "total_affected": len(stuck_students),
+            "stage_filter": stage_id,
+            "days_threshold": days_threshold,
+            "time_range": time_range
+        }
+        
+    except Exception as e:
+        print(f"❌ [TEACHER] Error in _get_stuck_students: {str(e)}")
+        logger.error(f"Error in _get_stuck_students: {str(e)}")
+        return {
+            "students": [],
+            "total_affected": 0,
+            "error": str(e)
+        }
+
+def _get_current_lesson_name(stage_id: int) -> str:
+    """Get lesson name based on stage ID"""
+    lesson_mapping = {
+        1: "Daily Routine Conversations",
+        2: "Roleplay Simulation", 
+        3: "Problem Solving",
+        4: "Abstract Topic Discussion",
+        5: "In-depth Interview",
+        6: "Spontaneous Speech"
+    }
+    return lesson_mapping.get(stage_id, f"Stage {stage_id} Lesson")
+
+def _get_stage_display_name(stage_id: int) -> str:
+    """Get stage display name for UI"""
+    stage_names = {
+        1: "Stage 1",
+        2: "Stage 2", 
+        3: "Stage 3",
+        4: "Stage 4",
+        5: "Stage 5",
+        6: "Stage 6"
+    }
+    return stage_names.get(stage_id, f"Stage {stage_id}")
+
+async def _get_student_name(user_id: str) -> str:
+    """
+    Get real student name from user_profiles table
+    This table is synced with auth.users display names
+    """
+    try:
+        # Method 1: Get the real student name from user_profiles table (PRIORITY)
+        try:
+            profile_result = supabase.table('user_profiles').select(
+                'display_name, first_name, last_name, email'
+            ).eq('user_id', user_id).execute()
+            
+            if profile_result.data and len(profile_result.data) > 0:
+                profile = profile_result.data[0]
+                
+                # Priority: display_name > first_name + last_name > email
+                if profile.get('display_name') and profile['display_name'].strip():
+                    print(f"✅ [TEACHER] Found real name for {user_id}: {profile['display_name']}")
+                    return profile['display_name']
+                elif profile.get('first_name') and profile.get('last_name') and profile['first_name'].strip() and profile['last_name'].strip():
+                    full_name = f"{profile['first_name']} {profile['last_name']}"
+                    print(f"✅ [TEACHER] Found full name for {user_id}: {full_name}")
+                    return full_name
+                elif profile.get('first_name') and profile['first_name'].strip():
+                    print(f"✅ [TEACHER] Found first name for {user_id}: {profile['first_name']}")
+                    return profile['first_name']
+                elif profile.get('last_name') and profile['last_name'].strip():
+                    print(f"✅ [TEACHER] Found last name for {user_id}: {profile['last_name']}")
+                    return profile['last_name']
+                elif profile.get('email') and profile['email'].strip():
+                    print(f"⚠️ [TEACHER] Using email as name for {user_id}: {profile['email']}")
+                    return profile['email']
+            
+        except Exception as profile_error:
+            print(f"❌ [TEACHER] User profiles table error for {user_id}: {str(profile_error)}")
+        
+        # Method 2: Fallback to meaningful display name from progress data
+        fallback_name = await _create_fallback_student_name(user_id)
+        print(f"⚠️ [TEACHER] Using fallback name for {user_id}: {fallback_name}")
+        return fallback_name
+            
+    except Exception as e:
+        print(f"❌ [TEACHER] Error getting student name for {user_id}: {str(e)}")
+        return f"Student {user_id[:8]}..."
+
+async def _create_fallback_student_name(user_id: str) -> str:
+    """
+    Create a fallback student name when user_profiles table is not available
+    """
+    try:
+        # Get user progress data to create a meaningful display name
+        progress_result = supabase.table('ai_tutor_user_progress_summary').select(
+            'current_stage, current_exercise, overall_progress_percentage, last_activity_date'
+        ).eq('user_id', user_id).execute()
+        
+        if progress_result.data and len(progress_result.data) > 0:
+            user_data = progress_result.data[0]
+            stage = user_data.get('current_stage', 1)
+            progress = user_data.get('overall_progress_percentage', 0)
+            
+            # Create a descriptive name
+            short_id = user_id[:6]
+            stage_name = _get_stage_name(stage)
+            
+            if progress > 0:
+                return f"Student {short_id} ({stage_name}, {progress:.0f}%)"
+            else:
+                return f"Student {short_id} ({stage_name})"
+        else:
+            # No progress data, use basic format
+            short_id = user_id[:6]
+            return f"Student {short_id}"
+            
+    except Exception as e:
+        print(f"⚠️ [TEACHER] Error creating fallback name for {user_id}: {str(e)}")
+        return f"Student {user_id[:8]}..."
+
+def _get_stage_name(stage_id: int) -> str:
+    """Get human-readable stage name"""
+    stage_names = {
+        1: "Beginner",
+        2: "Elementary", 
+        3: "Intermediate",
+        4: "Upper-Intermediate",
+        5: "Advanced",
+        6: "Expert"
+    }
+    return stage_names.get(stage_id, f"Stage {stage_id}")
 
 @router.get("/health")
 async def teacher_health_check():
