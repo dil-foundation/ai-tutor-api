@@ -1427,10 +1427,10 @@ async def _get_student_progress_overview(search_query: Optional[str], stage_id: 
 
 async def _get_student_email(user_id: str) -> str:
     """
-    Get student email from user_profiles table
+    Get student email from profiles table
     """
     try:
-        profile_result = supabase.table('user_profiles').select('email').eq('user_id', user_id).execute()
+        profile_result = supabase.table('profiles').select('email').eq('id', user_id).execute()
         
         if profile_result.data and len(profile_result.data) > 0:
             return profile_result.data[0].get('email', 'No email')
@@ -1758,24 +1758,21 @@ def _get_stage_display_name(stage_id: int) -> str:
 
 async def _get_student_name(user_id: str) -> str:
     """
-    Get real student name from user_profiles table
-    This table is synced with auth.users display names
+    Get real student name from profiles table
+    Uses first_name + last_name as display name
     """
     try:
-        # Method 1: Get the real student name from user_profiles table (PRIORITY)
+        # Get the real student name from profiles table
         try:
-            profile_result = supabase.table('user_profiles').select(
-                'display_name, first_name, last_name, email'
-            ).eq('user_id', user_id).execute()
+            profile_result = supabase.table('profiles').select(
+                'first_name, last_name, email'
+            ).eq('id', user_id).execute()
             
             if profile_result.data and len(profile_result.data) > 0:
                 profile = profile_result.data[0]
                 
-                # Priority: display_name > first_name + last_name > email
-                if profile.get('display_name') and profile['display_name'].strip():
-                    print(f"✅ [TEACHER] Found real name for {user_id}: {profile['display_name']}")
-                    return profile['display_name']
-                elif profile.get('first_name') and profile.get('last_name') and profile['first_name'].strip() and profile['last_name'].strip():
+                # Priority: first_name + last_name > first_name only > last_name only > email
+                if profile.get('first_name') and profile.get('last_name') and profile['first_name'].strip() and profile['last_name'].strip():
                     full_name = f"{profile['first_name']} {profile['last_name']}"
                     print(f"✅ [TEACHER] Found full name for {user_id}: {full_name}")
                     return full_name
@@ -1790,9 +1787,9 @@ async def _get_student_name(user_id: str) -> str:
                     return profile['email']
             
         except Exception as profile_error:
-            print(f"❌ [TEACHER] User profiles table error for {user_id}: {str(profile_error)}")
+            print(f"❌ [TEACHER] Profiles table error for {user_id}: {str(profile_error)}")
         
-        # Method 2: Fallback to meaningful display name from progress data
+        # Fallback to meaningful display name from progress data
         fallback_name = await _create_fallback_student_name(user_id)
         print(f"⚠️ [TEACHER] Using fallback name for {user_id}: {fallback_name}")
         return fallback_name
@@ -1803,7 +1800,7 @@ async def _get_student_name(user_id: str) -> str:
 
 async def _create_fallback_student_name(user_id: str) -> str:
     """
-    Create a fallback student name when user_profiles table is not available
+    Create a fallback student name when profiles table is not available
     """
     try:
         # Get user progress data to create a meaningful display name
