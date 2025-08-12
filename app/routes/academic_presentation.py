@@ -10,7 +10,7 @@ from app.services.tts import synthesize_speech, synthesize_speech_exercises
 from app.services.stt import transcribe_audio_bytes_eng_only
 from app.services.feedback import evaluate_response_ex2_stage5
 from app.supabase_client import progress_tracker
-from app.auth_middleware import get_current_user, require_student
+from app.auth_middleware import get_current_user, require_student,require_admin_or_teacher_or_student
 
 router = APIRouter()
 
@@ -41,7 +41,7 @@ def get_topic_by_id(topic_id: int):
         return None
 
 @router.get("/academic-presentation-topics")
-async def get_all_topics(current_user: Dict[str, Any] = Depends(require_student)):
+async def get_all_topics(current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
     """Get all available topics for Academic Presentation exercise"""
     print("🔄 [API] GET /academic-presentation-topics endpoint called")
     try:
@@ -55,7 +55,7 @@ async def get_all_topics(current_user: Dict[str, Any] = Depends(require_student)
         raise HTTPException(status_code=500, detail=f"Failed to load topics: {str(e)}")
 
 @router.get("/academic-presentation-topics/{topic_id}")
-async def get_topic(topic_id: int, current_user: Dict[str, Any] = Depends(require_student)):
+async def get_topic(topic_id: int, current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
     """Get a specific topic by ID"""
     print(f"🔄 [API] GET /academic-presentation-topics/{topic_id} endpoint called")
     try:
@@ -98,7 +98,7 @@ and returns the generated audio file as the response.
 """,
     tags=["Stage 5 - Exercise 2 (Academic Presentation)"]
 )
-async def academic_presentation(topic_id: int, current_user: Dict[str, Any] = Depends(require_student)):
+async def academic_presentation(topic_id: int, current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
     print(f"🔄 [API] POST /academic-presentation/{topic_id} endpoint called")
     try:
         topic_data = get_topic_by_id(topic_id)
@@ -136,7 +136,7 @@ Also records progress tracking data in Supabase database.
 )
 async def evaluate_academic_presentation(
     request: AudioEvaluationRequest,
-    current_user: Dict[str, Any] = Depends(require_student)
+    current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)
 ):
     print(f"🔄 [API] POST /evaluate-academic-presentation endpoint called")
     print(f"📝 [API] Request details: topic_id={request.topic_id}, filename={request.filename}")

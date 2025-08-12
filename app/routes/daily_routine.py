@@ -10,7 +10,7 @@ from app.services.tts import synthesize_speech, synthesize_speech_exercises
 from app.services.stt import transcribe_audio_bytes_eng_only
 from app.services.feedback import evaluate_response_ex1_stage2
 from app.supabase_client import progress_tracker
-from app.auth_middleware import get_current_user, require_student
+from app.auth_middleware import get_current_user, require_student,require_admin_or_teacher_or_student
 router = APIRouter()
 
 DAILY_ROUTINE_FILE = os.path.join(os.path.dirname(__file__), '..', 'data', 'daily_routine_narration.json')
@@ -41,7 +41,7 @@ def get_phrase_by_id(phrase_id: int):
 
 
 @router.get("/daily-routine-phrases")
-async def get_all_phrases(current_user: Dict[str, Any] = Depends(require_student)):
+async def get_all_phrases(current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
     """Get all available phrases for Daily Routine exercise"""
     print("🔄 [API] GET /daily-routine-phrases endpoint called")
     try:
@@ -55,7 +55,7 @@ async def get_all_phrases(current_user: Dict[str, Any] = Depends(require_student
         raise HTTPException(status_code=500, detail=f"Failed to load phrases: {str(e)}")
 
 @router.get("/daily-routine-phrases/{phrase_id}")
-async def get_phrase(phrase_id: int, current_user: Dict[str, Any] = Depends(require_student)):
+async def get_phrase(phrase_id: int, current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
     """Get a specific phrase by ID"""
     print(f"🔄 [API] GET /daily-routine-phrases/{phrase_id} endpoint called")
     try:
@@ -94,7 +94,7 @@ and returns the generated audio file as the response.
 """,
     tags=["Stage 2 - Exercise 1 (Daily Routine)"]
 )
-async def daily_routine(phrase_id: int, current_user: Dict[str, Any] = Depends(require_student)):
+async def daily_routine(phrase_id: int, current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
     print(f"🔄 [API] POST /daily-routine/{phrase_id} endpoint called")
     try:
         phrase_data = get_phrase_by_id(phrase_id)
@@ -132,7 +132,7 @@ Also records progress tracking data in Supabase database.
 )
 async def evaluate_daily_routine(
     request: AudioEvaluationRequest,
-    current_user: Dict[str, Any] = Depends(require_student)
+    current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)
 ):
     print(f"🔄 [API] POST /evaluate-daily-routine endpoint called")
     print(f"📝 [API] Request details: phrase_id={request.phrase_id}, filename={request.filename}")

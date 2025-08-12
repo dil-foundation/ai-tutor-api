@@ -8,7 +8,7 @@ from app.services.tts import synthesize_speech_exercises
 from app.services.feedback import evaluate_response_ex3_stage4
 from app.supabase_client import SupabaseProgressTracker
 from app.services.stt import transcribe_audio_bytes_eng_only
-from app.auth_middleware import get_current_user, require_student
+from app.auth_middleware import get_current_user, require_student, require_admin_or_teacher_or_student
 import os
 
 router = APIRouter(tags=["Stage 4 - Exercise 3 (News Summary)"])
@@ -39,7 +39,7 @@ class AudioEvaluationRequest(BaseModel):
     description="Retrieve all available news summary items for Stage 4 Exercise 3",
     tags=["Stage 4 - Exercise 3 (News Summary)"]
 )
-async def get_news_summary_items(current_user: Dict[str, Any] = Depends(require_student)):
+async def get_news_summary_items(current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
     """Get all news summary items"""
     try:
         news_items = load_news_summary_data()
@@ -54,7 +54,7 @@ async def get_news_summary_items(current_user: Dict[str, Any] = Depends(require_
     description="Retrieve a specific news summary item by ID",
     tags=["Stage 4 - Exercise 3 (News Summary)"]
 )
-async def get_news_summary_item(news_id: int, current_user: Dict[str, Any] = Depends(require_student)):
+async def get_news_summary_item(news_id: int, current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
     """Get a specific news summary item by ID"""
     try:
         news_items = load_news_summary_data()
@@ -79,7 +79,7 @@ async def get_news_summary_item(news_id: int, current_user: Dict[str, Any] = Dep
 )
 async def generate_news_summary_audio(
     news_id: int,
-    current_user: Dict[str, Any] = Depends(require_student)
+    current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)
 ):
     """Generate audio for a specific news summary item"""
     try:
@@ -124,7 +124,7 @@ Also records progress tracking data in Supabase database.
 )
 async def evaluate_news_summary(
     request: AudioEvaluationRequest,
-    current_user: Dict[str, Any] = Depends(require_student)
+    current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)
 ):
     """Evaluate user's news summary response"""
     try:
@@ -230,7 +230,7 @@ async def evaluate_news_summary(
 )
 async def get_news_summary_progress(
     user_id: str,
-    current_user: Dict[str, Any] = Depends(require_student)
+    current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)
 ):
     """Get user's news summary progress"""
     
@@ -261,7 +261,7 @@ async def get_news_summary_progress(
 )
 async def get_current_news_summary_item(
     user_id: str,
-    current_user: Dict[str, Any] = Depends(require_student)
+    current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)
 ):
     """Get current news summary item for user"""
     

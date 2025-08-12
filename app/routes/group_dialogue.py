@@ -10,7 +10,7 @@ from app.services.tts import synthesize_speech, synthesize_speech_exercises
 from app.services.stt import transcribe_audio_bytes_eng_only
 from app.services.feedback import evaluate_response_ex2_stage3
 from app.supabase_client import progress_tracker
-from app.auth_middleware import get_current_user, require_student
+from app.auth_middleware import get_current_user, require_student, require_admin_or_teacher_or_student
 
 router = APIRouter()
 
@@ -41,7 +41,7 @@ def get_scenario_by_id(scenario_id: int):
         return None
 
 @router.get("/group-dialogue-scenarios")
-async def get_all_scenarios(current_user: Dict[str, Any] = Depends(require_student)):
+async def get_all_scenarios(current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
     """Get all available scenarios for Group Dialogue exercise"""
     print("🔄 [API] GET /group-dialogue-scenarios endpoint called")
     try:
@@ -55,7 +55,7 @@ async def get_all_scenarios(current_user: Dict[str, Any] = Depends(require_stude
         raise HTTPException(status_code=500, detail=f"Failed to load scenarios: {str(e)}")
 
 @router.get("/group-dialogue-scenarios/{scenario_id}")
-async def get_scenario(scenario_id: int, current_user: Dict[str, Any] = Depends(require_student)):
+async def get_scenario(scenario_id: int, current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
     """Get a specific scenario by ID"""
     print(f"🔄 [API] GET /group-dialogue-scenarios/{scenario_id} endpoint called")
     try:
@@ -96,7 +96,7 @@ and returns the generated audio file as the response.
 """,
     tags=["Stage 3 - Exercise 2 (Group Dialogue)"]
 )
-async def group_dialogue(scenario_id: int, current_user: Dict[str, Any] = Depends(require_student)):
+async def group_dialogue(scenario_id: int, current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
     print(f"🔄 [API] POST /group-dialogue/{scenario_id} endpoint called")
     try:
         scenario_data = get_scenario_by_id(scenario_id)
@@ -149,7 +149,7 @@ Also records progress tracking data in Supabase database.
 )
 async def evaluate_group_dialogue(
     request: AudioEvaluationRequest,
-    current_user: Dict[str, Any] = Depends(require_student)
+    current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)
 ):
     print(f"🔄 [API] POST /evaluate-group-dialogue endpoint called")
     print(f"📊 [API] Request details: scenario_id={request.scenario_id}, user_id={request.user_id}")
@@ -321,7 +321,7 @@ async def evaluate_group_dialogue(
 @router.get("/group-dialogue-progress/{user_id}")
 async def get_user_progress(
     user_id: str,
-    current_user: Dict[str, Any] = Depends(require_student)
+    current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)
 ):
     """Get user's progress for Group Dialogue exercise"""
     print(f"🔄 [API] GET /group-dialogue-progress/{user_id} endpoint called")
@@ -354,7 +354,7 @@ async def get_user_progress(
 @router.get("/group-dialogue-current-topic/{user_id}")
 async def get_current_topic(
     user_id: str,
-    current_user: Dict[str, Any] = Depends(require_student)
+    current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)
 ):
     """Get user's current topic for Group Dialogue exercise"""
     print(f"🔄 [API] GET /group-dialogue-current-topic/{user_id} endpoint called")

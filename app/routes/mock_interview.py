@@ -8,7 +8,7 @@ from app.services.tts import synthesize_speech_exercises
 from app.services.feedback import evaluate_response_ex2_stage4
 from app.supabase_client import SupabaseProgressTracker
 from app.services.stt import transcribe_audio_bytes_eng_only
-from app.auth_middleware import get_current_user, require_student
+from app.auth_middleware import get_current_user, require_student, require_admin_or_teacher_or_student
 import os
 
 router = APIRouter(tags=["Stage 4 - Exercise 2 (Mock Interview)"])
@@ -39,7 +39,7 @@ class AudioEvaluationRequest(BaseModel):
     description="Retrieve all available mock interview questions for Stage 4 Exercise 2",
     tags=["Stage 4 - Exercise 2 (Mock Interview)"]
 )
-async def get_interview_questions(current_user: Dict[str, Any] = Depends(require_student)):
+async def get_interview_questions(current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
     """Get all mock interview questions"""
     try:
         questions = load_interview_questions()
@@ -54,7 +54,7 @@ async def get_interview_questions(current_user: Dict[str, Any] = Depends(require
     description="Retrieve a specific mock interview question by ID",
     tags=["Stage 4 - Exercise 2 (Mock Interview)"]
 )
-async def get_interview_question(question_id: int, current_user: Dict[str, Any] = Depends(require_student)):
+async def get_interview_question(question_id: int, current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
     """Get a specific mock interview question by ID"""
     try:
         questions = load_interview_questions()
@@ -79,7 +79,7 @@ async def get_interview_question(question_id: int, current_user: Dict[str, Any] 
 )
 async def generate_interview_audio(
     question_id: int,
-    current_user: Dict[str, Any] = Depends(require_student)
+    current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)
 ):
     """Generate audio for a specific mock interview question"""
     try:
@@ -123,7 +123,7 @@ Also records progress tracking data in Supabase database.
 )
 async def evaluate_mock_interview(
     request: AudioEvaluationRequest,
-    current_user: Dict[str, Any] = Depends(require_student)
+    current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)
 ):
     """Evaluate user's mock interview response"""
     try:
@@ -228,7 +228,7 @@ async def evaluate_mock_interview(
 )
 async def get_mock_interview_progress(
     user_id: str,
-    current_user: Dict[str, Any] = Depends(require_student)
+    current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)
 ):
     """Get user's mock interview progress"""
     
@@ -259,7 +259,7 @@ async def get_mock_interview_progress(
 )
 async def get_current_mock_interview_question(
     user_id: str,
-    current_user: Dict[str, Any] = Depends(require_student)
+    current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)
 ):
     """Get current mock interview question for user"""
     

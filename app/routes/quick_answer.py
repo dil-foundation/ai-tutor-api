@@ -8,7 +8,7 @@ from app.services.stt import transcribe_audio_bytes_eng_only
 from app.services.feedback import evaluate_response_ex2_stage2
 from app.supabase_client import SupabaseProgressTracker
 from app.supabase_client import progress_tracker
-from app.auth_middleware import get_current_user, require_student
+from app.auth_middleware import get_current_user, require_student, require_admin_or_teacher_or_student
 import base64
 
 router = APIRouter(tags=["quick-answer"])
@@ -44,7 +44,7 @@ class QuestionResponse(BaseModel):
     sentence_structure: str
 
 @router.get("/quick-answer-questions")
-async def get_all_questions(current_user: Dict[str, Any] = Depends(require_student)):
+async def get_all_questions(current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
     """Get all quick answer questions"""
     try:
         questions = load_questions()
@@ -55,7 +55,7 @@ async def get_all_questions(current_user: Dict[str, Any] = Depends(require_stude
         raise HTTPException(status_code=500, detail="Failed to load questions")
 
 @router.get("/quick-answer-questions/{question_id}")
-async def get_question_by_id(question_id: int, current_user: Dict[str, Any] = Depends(require_student)):
+async def get_question_by_id(question_id: int, current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
     """Get a specific question by ID"""
     try:
         questions = load_questions()
@@ -74,7 +74,7 @@ async def get_question_by_id(question_id: int, current_user: Dict[str, Any] = De
         raise HTTPException(status_code=500, detail="Failed to get question")
 
 @router.post("/quick-answer/{question_id}")
-async def generate_question_audio(question_id: int, current_user: Dict[str, Any] = Depends(require_student)):
+async def generate_question_audio(question_id: int, current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
     """Generate TTS audio for a specific question"""
     try:
         questions = load_questions()
@@ -111,7 +111,7 @@ async def generate_question_audio(question_id: int, current_user: Dict[str, Any]
 @router.post("/evaluate-quick-answer")
 async def evaluate_quick_answer_audio(
     request: AudioEvaluationRequest,
-    current_user: Dict[str, Any] = Depends(require_student)
+    current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)
 ):
     """Evaluate user's audio recording for quick answer exercise"""
     print(f"🔄 [QUICK_ANSWER] POST /evaluate-quick-answer called")

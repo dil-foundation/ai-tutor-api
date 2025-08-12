@@ -7,7 +7,7 @@ from app.services.feedback import evaluate_response_ex1_stage4
 from app.services.stt import transcribe_audio_bytes_eng_only
 from app.services.tts import synthesize_speech_exercises
 from app.supabase_client import progress_tracker
-from app.auth_middleware import get_current_user, require_student
+from app.auth_middleware import get_current_user, require_student,require_admin_or_teacher_or_student
 import os
 
 router = APIRouter()
@@ -20,9 +20,6 @@ class AudioEvaluationRequest(BaseModel):
     user_id: str
     time_spent_seconds: int
     urdu_used: bool
-
-class AudioGenerationRequest(BaseModel):
-    topic_id: int
 
 # Load topics data
 def load_topics():
@@ -48,7 +45,7 @@ def get_topic_by_id(topic_id: int):
     description="Retrieve all available abstract topics for Stage 4 Exercise 1",
     tags=["Stage 4 - Exercise 1 (Abstract Topic Monologue)"]
 )
-async def get_abstract_topics(current_user: Dict[str, Any] = Depends(require_student)):
+async def get_abstract_topics(current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
     """Get all abstract topics"""
     print("🔄 [API] GET /abstract-topics endpoint called")
     
@@ -70,7 +67,7 @@ async def get_abstract_topics(current_user: Dict[str, Any] = Depends(require_stu
     description="Retrieve a specific abstract topic by ID",
     tags=["Stage 4 - Exercise 1 (Abstract Topic Monologue)"]
 )
-async def get_abstract_topic(topic_id: int, current_user: Dict[str, Any] = Depends(require_student)):
+async def get_abstract_topic(topic_id: int, current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
     """Get a specific abstract topic by ID"""
     print(f"🔄 [API] GET /abstract-topics/{topic_id} endpoint called")
     
@@ -95,16 +92,16 @@ async def get_abstract_topic(topic_id: int, current_user: Dict[str, Any] = Depen
     tags=["Stage 4 - Exercise 1 (Abstract Topic Monologue)"]
 )
 async def generate_abstract_topic_audio(
-    request: AudioGenerationRequest,
-    current_user: Dict[str, Any] = Depends(require_student)
+    topic_id: int,
+    current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)
 ):
     """Generate audio for an abstract topic"""
-    print(f"🔄 [API] POST /abstract-topic/{request.topic_id} endpoint called")
+    print(f"🔄 [API] POST /abstract-topic/{topic_id} endpoint called")
     
     try:
-        topic = get_topic_by_id(request.topic_id)
+        topic = get_topic_by_id(topic_id)
         if not topic:
-            print(f"❌ [API] Topic {request.topic_id} not found")
+            print(f"❌ [API] Topic {topic_id} not found")
             raise HTTPException(status_code=404, detail="Topic not found")
         
         # Create audio text from topic
@@ -125,7 +122,7 @@ async def generate_abstract_topic_audio(
         audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
         
         return {
-            "topic_id": request.topic_id,
+            "topic_id": topic_id,
             "topic": topic['topic'],
             "audio_base64": audio_base64,
             "message": "Audio generated successfully"
@@ -148,7 +145,7 @@ Also records progress tracking data in Supabase database.
 )
 async def evaluate_abstract_topic(
     request: AudioEvaluationRequest,
-    current_user: Dict[str, Any] = Depends(require_student)
+    current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)
 ):
     """Evaluate user's response for abstract topic monologue"""
     print(f"🔄 [API] POST /evaluate-abstract-topic endpoint called")
@@ -358,7 +355,7 @@ async def evaluate_abstract_topic(
 )
 async def get_abstract_topic_progress(
     user_id: str,
-    current_user: Dict[str, Any] = Depends(require_student)
+    current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)
 ):
     """Get user's abstract topic progress"""
     print(f"🔄 [API] GET /abstract-topic-progress/{user_id} endpoint called")
@@ -407,7 +404,7 @@ async def get_abstract_topic_progress(
 )
 async def get_abstract_topic_current_topic(
     user_id: str,
-    current_user: Dict[str, Any] = Depends(require_student)
+    current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)
 ):
     """Get user's current abstract topic"""
     print(f"🔄 [API] GET /abstract-topic-current-topic/{user_id} endpoint called")

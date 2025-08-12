@@ -2084,7 +2084,7 @@ async def _get_comprehensive_student_details(user_id: str) -> Optional[Dict[str,
             return None
         
         # 2. Progress overview
-        progress_overview = await _get_student_progress_overview(user_id)
+        progress_overview = await _get_single_student_progress_overview(user_id)
         
         # 3. Stage progress for all stages
         stage_progress = await _get_student_stage_progress(user_id)
@@ -2229,9 +2229,9 @@ async def _get_student_basic_info(user_id: str) -> Optional[Dict[str, Any]]:
         print(f"❌ [TEACHER] Error getting student basic info: {str(e)}")
         return None
 
-async def _get_student_progress_overview(user_id: str) -> Optional[Dict[str, Any]]:
+async def _get_single_student_progress_overview(user_id: str) -> Optional[Dict[str, Any]]:
     """
-    Get student progress overview from ai_tutor_user_progress_summary
+    Get student progress overview from ai_tutor_user_progress_summary for a single student
     """
     try:
         result = supabase.table('ai_tutor_user_progress_summary').select('*').eq('user_id', user_id).execute()

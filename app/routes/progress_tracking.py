@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 import logging
 from app.supabase_client import progress_tracker
-from app.auth_middleware import get_current_user, require_student
+from app.auth_middleware import get_current_user, require_student,require_admin_or_teacher_or_student
 from datetime import date
 
 logger = logging.getLogger(__name__)
@@ -43,7 +43,7 @@ class ComprehensiveProgressRequest(BaseModel):
 @router.post("/initialize-progress", response_model=ProgressResponse)
 async def initialize_user_progress(
     request: InitializeProgressRequest,
-    current_user: Dict[str, Any] = Depends(require_student)
+    current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)
 ):
     """Initialize user progress when they first start using the app"""
     print(f"🔄 [API] POST /initialize-progress called")
@@ -80,7 +80,7 @@ async def initialize_user_progress(
 @router.post("/record-topic-attempt", response_model=ProgressResponse)
 async def record_topic_attempt(
     request: TopicAttemptRequest,
-    current_user: Dict[str, Any] = Depends(require_student)
+    current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)
 ):
     """Record a topic attempt with detailed metrics"""
     print(f"🔄 [API] POST /record-topic-attempt called")
@@ -148,7 +148,7 @@ async def record_topic_attempt(
 @router.get("/user-progress/{user_id}", response_model=ProgressResponse)
 async def get_user_progress(
     user_id: str,
-    current_user: Dict[str, Any] = Depends(require_student)
+    current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)
 ):
     """Get comprehensive user progress data"""
     print(f"🔄 [API] GET /user-progress/{user_id} called")
@@ -191,7 +191,7 @@ async def get_user_progress(
 @router.post("/check-unlocks/{user_id}", response_model=ProgressResponse)
 async def check_content_unlocks(
     user_id: str,
-    current_user: Dict[str, Any] = Depends(require_student)
+    current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)
 ):
     """Check if user should unlock new content based on progress"""
     print(f"🔄 [API] POST /check-unlocks/{user_id} called")
@@ -233,7 +233,7 @@ async def check_content_unlocks(
 @router.post("/get-current-topic", response_model=ProgressResponse)
 async def get_current_topic_for_exercise(
     request: GetCurrentTopicRequest,
-    current_user: Dict[str, Any] = Depends(require_student)
+    current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)
 ):
     """Get the current topic_id for a specific exercise"""
     print(f"🔄 [API] POST /get-current-topic called")
@@ -275,7 +275,7 @@ async def get_current_topic_for_exercise(
 @router.post("/comprehensive-progress", response_model=ProgressResponse)
 async def get_comprehensive_progress(
     request: ComprehensiveProgressRequest,
-    current_user: Dict[str, Any] = Depends(require_student)
+    current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)
 ):
     """Get comprehensive progress data for the beautiful progress page"""
     print(f"🔄 [API] POST /comprehensive-progress called")
