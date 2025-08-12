@@ -21,9 +21,6 @@ class AudioEvaluationRequest(BaseModel):
     time_spent_seconds: int
     urdu_used: bool
 
-class AudioGenerationRequest(BaseModel):
-    scenario_id: int
-
 # Load scenarios data
 def load_scenarios():
     """Load problem-solving scenarios from JSON file"""
@@ -95,16 +92,16 @@ async def get_problem_solving_scenario(scenario_id: int, current_user: Dict[str,
     tags=["Stage 3 - Exercise 3 (Problem-Solving)"]
 )
 async def generate_problem_solving_audio(
-    request: AudioGenerationRequest,
+    scenario_id: int,
     current_user: Dict[str, Any] = Depends(require_student)
 ):
     """Generate audio for a problem-solving scenario"""
-    print(f"🔄 [API] POST /problem-solving/{request.scenario_id} endpoint called")
+    print(f"🔄 [API] POST /problem-solving/{scenario_id} endpoint called")
     
     try:
-        scenario = get_scenario_by_id(request.scenario_id)
+        scenario = get_scenario_by_id(scenario_id)
         if not scenario:
-            print(f"❌ [API] Scenario {request.scenario_id} not found")
+            print(f"❌ [API] Scenario {scenario_id} not found")
             raise HTTPException(status_code=404, detail="Scenario not found")
         
         # Create audio text from scenario
@@ -121,10 +118,15 @@ async def generate_problem_solving_audio(
         print(f"✅ [API] Generating audio for scenario: {scenario['title']}")
         
         # Generate audio using TTS service
-        audio_base64 = synthesize_speech_exercises(audio_text)
+        audio_content = await synthesize_speech_exercises(audio_text)
+        print(f"✅ [API] Audio content generated, size: {len(audio_content)} bytes")
+        
+        # Convert to base64 for React Native compatibility
+        audio_base64 = base64.b64encode(audio_content).decode('utf-8')
+        print(f"✅ [API] Audio converted to base64, length: {len(audio_base64)}")
         
         return {
-            "scenario_id": request.scenario_id,
+            "scenario_id": scenario_id,
             "title": scenario['title'],
             "audio_base64": audio_base64,
             "message": "Audio generated successfully"

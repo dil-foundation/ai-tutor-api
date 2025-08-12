@@ -21,9 +21,6 @@ class AudioEvaluationRequest(BaseModel):
     time_spent_seconds: int
     urdu_used: bool
 
-class AudioGenerationRequest(BaseModel):
-    topic_id: int
-
 # Load topics data
 def load_topics():
     """Load abstract topics from JSON file"""
@@ -95,16 +92,16 @@ async def get_abstract_topic(topic_id: int, current_user: Dict[str, Any] = Depen
     tags=["Stage 4 - Exercise 1 (Abstract Topic Monologue)"]
 )
 async def generate_abstract_topic_audio(
-    request: AudioGenerationRequest,
+    topic_id: int,
     current_user: Dict[str, Any] = Depends(require_student)
 ):
     """Generate audio for an abstract topic"""
-    print(f"🔄 [API] POST /abstract-topic/{request.topic_id} endpoint called")
+    print(f"🔄 [API] POST /abstract-topic/{topic_id} endpoint called")
     
     try:
-        topic = get_topic_by_id(request.topic_id)
+        topic = get_topic_by_id(topic_id)
         if not topic:
-            print(f"❌ [API] Topic {request.topic_id} not found")
+            print(f"❌ [API] Topic {topic_id} not found")
             raise HTTPException(status_code=404, detail="Topic not found")
         
         # Create audio text from topic
@@ -125,7 +122,7 @@ async def generate_abstract_topic_audio(
         audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
         
         return {
-            "topic_id": request.topic_id,
+            "topic_id": topic_id,
             "topic": topic['topic'],
             "audio_base64": audio_base64,
             "message": "Audio generated successfully"
