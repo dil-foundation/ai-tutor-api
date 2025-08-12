@@ -7,7 +7,7 @@ from app.services.feedback import evaluate_response_ex3_stage3
 from app.services.stt import transcribe_audio_bytes_eng_only
 from app.services.tts import synthesize_speech_exercises
 from app.supabase_client import progress_tracker
-from app.auth_middleware import get_current_user, require_student
+from app.auth_middleware import get_current_user, require_student, require_admin_or_teacher_or_student
 import os
 
 router = APIRouter()
@@ -45,7 +45,7 @@ def get_scenario_by_id(scenario_id: int):
     description="Retrieve all available problem-solving scenarios for Stage 3 Exercise 3",
     tags=["Stage 3 - Exercise 3 (Problem-Solving)"]
 )
-async def get_problem_solving_scenarios(current_user: Dict[str, Any] = Depends(require_student)):
+async def get_problem_solving_scenarios(current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
     """Get all problem-solving scenarios"""
     print("🔄 [API] GET /problem-solving-scenarios endpoint called")
     
@@ -67,7 +67,7 @@ async def get_problem_solving_scenarios(current_user: Dict[str, Any] = Depends(r
     description="Retrieve a specific problem-solving scenario by ID",
     tags=["Stage 3 - Exercise 3 (Problem-Solving)"]
 )
-async def get_problem_solving_scenario(scenario_id: int, current_user: Dict[str, Any] = Depends(require_student)):
+async def get_problem_solving_scenario(scenario_id: int, current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
     """Get a specific problem-solving scenario by ID"""
     print(f"🔄 [API] GET /problem-solving-scenarios/{scenario_id} endpoint called")
     
@@ -93,7 +93,7 @@ async def get_problem_solving_scenario(scenario_id: int, current_user: Dict[str,
 )
 async def generate_problem_solving_audio(
     scenario_id: int,
-    current_user: Dict[str, Any] = Depends(require_student)
+    current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)
 ):
     """Generate audio for a problem-solving scenario"""
     print(f"🔄 [API] POST /problem-solving/{scenario_id} endpoint called")
@@ -149,7 +149,7 @@ Also records progress tracking data in Supabase database.
 )
 async def evaluate_problem_solving(
     request: AudioEvaluationRequest,
-    current_user: Dict[str, Any] = Depends(require_student)
+    current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)
 ):
     """Evaluate user's response for problem-solving scenario"""
     print(f"🔄 [API] POST /evaluate-problem-solving endpoint called")
@@ -339,7 +339,7 @@ async def evaluate_problem_solving(
 )
 async def get_problem_solving_progress(
     user_id: str,
-    current_user: Dict[str, Any] = Depends(require_student)
+    current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)
 ):
     """Get user's problem-solving progress"""
     print(f"🔄 [API] GET /problem-solving-progress/{user_id} endpoint called")
@@ -388,7 +388,7 @@ async def get_problem_solving_progress(
 )
 async def get_problem_solving_current_topic(
     user_id: str,
-    current_user: Dict[str, Any] = Depends(require_student)
+    current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)
 ):
     """Get user's current problem-solving topic"""
     print(f"🔄 [API] GET /problem-solving-current-topic/{user_id} endpoint called")

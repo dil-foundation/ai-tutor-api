@@ -15,7 +15,7 @@ from app.services.feedback import evaluate_response_ex3_stage2
 from app.services.stt import transcribe_audio_bytes_eng_only
 from app.supabase_client import progress_tracker
 from app.redis_client import redis_client
-from app.auth_middleware import get_current_user, require_student
+from app.auth_middleware import get_current_user, require_student,require_admin_or_teacher_or_student
 import json
 import base64
 from typing import List, Dict, Any
@@ -26,7 +26,7 @@ router = APIRouter()
 async def get_roleplay_scenarios(
     user_id: str, 
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(require_student)
+    current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)
 ):
     """
     Get all available roleplay scenarios with completion status for the user
@@ -96,7 +96,7 @@ async def get_roleplay_scenarios(
         raise HTTPException(status_code=500, detail=f"Failed to get scenarios: {str(e)}")
 
 @router.get("/roleplay-scenarios/{scenario_id}")
-async def get_scenario_by_id(scenario_id: int, current_user: Dict[str, Any] = Depends(require_student)):
+async def get_scenario_by_id(scenario_id: int, current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
     """
     Get specific scenario by ID
     """
@@ -119,7 +119,7 @@ async def get_scenario_by_id(scenario_id: int, current_user: Dict[str, Any] = De
 @router.post("/roleplay/start", response_model=RoleplayResponse)
 async def start_roleplay(
     request: RoleplayStartRequest,
-    current_user: Dict[str, Any] = Depends(require_student)
+    current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)
 ):
     """
     Start a new roleplay session for a specific scenario
@@ -172,7 +172,7 @@ async def start_roleplay(
 @router.post("/roleplay/respond", response_model=RoleplayResponse)
 async def continue_roleplay(
     reply: RoleplayUserReply,
-    current_user: Dict[str, Any] = Depends(require_student)
+    current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)
 ):
     """
     Continue roleplay conversation with user input (text or audio)
@@ -249,7 +249,7 @@ async def continue_roleplay(
         raise HTTPException(status_code=500, detail=f"Failed to continue roleplay: {str(e)}")
 
 @router.get("/roleplay/history/{session_id}", response_model=ConversationHistoryResponse)
-async def get_roleplay_history(session_id: str, current_user: Dict[str, Any] = Depends(require_student)):
+async def get_roleplay_history(session_id: str, current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
     """
     Get conversation history for a session
     """
@@ -293,7 +293,7 @@ async def get_roleplay_history(session_id: str, current_user: Dict[str, Any] = D
 async def evaluate_roleplay_session(
     request: RoleplayEvaluationRequest, 
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(require_student)
+    current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)
 ):
     """
     Evaluate a completed roleplay session

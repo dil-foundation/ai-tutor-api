@@ -10,7 +10,7 @@ from app.services.tts import synthesize_speech, synthesize_speech_exercises
 from app.services.stt import transcribe_audio_bytes_eng_only
 from app.services.feedback import evaluate_response_ex2_stage6
 from app.supabase_client import progress_tracker
-from app.auth_middleware import get_current_user, require_student
+from app.auth_middleware import get_current_user, require_student,require_admin_or_teacher_or_student
 
 router = APIRouter()
 
@@ -41,7 +41,7 @@ def get_scenario_by_id(scenario_id: int):
         return None
 
 @router.get("/sensitive-scenario-scenarios")
-async def get_all_scenarios(current_user: Dict[str, Any] = Depends(require_student)):
+async def get_all_scenarios(current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
     """Get all available scenarios for Sensitive Scenario exercise"""
     print("🔄 [API] GET /sensitive-scenario-scenarios endpoint called")
     try:
@@ -55,7 +55,7 @@ async def get_all_scenarios(current_user: Dict[str, Any] = Depends(require_stude
         raise HTTPException(status_code=500, detail=f"Failed to load scenarios: {str(e)}")
 
 @router.get("/sensitive-scenario-scenarios/{scenario_id}")
-async def get_scenario(scenario_id: int, current_user: Dict[str, Any] = Depends(require_student)):
+async def get_scenario(scenario_id: int, current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
     """Get a specific scenario by ID"""
     print(f"🔄 [API] GET /sensitive-scenario-scenarios/{scenario_id} endpoint called")
     try:
@@ -94,7 +94,7 @@ and returns the generated audio file as the response.
 """,
     tags=["Stage 6 - Exercise 2 (Sensitive Scenario)"]
 )
-async def sensitive_scenario(scenario_id: int, current_user: Dict[str, Any] = Depends(require_student)):
+async def sensitive_scenario(scenario_id: int, current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
     print(f"🔄 [API] POST /sensitive-scenario/{scenario_id} endpoint called")
     try:
         scenario_data = get_scenario_by_id(scenario_id)
@@ -131,7 +131,7 @@ Also records progress tracking data in Supabase database.
 )
 async def evaluate_sensitive_scenario(
     request: AudioEvaluationRequest,
-    current_user: Dict[str, Any] = Depends(require_student)
+    current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)
 ):
     print(f"🔄 [API] POST /evaluate-sensitive-scenario endpoint called")
     print(f"📝 [API] Request details: scenario_id={request.scenario_id}, filename={request.filename}")

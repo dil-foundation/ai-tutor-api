@@ -10,7 +10,7 @@ from app.services.tts import synthesize_speech, synthesize_speech_exercises
 from app.services.stt import transcribe_audio_bytes_eng_only
 from app.services.feedback import evaluate_response_ex1_stage3
 from app.supabase_client import progress_tracker
-from app.auth_middleware import get_current_user, require_student
+from app.auth_middleware import get_current_user, require_student, require_admin_or_teacher_or_student
 
 router = APIRouter()
 
@@ -41,7 +41,7 @@ def get_prompt_by_id(prompt_id: int):
         return None
 
 @router.get("/storytelling-prompts")
-async def get_all_prompts(current_user: Dict[str, Any] = Depends(require_student)):
+async def get_all_prompts(current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
     """Get all available prompts for Storytelling exercise"""
     print("🔄 [API] GET /storytelling-prompts endpoint called")
     try:
@@ -55,7 +55,7 @@ async def get_all_prompts(current_user: Dict[str, Any] = Depends(require_student
         raise HTTPException(status_code=500, detail=f"Failed to load prompts: {str(e)}")
 
 @router.get("/storytelling-prompts/{prompt_id}")
-async def get_prompt(prompt_id: int, current_user: Dict[str, Any] = Depends(require_student)):
+async def get_prompt(prompt_id: int, current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
     """Get a specific prompt by ID"""
     print(f"🔄 [API] GET /storytelling-prompts/{prompt_id} endpoint called")
     try:
@@ -95,7 +95,7 @@ and returns the generated audio file as the response.
 """,
     tags=["Stage 3 - Exercise 1 (Storytelling)"]
 )
-async def storytelling(prompt_id: int, current_user: Dict[str, Any] = Depends(require_student)):
+async def storytelling(prompt_id: int, current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
     print(f"🔄 [API] POST /storytelling/{prompt_id} endpoint called")
     try:
         prompt_data = get_prompt_by_id(prompt_id)
@@ -132,7 +132,7 @@ Also records progress tracking data in Supabase database.
 )
 async def evaluate_storytelling(
     request: AudioEvaluationRequest,
-    current_user: Dict[str, Any] = Depends(require_student)
+    current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)
 ):
     print(f"🔄 [API] POST /evaluate-storytelling endpoint called")
     print(f"📝 [API] Request details: prompt_id={request.prompt_id}, filename={request.filename}")
