@@ -505,6 +505,88 @@ async def _calculate_engagement_change(time_range: str, current_engagement: floa
         print(f"⚠️ [TEACHER] Error calculating engagement change: {str(e)}")
         return "+0% from last week"
 
+async def _get_low_engagement_student_details(
+    recent_activity_data: List[Dict[str, Any]], 
+    total_users_data: List[Dict[str, Any]], 
+    start_date: Optional[date], 
+    end_date: Optional[date]
+) -> List[Dict[str, Any]]:
+    """
+    Get detailed information about students with low engagement
+    """
+    try:
+        print(f"🔄 [TEACHER] Getting low engagement student details...")
+        
+        # Create set of active user IDs for quick lookup
+        active_user_ids = set([record['user_id'] for record in recent_activity_data]) if recent_activity_data else set()
+        
+        # Find students with low engagement (not in active users)
+        low_engagement_students = []
+        
+        for user_record in total_users_data:
+            user_id = user_record['user_id']
+            
+            # Skip if user has recent activity
+            if user_id in active_user_ids:
+                continue
+            
+            # Get student progress information
+            progress_result = supabase.table('ai_tutor_user_progress_summary').select(
+                'current_stage, current_exercise, overall_progress_percentage, last_activity_date, total_time_spent_minutes'
+            ).eq('user_id', user_id).execute()
+            
+            if not progress_result.data:
+                continue
+                
+            progress_data = progress_result.data[0]
+            
+            # Get student name
+            student_name = await _get_student_name(user_id)
+            
+            # Get current lesson name
+            current_stage = progress_data.get('current_stage', 1)
+            current_lesson = _get_current_lesson_name(current_stage)
+            
+            # Calculate days since last activity
+            last_activity = progress_data.get('last_activity_date')
+            days_inactive = 0
+            
+            if last_activity:
+                try:
+                    last_activity_date = datetime.strptime(last_activity, '%Y-%m-%d').date()
+                    days_inactive = (date.today() - last_activity_date).days
+                except (ValueError, TypeError):
+                    days_inactive = 0
+            
+            # Get engagement metrics
+            total_time_minutes = progress_data.get('total_time_spent_minutes', 0)
+            progress_percentage = progress_data.get('overall_progress_percentage', 0)
+            
+            # Create student detail object
+            student_detail = {
+                'user_id': user_id,
+                'student_name': student_name,
+                'current_stage': _get_stage_display_name(current_stage),
+                'current_lesson': current_lesson,
+                'days_inactive': days_inactive,
+                'progress_percentage': round(progress_percentage, 1),
+                'total_time_minutes': total_time_minutes,
+                'last_activity': last_activity or 'Unknown'
+            }
+            
+            low_engagement_students.append(student_detail)
+        
+        # Sort by days inactive (highest first) and then by progress percentage (lowest first)
+        low_engagement_students.sort(key=lambda x: (x['days_inactive'], -x['progress_percentage']), reverse=True)
+        
+        print(f"✅ [TEACHER] Found {len(low_engagement_students)} low engagement students with details")
+        return low_engagement_students
+        
+    except Exception as e:
+        print(f"❌ [TEACHER] Error getting low engagement student details: {str(e)}")
+        logger.error(f"Error getting low engagement student details: {str(e)}")
+        return []
+
 def _get_time_period_label(time_range: str) -> str:
     """Get time period label for display"""
     if time_range == "today":
@@ -987,9 +1069,11 @@ async def _get_high_retry_students(stage_id: Optional[int], retry_threshold: int
 
 async def _get_low_engagement_insight(start_date: Optional[date], end_date: Optional[date]) -> Dict[str, Any]:
     """
-    Get low engagement insight (POSSIBLE - using daily learning analytics)
+    Get low engagement insight with detailed student information (POSSIBLE - using daily learning analytics)
     """
     try:
+        print(f"🔄 [TEACHER] Calculating low engagement insight...")
+        
         # Get students with low engagement (no activity in last 7 days)
         seven_days_ago = (date.today() - timedelta(days=7)).isoformat()
         
@@ -1020,11 +1104,20 @@ async def _get_low_engagement_insight(start_date: Optional[date], end_date: Opti
         engagement_rate = (active_users / total_users * 100) if total_users > 0 else 0
         
         if engagement_rate < 50:  # Threshold for low engagement
+            # Get detailed information about low engagement students
+            low_engagement_details = await _get_low_engagement_student_details(
+                recent_activity_result.data, 
+                total_users_result.data,
+                start_date, 
+                end_date
+            )
+            
             return {
                 "has_alert": True,
                 "message": f"Low engagement detected: {low_engagement_users} inactive students",
                 "affected_students": low_engagement_users,
-                "engagement_rate": round(engagement_rate, 1)
+                "engagement_rate": round(engagement_rate, 1),
+                "details": low_engagement_details
             }
         else:
             return {
@@ -1035,6 +1128,7 @@ async def _get_low_engagement_insight(start_date: Optional[date], end_date: Opti
             
     except Exception as e:
         print(f"⚠️ [TEACHER] Error calculating low engagement insight: {str(e)}")
+        logger.error(f"Error calculating low engagement insight: {str(e)}")
         return {
             "has_alert": False,
             "message": "Error calculating engagement insight",
