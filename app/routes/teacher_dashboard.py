@@ -2042,14 +2042,15 @@ async def _get_student_basic_info(user_id: str) -> Optional[Dict[str, Any]]:
     Get basic student information from profiles table and progress summary
     """
     try:
-        # Try to get from user_profiles table first
+        # Try to get from profiles table first
         try:
             profile_result = supabase.table('profiles').select(
-                'id, display_name, first_name, last_name, email, phone, role'
+                'id, first_name, last_name, email, role'
             ).eq('id', user_id).execute()
             
             if profile_result.data and len(profile_result.data) > 0:
                 profile = profile_result.data[0]
+                print(f"✅ [TEACHER] Found profile for {user_id}: {profile}")
                 
                 # Get progress data for activity dates
                 progress_result = supabase.table('ai_tutor_user_progress_summary').select(
@@ -2058,17 +2059,19 @@ async def _get_student_basic_info(user_id: str) -> Optional[Dict[str, Any]]:
                 
                 progress_data = progress_result.data[0] if progress_result.data else {}
                 
-                # Create display name
-                if profile.get('display_name') and profile['display_name'].strip():
-                    student_name = profile['display_name']
-                elif profile.get('first_name') and profile.get('last_name') and profile['first_name'].strip() and profile['last_name'].strip():
+                # Create student name from first_name and last_name
+                if profile.get('first_name') and profile.get('last_name') and profile['first_name'].strip() and profile['last_name'].strip():
                     student_name = f"{profile['first_name']} {profile['last_name']}"
+                    print(f"✅ [TEACHER] Using full name: {student_name}")
                 elif profile.get('first_name') and profile['first_name'].strip():
                     student_name = profile['first_name']
+                    print(f"✅ [TEACHER] Using first name only: {student_name}")
                 elif profile.get('last_name') and profile['last_name'].strip():
                     student_name = profile['last_name']
+                    print(f"✅ [TEACHER] Using last name only: {student_name}")
                 else:
                     student_name = profile.get('email', f"Student {user_id[:8]}...")
+                    print(f"⚠️ [TEACHER] Using fallback name: {student_name}")
 
                 # Handle date formatting safely
                 first_activity = progress_data.get('first_activity_date')
@@ -2082,25 +2085,29 @@ async def _get_student_basic_info(user_id: str) -> Optional[Dict[str, Any]]:
                     "user_id": user_id,
                     "student_name": student_name,
                     "email": profile.get('email', ''),
-                    "phone": profile.get('phone'),
                     "role": profile.get('role', 'student'),
                     "first_activity_date": first_activity_str,
                     "last_activity_date": last_activity_str
                 }
+            else:
+                print(f"⚠️ [TEACHER] No profile data found for {user_id}")
                 
         except Exception as profile_error:
             print(f"⚠️ [TEACHER] Profiles table error for {user_id}: {str(profile_error)}")
         
         # Fallback: get from progress summary only
+        print(f"🔄 [TEACHER] Using fallback method for {user_id}")
         progress_result = supabase.table('ai_tutor_user_progress_summary').select(
             'user_id, first_activity_date, last_activity_date'
         ).eq('user_id', user_id).execute()
         
         if progress_result.data and len(progress_result.data) > 0:
             progress_data = progress_result.data[0]
+            print(f"✅ [TEACHER] Found progress data for {user_id}: {progress_data}")
             
             # Create fallback name
             fallback_name = await _create_fallback_student_name(user_id)
+            print(f"✅ [TEACHER] Created fallback name: {fallback_name}")
 
             # Handle date formatting safely for fallback
             first_activity = progress_data.get('first_activity_date')
@@ -2119,6 +2126,8 @@ async def _get_student_basic_info(user_id: str) -> Optional[Dict[str, Any]]:
                 "first_activity_date": first_activity_str,
                 "last_activity_date": last_activity_str
             }
+        else:
+            print(f"⚠️ [TEACHER] No progress data found for {user_id}")
         
         return None
         
