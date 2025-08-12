@@ -597,78 +597,200 @@ async def _get_most_accessed_lessons(limit: int = 5, time_range: str = "all_time
 async def _get_practice_stage_performance(time_range: str = "all_time") -> List[Dict[str, Any]]:
     """
     Get practice stage performance data for bar chart with time range filtering
+    Always returns all 6 stages, even if some have no data
+    Uses real performance calculations based on multiple metrics:
+    - Completion rates
+    - Average scores
+    - Time engagement
+    - Maturity progression
+    - Exercise mastery
     """
     try:
-        print(f"🔄 [ADMIN] Calculating practice stage performance for time range: {time_range}...")
+        print(f"🔄 [ADMIN] Calculating REAL practice stage performance for time range: {time_range}...")
         
         start_date, end_date = _get_date_range(time_range)
         
-        # Get total users count with time filtering
-        if start_date and end_date:
-            total_users_result = supabase.table('ai_tutor_user_progress_summary').select(
-                'user_id'
-            ).gte('updated_at', start_date.isoformat()).lte('updated_at', end_date.isoformat()).execute()
-            total_users = len(total_users_result.data) if total_users_result.data else 0
-        else:
-            total_users_result = supabase.table('ai_tutor_user_progress_summary').select('user_id', count='exact').execute()
-            total_users = total_users_result.count if total_users_result.count is not None else 0
+        # Define all possible stages (1-6) with their names
+        all_stages = {
+            1: "Basic Conversation Starters",
+            2: "Daily Routine Vocabulary", 
+            3: "Quick Response Practice",
+            4: "Roleplay Simulation",
+            5: "Storytelling",
+            6: "Group Dialogue"
+        }
+        
+        # Initialize stage data for all stages
+        stage_data = {}
+        for stage_id in range(1, 7):  # 1 to 6
+            stage_data[stage_id] = {
+                'stage_id': stage_id,
+                'stage_name': all_stages[stage_id],
+                'total_users': 0,
+                'completed_users': 0,
+                'total_progress': 0,
+                'total_average_score': 0,
+                'total_best_score': 0,
+                'total_time_spent': 0,
+                'total_attempts': 0,
+                'total_exercises_completed': 0,
+                'mature_users': 0,
+                'total_topic_attempts': 0,
+                'total_topic_scores': 0,
+                'completed_topics': 0
+            }
         
         # Get user stage progress data with time filtering
         if start_date and end_date:
             stage_progress_result = supabase.table('ai_tutor_user_stage_progress').select(
-                'stage_id, user_id, progress_percentage, completed'
+                'stage_id, user_id, progress_percentage, completed, average_score, best_score, '
+                'time_spent_minutes, attempts_count, exercises_completed, mature'
             ).gte('updated_at', start_date.isoformat()).lte('updated_at', end_date.isoformat()).execute()
         else:
             stage_progress_result = supabase.table('ai_tutor_user_stage_progress').select(
-                'stage_id, user_id, progress_percentage, completed'
+                'stage_id, user_id, progress_percentage, completed, average_score, best_score, '
+                'time_spent_minutes, attempts_count, exercises_completed, mature'
             ).execute()
         
-        if not stage_progress_result.data:
-            print(f"ℹ️ [ADMIN] No stage progress data found")
-            return []
+        # Get user topic progress data for more detailed performance metrics
+        if start_date and end_date:
+            topic_progress_result = supabase.table('ai_tutor_user_topic_progress').select(
+                'stage_id, user_id, score, completed, total_time_seconds'
+            ).gte('created_at', start_date.isoformat()).lte('created_at', end_date.isoformat()).execute()
+        else:
+            topic_progress_result = supabase.table('ai_tutor_user_topic_progress').select(
+                'stage_id, user_id, score, completed, total_time_seconds'
+            ).execute()
         
-        # Aggregate data by stage
-        stage_data = {}
-        for record in stage_progress_result.data:
-            stage_id = record.get('stage_id', 1)
-            progress_percentage = record.get('progress_percentage', 0)
-            completed = record.get('completed', False)
-            
-            if stage_id not in stage_data:
-                stage_data[stage_id] = {
-                    'stage_id': stage_id,
-                    'stage_name': f"Stage {stage_id}",
-                    'total_users': 0,
-                    'completed_users': 0,
-                    'total_progress': 0
-                }
-            
-            stage_data[stage_id]['total_users'] += 1
-            stage_data[stage_id]['total_progress'] += progress_percentage
-            if completed:
-                stage_data[stage_id]['completed_users'] += 1
+        # Aggregate stage progress data
+        if stage_progress_result.data:
+            for record in stage_progress_result.data:
+                stage_id = record.get('stage_id', 1)
+                progress_percentage = record.get('progress_percentage', 0)
+                completed = record.get('completed', False)
+                average_score = record.get('average_score', 0)
+                best_score = record.get('best_score', 0)
+                time_spent = record.get('time_spent_minutes', 0)
+                attempts = record.get('attempts_count', 0)
+                exercises_completed = record.get('exercises_completed', 0)
+                mature = record.get('mature', False)
+                
+                if stage_id in stage_data:
+                    stage_data[stage_id]['total_users'] += 1
+                    stage_data[stage_id]['total_progress'] += progress_percentage
+                    stage_data[stage_id]['total_average_score'] += average_score
+                    stage_data[stage_id]['total_best_score'] += best_score
+                    stage_data[stage_id]['total_time_spent'] += time_spent
+                    stage_data[stage_id]['total_attempts'] += attempts
+                    stage_data[stage_id]['total_exercises_completed'] += exercises_completed
+                    
+                    if completed:
+                        stage_data[stage_id]['completed_users'] += 1
+                    if mature:
+                        stage_data[stage_id]['mature_users'] += 1
         
-        # Calculate performance percentages and format
+        # Aggregate topic progress data for more granular performance metrics
+        if topic_progress_result.data:
+            for record in topic_progress_result.data:
+                stage_id = record.get('stage_id', 1)
+                score = record.get('score', 0)
+                completed = record.get('completed', False)
+                
+                if stage_id in stage_data:
+                    stage_data[stage_id]['total_topic_attempts'] += 1
+                    stage_data[stage_id]['total_topic_scores'] += score
+                    if completed:
+                        stage_data[stage_id]['completed_topics'] += 1
+        
+        # Calculate comprehensive performance percentages for all stages
         stage_performance = []
-        for stage_id, data in stage_data.items():
-            avg_progress = round(data['total_progress'] / data['total_users'], 1) if data['total_users'] > 0 else 0
-            completion_rate = round((data['completed_users'] / data['total_users'] * 100), 1) if data['total_users'] > 0 else 0
+        for stage_id in range(1, 7):  # Ensure all 6 stages are included
+            data = stage_data[stage_id]
             
-            # Use completion rate as performance percentage
-            performance_percentage = completion_rate
+            if data['total_users'] > 0:
+                # Calculate multiple performance metrics
+                completion_rate = (data['completed_users'] / data['total_users']) * 100
+                progress_rate = data['total_progress'] / data['total_users']
+                average_score_rate = data['total_average_score'] / data['total_users']
+                best_score_rate = data['total_best_score'] / data['total_users']
+                maturity_rate = (data['mature_users'] / data['total_users']) * 100
+                
+                # Calculate exercise completion rate
+                exercise_completion_rate = 0
+                if data['total_users'] > 0:
+                    # Each stage has 3 exercises, so max exercises = total_users * 3
+                    max_exercises = data['total_users'] * 3
+                    exercise_completion_rate = (data['total_exercises_completed'] / max_exercises) * 100 if max_exercises > 0 else 0
+                
+                # Calculate topic completion rate
+                topic_completion_rate = 0
+                if data['total_topic_attempts'] > 0:
+                    topic_completion_rate = (data['completed_topics'] / data['total_topic_attempts']) * 100
+                
+                # Calculate average topic score
+                average_topic_score = 0
+                if data['total_topic_attempts'] > 0:
+                    average_topic_score = data['total_topic_scores'] / data['total_topic_attempts']
+                
+                # Calculate engagement score (time and attempts)
+                engagement_score = 0
+                if data['total_users'] > 0:
+                    avg_time_per_user = data['total_time_spent'] / data['total_users']
+                    avg_attempts_per_user = data['total_attempts'] / data['total_users']
+                    # Normalize engagement (higher time and attempts = better engagement)
+                    engagement_score = min(100, (avg_time_per_user * 0.1 + avg_attempts_per_user * 2))
+                
+                # Calculate weighted performance percentage
+                # Weights: Completion (30%), Progress (20%), Scores (25%), Engagement (15%), Maturity (10%)
+                weighted_performance = (
+                    completion_rate * 0.30 +
+                    progress_rate * 0.20 +
+                    (average_score_rate + best_score_rate) / 2 * 0.25 +
+                    engagement_score * 0.15 +
+                    maturity_rate * 0.10
+                )
+                
+                performance_percentage = round(weighted_performance, 1)
+                
+            else:
+                # No users for this stage
+                performance_percentage = 0.0
+                completion_rate = 0.0
+                progress_rate = 0.0
+                average_score_rate = 0.0
+                best_score_rate = 0.0
+                maturity_rate = 0.0
+                exercise_completion_rate = 0.0
+                topic_completion_rate = 0.0
+                average_topic_score = 0.0
+                engagement_score = 0.0
             
             stage_performance.append({
                 'stage_id': stage_id,
                 'stage_name': data['stage_name'],
                 'performance_percentage': performance_percentage,
                 'user_count': data['total_users'],
-                'color': _get_stage_color(stage_id)
+                'color': _get_stage_color(stage_id),
+                # Additional detailed metrics for debugging/insights
+                'metrics': {
+                    'completion_rate': round(completion_rate, 1),
+                    'progress_rate': round(progress_rate, 1),
+                    'average_score': round(average_score_rate, 1),
+                    'best_score': round(best_score_rate, 1),
+                    'maturity_rate': round(maturity_rate, 1),
+                    'exercise_completion_rate': round(exercise_completion_rate, 1),
+                    'topic_completion_rate': round(topic_completion_rate, 1),
+                    'average_topic_score': round(average_topic_score, 1),
+                    'engagement_score': round(engagement_score, 1)
+                }
             })
         
-        # Sort by performance percentage descending
+        # Sort by performance percentage descending (stages with 0% will be at the end)
         sorted_stages = sorted(stage_performance, key=lambda x: x['performance_percentage'], reverse=True)
         
-        print(f"📊 [ADMIN] Practice stage performance calculated: {len(sorted_stages)} stages")
+        print(f"📊 [ADMIN] REAL Practice stage performance calculated: {len(sorted_stages)} stages")
+        print(f"📊 [ADMIN] Performance calculation uses: completion, progress, scores, engagement, maturity")
+        
         return sorted_stages
         
     except Exception as e:
