@@ -1108,6 +1108,7 @@ async def edit_message(
             raise HTTPException(status_code=404, detail="Message not found or not owned by you")
         
         message = result.data[0]
+        conversation_id = message['conversation_id']
         
         # Update message
         supabase_client.table('messages')\
@@ -1120,7 +1121,25 @@ async def edit_message(
             .execute()
         
         # Get updated message
-        return await get_message_details(message_id, current_user)
+        updated_message = await get_message_details(message_id, current_user)
+        
+        # Broadcast WebSocket event to all participants in the conversation
+        try:
+            edit_event = {
+                'type': 'message_edited',
+                'message': updated_message.dict(),
+                'conversation_id': conversation_id,
+                'timestamp': datetime.now().isoformat()
+            }
+            
+            await manager.broadcast_to_conversation(edit_event, conversation_id, current_user.id)
+            logger.info(f"✅ [EDIT_MESSAGE] Successfully broadcasted message_edited event for message {message_id} in conversation {conversation_id}")
+            
+        except Exception as broadcast_error:
+            logger.error(f"❌ [EDIT_MESSAGE] Error broadcasting message_edited event: {str(broadcast_error)}")
+            # Don't fail the request if broadcasting fails
+        
+        return updated_message
         
     except HTTPException:
         raise
@@ -1145,11 +1164,30 @@ async def delete_message(
         if not result.data:
             raise HTTPException(status_code=404, detail="Message not found or not owned by you")
         
+        message = result.data[0]
+        conversation_id = message['conversation_id']
+        
         # Soft delete
         supabase_client.table('messages')\
             .update({'is_deleted': True})\
             .eq('id', message_id)\
             .execute()
+        
+        # Broadcast WebSocket event to all participants in the conversation
+        try:
+            deletion_event = {
+                'type': 'message_deleted',
+                'message_id': message_id,
+                'conversation_id': conversation_id,
+                'timestamp': datetime.now().isoformat()
+            }
+            
+            await manager.broadcast_to_conversation(deletion_event, conversation_id, current_user.id)
+            logger.info(f"✅ [DELETE_MESSAGE] Successfully broadcasted message_deleted event for message {message_id} in conversation {conversation_id}")
+            
+        except Exception as broadcast_error:
+            logger.error(f"❌ [DELETE_MESSAGE] Error broadcasting message_deleted event: {str(broadcast_error)}")
+            # Don't fail the request if broadcasting fails
         
         return {"message": "Message deleted successfully"}
         
@@ -1691,7 +1729,7 @@ async def handle_websocket_message(websocket: WebSocket, user_id: str, data: dic
             await websocket.send_json({
                 'type': 'error',
                 'message': f'Unknown message type: {message_type}',
-                'supported_types': ['join_conversation', 'leave_conversation', 'typing_start', 'typing_stop', 'message_delivered', 'message_read', 'user_status_change', 'ping']
+                'supported_types': ['join_conversation', 'leave_conversation', 'typing_start', 'typing_stop', 'message_delivered', 'message_read', 'message_deleted', 'message_edited', 'user_status_change', 'ping']
             })
             
     except Exception as e:
