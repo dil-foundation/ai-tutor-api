@@ -6,6 +6,7 @@ import re
 client = OpenAI(api_key=OPENAI_API_KEY)
 
 
+
 def analyze_english_input_eng_only(user_text: str, conversation_stage: str, current_topic: str = None) -> dict:
     """
     Implements a multi-stage conversational AI for English learning.
@@ -40,7 +41,10 @@ You are a friendly, conversational English tutor AI. Your role is to engage in r
 **JSON Output:**
 {{
     "conversation_text": "<Your kind response, with correction if needed, and then options>",
-    "next_stage": "option_selection"
+    "next_stage": "option_selection",
+    "needs_correction": <true/false>,
+    "corrected_sentence": "<the corrected version of user's sentence, if correction needed>",
+    "correction_type": "<grammar|pronunciation|structure|none>"
 }}
 """
     elif conversation_stage == "option_selection":
@@ -49,14 +53,17 @@ You are a friendly, conversational English tutor AI. Your role is to engage in r
 1.  **Detect Choice:** Analyze the user's response to identify which option they chose (Vocabulary, Sentence Structure, Topic-based discussion, etc.).
 2.  **Formulate Transition:** Based on their choice, generate the appropriate transition message.
     *   If "Vocabulary": "Great! Let me help you learn vocabulary." -> next_stage: "vocabulary_learning"
-    *   If "Sentence Structure": "Great, talk to me about anything and I’ll help you correct the pronunciation." -> next_stage: "sentence_practice"
+    *   If "Sentence Structure": "Great, talk to me about anything and I'll help you correct the pronunciation." -> next_stage: "sentence_practice"
     *   If "Topic-based discussion": "Great, what topic would you like to discuss?" -> next_stage: "topic_discussion_prompt"
     *   If unclear, ask for clarification.
 
 **JSON Output:**
 {{
     "conversation_text": "<Your transition message>",
-    "next_stage": "<The next stage based on their choice>"
+    "next_stage": "<The next stage based on their choice>",
+    "needs_correction": <true/false>,
+    "corrected_sentence": "<the corrected version of user's sentence, if correction needed>",
+    "correction_type": "<grammar|pronunciation|structure|none>"
 }}
 """
     elif conversation_stage == "vocabulary_learning":
@@ -68,7 +75,10 @@ You are a friendly, conversational English tutor AI. Your role is to engage in r
 **JSON Output:**
 {{
     "conversation_text": "<Your vocabulary exercise prompt>",
-    "next_stage": "vocabulary_learning"
+    "next_stage": "vocabulary_learning",
+    "needs_correction": <true/false>,
+    "corrected_sentence": "<the corrected version of user's sentence, if correction needed>",
+    "correction_type": "<grammar|pronunciation|structure|none>"
 }}
 """
     elif conversation_stage == "sentence_practice":
@@ -83,7 +93,10 @@ You are a friendly, conversational English tutor AI. Your role is to engage in r
 **JSON Output:**
 {{
     "conversation_text": "<Your conversational response, with or without correction>",
-    "next_stage": "sentence_practice"
+    "next_stage": "sentence_practice",
+    "needs_correction": <true/false>,
+    "corrected_sentence": "<the corrected version of user's sentence, if correction needed>",
+    "correction_type": "<grammar|pronunciation|structure|none>"
 }}
 """
     elif conversation_stage == "topic_discussion_prompt":
@@ -96,7 +109,10 @@ You are a friendly, conversational English tutor AI. Your role is to engage in r
 {{
     "conversation_text": "<Your confirmation and first question>",
     "next_stage": "topic_discussion",
-    "extracted_topic": "<The topic you identified>"
+    "extracted_topic": "<The topic you identified>",
+    "needs_correction": <true/false>,
+    "corrected_sentence": "<the corrected version of user's sentence, if correction needed>",
+    "correction_type": "<grammar|pronunciation|structure|none>"
 }}
 """
     elif conversation_stage == "topic_discussion":
@@ -111,7 +127,10 @@ You are a friendly, conversational English tutor AI. Your role is to engage in r
 **JSON Output:**
 {{
     "conversation_text": "<Your on-topic conversational response, with or without correction>",
-    "next_stage": "topic_discussion"
+    "next_stage": "topic_discussion",
+    "needs_correction": <true/false>,
+    "corrected_sentence": "<the corrected version of user's sentence, if correction needed>",
+    "correction_type": "<grammar|pronunciation|structure|none>"
 }}
 """
     else: # Fallback / main_conversation
@@ -124,7 +143,10 @@ You are a friendly, conversational English tutor AI. Your role is to engage in r
 **JSON Output:**
 {{
     "conversation_text": "<Your conversational response>",
-    "next_stage": "main_conversation"
+    "next_stage": "main_conversation",
+    "needs_correction": <true/false>,
+    "corrected_sentence": "<the corrected version of user's sentence, if correction needed>",
+    "correction_type": "<grammar|pronunciation|structure|none>"
 }}
 """
 
@@ -139,6 +161,12 @@ You are a friendly, conversational English tutor AI. Your role is to engage in r
         output = response.choices[0].message.content.strip()
         print(f"✅ [ENGLISH_ONLY] GPT Raw Output: {output}")
         result = json.loads(output)
+        
+        # Ensure correction fields are present with defaults
+        result.setdefault("needs_correction", False)
+        result.setdefault("corrected_sentence", "")
+        result.setdefault("correction_type", "none")
+        
         return result
 
     except Exception as e:
@@ -146,7 +174,10 @@ You are a friendly, conversational English tutor AI. Your role is to engage in r
         # Fallback response
         return {
             "conversation_text": f"I'm having a little trouble at the moment, but I understood: '{user_text}'. Let's continue!",
-            "next_stage": conversation_stage # Maintain current stage on error
+            "next_stage": conversation_stage, # Maintain current stage on error
+            "needs_correction": False,
+            "corrected_sentence": "",
+            "correction_type": "none"
         }
 
 # --- Keep existing helper functions below if they are still needed by other parts of the app ---
@@ -165,7 +196,7 @@ Your feedback must always reflect a **formal yet friendly tone**, like a kind te
 Your task is to give **constructive, warm feedback** based only on the student's **spoken attempt** (not spelling or punctuation).  
 Your tone should reflect a **formal yet friendly, soft-spoken female teacher**, guiding the learner gently and supportively.
 
-Very Important: Do NOT comment on spelling, capitalization, or punctuation differences at all — ignore these completely. Treat “Where are you” and “where are you?” as identical if spoken that way.
+Very Important: Do NOT comment on spelling, capitalization, or punctuation differences at all — ignore these completely. Treat "Where are you" and "where are you?" as identical if spoken that way.
 ONLY focus on spoken words — pronunciation, clarity, missing or extra words, tone, and intonation.
 
 ONLY focus on what was heard — pronunciation, clarity, missing or extra words, tone, and intonation.  
@@ -181,7 +212,7 @@ Respond in **exactly 3 lines**, in this strict format:
 
 Pronunciation score: <percentage>%
 Tone & Intonation: بہترین / اچھا / درمیانہ / کمزور  
-Feedback: <2-3 short English sentences giving warm, encouraging guidance. Use simple, kind words like “Great job”, “Try again”, “Well done”, etc.>
+Feedback: <2-3 short English sentences giving warm, encouraging guidance. Use simple, kind words like "Great job", "Try again", "Well done", etc.>
 
 📋 **Scoring Guide** (internal logic — no need to output this):  
 - **70-85%** → Celebrate their success  
@@ -249,10 +280,10 @@ def get_fluency_feedback(user_text: str, expected_text: str) -> dict:
 You are an experienced prompt engineer acting as a **kind and encouraging Pakistani female Urdu-speaking teacher** helping a student learn to speak English fluently.
 Your feedback must always reflect a **formal yet friendly tone**, like a kind teacher speaking to a child.
 
-Your task is to give **constructive, warm feedback** in **Urdu script**, based only on the student’s **spoken attempt** (not spelling or punctuation).  
+Your task is to give **constructive, warm feedback** in **Urdu script**, based only on the student's **spoken attempt** (not spelling or punctuation).  
 Your tone should reflect a **formal yet friendly, soft-spoken female teacher**, guiding the learner gently and supportively.
 
-Very Important: Do NOT comment on spelling, capitalization, or punctuation differences at all — ignore these completely. Treat “Where are you” and “where are you?” as identical if spoken that way.
+Very Important: Do NOT comment on spelling, capitalization, or punctuation differences at all — ignore these completely. Treat "Where are you" and "where are you?" as identical if spoken that way.
 ONLY focus on spoken words — pronunciation, clarity, missing or extra words, tone, and intonation.
 
 ONLY focus on what was heard — pronunciation, clarity, missing or extra words, tone, and intonation.  
@@ -276,7 +307,7 @@ Feedback: <2-3 short Urdu sentences giving warm, encouraging guidance. Use simpl
 - **30–60%** → Gently guide and motivate  
 - **0–30%** → Kindly encourage retry with clearer pronunciation
 
-Now evaluate the student’s speaking attempt:
+Now evaluate the student's speaking attempt:
 
 **Expected Sentence:** "{expected_text}"  
 **Student's Attempt:** "{user_text}"  
@@ -325,7 +356,6 @@ Remember:
             "tone_intonation": "کمزور",
             "feedback": "آئیے دوبارہ کوشش کرتے ہیں۔ صاف صاف بولیں۔"                  
         }
-
 
 def evaluate_response(expected: str, actual: str) -> dict:
     """

@@ -10,7 +10,7 @@ from app.services.tts import synthesize_speech,synthesize_speech_exercises
 from app.services.stt import transcribe_audio_bytes_eng_only
 from app.services.feedback import evaluate_response_ex1_stage1
 from app.supabase_client import progress_tracker
-from app.auth_middleware import get_current_user, require_student,require_admin_or_teacher_or_student
+from app.auth_middleware import get_current_user, require_student
 router = APIRouter()
 
 PHRASES_FILE = os.path.join(os.path.dirname(__file__), '..', 'data', 'repeat_after_me_phrases.json')
@@ -40,8 +40,114 @@ def get_phrase_by_id(phrase_id: int):
         return None
 
 
+async def check_exercise_completion(user_id: str) -> dict:
+    """Check if user has completed the full Repeat After Me exercise (Stage 1, Exercise 1)"""
+    print(f"🔍 [COMPLETION] Checking exercise completion for user: {user_id}")
+    
+    try:
+        # Get total phrases count
+        total_phrases = 0
+        try:
+            with open(PHRASES_FILE, 'r', encoding='utf-8') as f:
+                phrases = json.load(f)
+                total_phrases = len(phrases)
+                print(f"📊 [COMPLETION] Total phrases available: {total_phrases}")
+        except Exception as e:
+            print(f"❌ [COMPLETION] Error reading phrases file: {str(e)}")
+            total_phrases = 50  # Default fallback
+        
+        # Get user's progress for Stage 1 Exercise 1
+        progress_result = await progress_tracker.get_user_topic_progress(
+            user_id=user_id,
+            stage_id=1,
+            exercise_id=1
+        )
+        
+        if not progress_result["success"]:
+            print(f"❌ [COMPLETION] Failed to get progress: {progress_result.get('error')}")
+            return {
+                "exercise_completed": False,
+                "progress_percentage": 0,
+                "completed_topics": 0,
+                "total_topics": total_phrases,
+                "current_topic_id": 1,
+                "error": progress_result.get("error", "Failed to get progress")
+            }
+        
+        # Get current topic information
+        current_topic_result = await progress_tracker.get_current_topic_for_exercise(
+            user_id=user_id,
+            stage_id=1,
+            exercise_id=1
+        )
+        
+        if not current_topic_result["success"]:
+            print(f"❌ [COMPLETION] Failed to get current topic: {current_topic_result.get('error')}")
+            return {
+                "exercise_completed": False,
+                "progress_percentage": 0,
+                "completed_topics": 0,
+                "total_topics": total_phrases,
+                "current_topic_id": 1,
+                "error": current_topic_result.get("error", "Failed to get current topic")
+            }
+        
+        # Extract progress data
+        topic_progress = progress_result.get("data", [])
+        current_topic_id = current_topic_result.get("current_topic_id", 1)
+        is_exercise_completed = current_topic_result.get("is_completed", False)
+        
+        # Calculate completion metrics
+        completed_topics = len(topic_progress) if topic_progress else 0
+        progress_percentage = (completed_topics / total_phrases) * 100 if total_phrases > 0 else 0
+        
+        # Determine if exercise is truly completed
+        # Exercise is completed ONLY when ALL topics are completed (50 out of 50)
+        # This means completed_topics must equal total_phrases exactly
+        exercise_completed = completed_topics >= total_phrases and completed_topics > 0
+        
+        print(f"📊 [COMPLETION] Completion status calculated:")
+        print(f"   - Total phrases: {total_phrases}")
+        print(f"   - Completed topics: {completed_topics}")
+        print(f"   - Current topic ID: {current_topic_id}")
+        print(f"   - Progress percentage: {progress_percentage:.1f}%")
+        print(f"   - Exercise completed: {exercise_completed}")
+        
+        # Additional logging for completion logic
+        if completed_topics >= total_phrases:
+            print(f"🎉 [COMPLETION] All {total_phrases} topics completed! Exercise is finished!")
+        elif completed_topics > 0:
+            print(f"📈 [COMPLETION] {completed_topics}/{total_phrases} topics completed. Exercise in progress...")
+        else:
+            print(f"🆕 [COMPLETION] No topics completed yet. Exercise just started.")
+        
+        return {
+            "exercise_completed": exercise_completed,
+            "progress_percentage": round(progress_percentage, 1),
+            "completed_topics": completed_topics,
+            "total_topics": total_phrases,
+            "current_topic_id": current_topic_id,
+            "stage_id": 1,
+            "exercise_id": 1,
+            "exercise_name": "Repeat After Me",
+            "stage_name": "Stage 1 – A1 Beginner",
+            "completion_date": topic_progress[-1].get("created_at") if topic_progress and exercise_completed else None
+        }
+        
+    except Exception as e:
+        print(f"❌ [COMPLETION] Error checking exercise completion: {str(e)}")
+        return {
+            "exercise_completed": False,
+            "progress_percentage": 0,
+            "completed_topics": 0,
+            "total_topics": 50,
+            "current_topic_id": 1,
+            "error": f"Failed to check completion status: {str(e)}"
+        }
+
+
 @router.get("/phrases")
-async def get_all_phrases(current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
+async def get_all_phrases(current_user: Dict[str, Any] = Depends(require_student)):
     """Get all available phrases for Repeat After Me exercise"""
     print("🔄 [API] GET /phrases endpoint called")
     try:
@@ -55,7 +161,7 @@ async def get_all_phrases(current_user: Dict[str, Any] = Depends(require_admin_o
         raise HTTPException(status_code=500, detail=f"Failed to load phrases: {str(e)}")
 
 @router.get("/phrases/{phrase_id}")
-async def get_phrase(phrase_id: int, current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
+async def get_phrase(phrase_id: int, current_user: Dict[str, Any] = Depends(require_student)):
     """Get a specific phrase by ID"""
     print(f"🔄 [API] GET /phrases/{phrase_id} endpoint called")
     try:
@@ -86,7 +192,7 @@ and returns the generated audio file as the response.
 """,
     tags=["Stage 1 - Exercise 1 (Repeat After Me)"]
 )
-async def repeat_after_me(phrase_id: int, current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
+async def repeat_after_me(phrase_id: int, current_user: Dict[str, Any] = Depends(require_student)):
     print(f"🔄 [API] POST /repeat-after-me/{phrase_id} endpoint called")
     try:
         phrase_data = get_phrase_by_id(phrase_id)
@@ -124,7 +230,7 @@ Also records progress tracking data in Supabase database.
 )
 async def evaluate_audio(
     request: AudioEvaluationRequest,
-    current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)
+    current_user: Dict[str, Any] = Depends(require_student)
 ):
     print(f"🔄 [API] POST /evaluate-audio endpoint called")
     print(f"📝 [API] Request details: phrase_id={request.phrase_id}, filename={request.filename}")
@@ -162,11 +268,21 @@ async def evaluate_audio(
         # Check if audio is too short (silence detection)
         if len(audio_bytes) < 1000:  # Less than 1KB indicates very short/silent audio
             print(f"⚠️ [API] Audio too short ({len(audio_bytes)} bytes), likely silent")
+            
+            # Check exercise completion status even for short audio
+            exercise_completion_status = None
+            if request.user_id and request.user_id.strip():
+                try:
+                    exercise_completion_status = await check_exercise_completion(request.user_id)
+                except Exception as completion_error:
+                    print(f"⚠️ [API] Failed to check exercise completion: {str(completion_error)}")
+            
             return {
                 "success": False,
                 "error": "no_speech_detected",
                 "message": "No speech detected. Please try again.",
-                "expected_phrase": expected_phrase
+                "expected_phrase": expected_phrase,
+                "exercise_completion": exercise_completion_status
             }
 
         # Transcribe the audio
@@ -179,20 +295,40 @@ async def evaluate_audio(
             # Check if transcription is empty or too short
             if not user_text or len(user_text) < 2:
                 print(f"⚠️ [API] Transcription too short or empty: '{user_text}'")
+                
+                # Check exercise completion status even for unclear speech
+                exercise_completion_status = None
+                if request.user_id and request.user_id.strip():
+                    try:
+                        exercise_completion_status = await check_exercise_completion(request.user_id)
+                    except Exception as completion_error:
+                        print(f"⚠️ [API] Failed to check exercise completion: {str(completion_error)}")
+                
                 return {
                     "success": False,
                     "error": "no_speech_detected",
                     "message": "No clear speech detected. Please speak more clearly.",
-                    "expected_phrase": expected_phrase
+                    "expected_phrase": expected_phrase,
+                    "exercise_completion": exercise_completion_status
                 }
 
         except Exception as e:
             print(f"❌ [API] Error transcribing audio: {str(e)}")
+            
+            # Check exercise completion status even for transcription errors
+            exercise_completion_status = None
+            if request.user_id and request.user_id.strip():
+                try:
+                    exercise_completion_status = await check_exercise_completion(request.user_id)
+                except Exception as completion_error:
+                    print(f"⚠️ [API] Failed to check exercise completion: {str(completion_error)}")
+            
             return {
                 "success": False,
                 "error": "transcription_failed",
                 "message": "Failed to process audio. Please try again.",
-                "expected_phrase": expected_phrase
+                "expected_phrase": expected_phrase,
+                "exercise_completion": exercise_completion_status
             }
 
         # Evaluate the response
@@ -259,23 +395,37 @@ async def evaluate_audio(
             else:
                 print(f"⚠️ [API] No valid user ID provided, skipping progress tracking")
             
+            # Check if user has completed the full exercise
+            exercise_completion_status = await check_exercise_completion(request.user_id)
+            
             return {
                 "success": True,
                 "expected_phrase": expected_phrase,
                 "user_text": user_text,
                 "evaluation": evaluation,
                 "progress_recorded": progress_recorded,
-                "unlocked_content": unlocked_content
+                "unlocked_content": unlocked_content,
+                "exercise_completion": exercise_completion_status
             }
 
         except Exception as e:
             print(f"❌ [API] Error evaluating response: {str(e)}")
+            
+            # Even if evaluation fails, check exercise completion status
+            exercise_completion_status = None
+            if request.user_id and request.user_id.strip():
+                try:
+                    exercise_completion_status = await check_exercise_completion(request.user_id)
+                except Exception as completion_error:
+                    print(f"⚠️ [API] Failed to check exercise completion: {str(completion_error)}")
+            
             return {
                 "success": False,
                 "error": "evaluation_failed",
                 "message": "Failed to evaluate pronunciation. Please try again.",
                 "expected_phrase": expected_phrase,
-                "user_text": user_text
+                "user_text": user_text,
+                "exercise_completion": exercise_completion_status
             }
 
     except HTTPException:

@@ -54,6 +54,33 @@ async def synthesize_speech_bytes(text: str) -> bytes:
     audio_bytes = b"".join(audio_chunks)
     return audio_bytes
 
+
+async def synthesize_slow_correction_audio(text: str) -> bytes:
+    """
+    Generate slow audio for correction sentences to help users repeat after the AI.
+    Uses slower speed and enhanced clarity settings for better pronunciation practice.
+    """
+    print(f"🔑 [SLOW_CORRECTION] Using API Key: {ELEVEN_API_KEY[:6]}...")
+    print(f"🗣️ [SLOW_CORRECTION] Voice ID: {ELEVEN_VOICE_ID}")
+    print(f"📝 [SLOW_CORRECTION] Text to synthesize slowly: '{text}'")
+
+    audio_chunks = client.text_to_speech.convert(
+        voice_id=ELEVEN_VOICE_ID,
+        model_id="eleven_multilingual_v2",
+        text=text,
+        voice_settings={
+            "stability": 0.8,        # Higher stability for clearer pronunciation
+            "similarity_boost": 0.9,  # Higher similarity for consistent voice
+            "speed": 0.7            # Slower speed for easier repetition
+        }
+    )
+    
+    # Convert generator to bytes
+    audio_bytes = b"".join(audio_chunks)
+    print(f"✅ [SLOW_CORRECTION] Slow correction audio generated, size: {len(audio_bytes)} bytes")
+    return audio_bytes
+
+
 async def synthesize_speech_with_elevenlabs(text: str):
     audio_bytes = await synthesize_speech_bytes(text)
     audio_stream = BytesIO(audio_bytes)

@@ -10,7 +10,7 @@ from app.services.tts import synthesize_speech, synthesize_speech_exercises
 from app.services.stt import transcribe_audio_bytes_eng_only
 from app.services.feedback import evaluate_response_ex3_stage1
 from app.supabase_client import progress_tracker
-from app.auth_middleware import get_current_user, require_student,require_admin_or_teacher_or_student
+from app.auth_middleware import get_current_user, require_student
 router = APIRouter()
 
 DIALOGUE_FILE = os.path.join(os.path.dirname(__file__), '..', 'data', 'functional_dialogue.json')
@@ -40,8 +40,113 @@ def get_dialogue_by_id(dialogue_id: int):
         return None
 
 
+async def check_exercise_completion(user_id: str) -> dict:
+    """Check if user has completed the full Listen and Reply exercise (Stage 1, Exercise 3)"""
+    print(f"🔍 [COMPLETION] Checking exercise completion for user: {user_id}")
+    
+    try:
+        # Get total dialogues count
+        total_dialogues = 0
+        try:
+            with open(DIALOGUE_FILE, 'r', encoding='utf-8') as f:
+                dialogues = json.load(f)
+                total_dialogues = len(dialogues)
+                print(f"📊 [COMPLETION] Total dialogues available: {total_dialogues}")
+        except Exception as e:
+            print(f"❌ [COMPLETION] Error reading dialogues file: {str(e)}")
+            total_dialogues = 12  # Default fallback based on data file
+        
+        # Get user's progress for Stage 1 Exercise 3
+        progress_result = await progress_tracker.get_user_topic_progress(
+            user_id=user_id,
+            stage_id=1,
+            exercise_id=3
+        )
+        
+        if not progress_result["success"]:
+            print(f"❌ [COMPLETION] Failed to get progress: {progress_result.get('error')}")
+            return {
+                "exercise_completed": False,
+                "progress_percentage": 0,
+                "completed_topics": 0,
+                "total_topics": total_dialogues,
+                "current_topic_id": 1,
+                "error": progress_result.get("error", "Failed to get progress")
+            }
+        
+        # Get current topic information
+        current_topic_result = await progress_tracker.get_current_topic_for_exercise(
+            user_id=user_id,
+            stage_id=1,
+            exercise_id=3
+        )
+        
+        if not current_topic_result["success"]:
+            print(f"❌ [COMPLETION] Failed to get current topic: {current_topic_result.get('error')}")
+            return {
+                "exercise_completed": False,
+                "progress_percentage": 0,
+                "completed_topics": 0,
+                "total_topics": total_dialogues,
+                "current_topic_id": 1,
+                "error": current_topic_result.get("error", "Failed to get current topic")
+            }
+        
+        # Extract progress data
+        topic_progress = progress_result.get("data", [])
+        current_topic_id = current_topic_result.get("current_topic_id", 1)
+        is_exercise_completed = current_topic_result.get("is_completed", False)
+        
+        # Calculate completion metrics
+        completed_topics = len(topic_progress) if topic_progress else 0
+        progress_percentage = (completed_topics / total_dialogues) * 100 if total_dialogues > 0 else 0
+        
+        # Determine if exercise is truly completed
+        # Exercise is completed ONLY when ALL topics are completed
+        exercise_completed = completed_topics >= total_dialogues and completed_topics > 0
+        
+        print(f"📊 [COMPLETION] Completion status calculated:")
+        print(f"   - Total dialogues: {total_dialogues}")
+        print(f"   - Completed topics: {completed_topics}")
+        print(f"   - Current topic ID: {current_topic_id}")
+        print(f"   - Progress percentage: {progress_percentage:.1f}%")
+        print(f"   - Exercise completed: {exercise_completed}")
+        
+        # Additional logging for completion logic
+        if completed_topics >= total_dialogues:
+            print(f"🎉 [COMPLETION] All {total_dialogues} dialogues completed! Exercise is finished!")
+        elif completed_topics > 0:
+            print(f"📈 [COMPLETION] {completed_topics}/{total_dialogues} dialogues completed. Exercise in progress...")
+        else:
+            print(f"🆕 [COMPLETION] No dialogues completed yet. Exercise just started.")
+        
+        return {
+            "exercise_completed": exercise_completed,
+            "progress_percentage": round(progress_percentage, 1),
+            "completed_topics": completed_topics,
+            "total_topics": total_dialogues,
+            "current_topic_id": current_topic_id,
+            "stage_id": 1,
+            "exercise_id": 3,
+            "exercise_name": "Listen and Reply",
+            "stage_name": "Stage 1 – A1 Beginner",
+            "completion_date": topic_progress[-1].get("created_at") if topic_progress and exercise_completed else None
+        }
+        
+    except Exception as e:
+        print(f"❌ [COMPLETION] Error checking exercise completion: {str(e)}")
+        return {
+            "exercise_completed": False,
+            "progress_percentage": 0,
+            "completed_topics": 0,
+            "total_topics": 12,
+            "current_topic_id": 1,
+            "error": f"Failed to check completion status: {str(e)}"
+        }
+
+
 @router.get("/dialogues")
-async def get_all_dialogues(current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
+async def get_all_dialogues(current_user: Dict[str, Any] = Depends(require_student)):
     """Get all available dialogues for Listen and Reply exercise"""
     print("🔄 [API] GET /dialogues endpoint called")
     try:
@@ -55,7 +160,7 @@ async def get_all_dialogues(current_user: Dict[str, Any] = Depends(require_admin
         raise HTTPException(status_code=500, detail=f"Failed to load dialogues: {str(e)}")
 
 @router.get("/dialogues/{dialogue_id}")
-async def get_dialogue(dialogue_id: int, current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
+async def get_dialogue(dialogue_id: int, current_user: Dict[str, Any] = Depends(require_student)):
     """Get a specific dialogue by ID"""
     print(f"🔄 [API] GET /dialogues/{dialogue_id} endpoint called")
     try:
@@ -91,7 +196,7 @@ and returns the generated audio file as the response.
 """,
     tags=["Stage 1 - Exercise 3 (Listen and Reply)"]
 )
-async def listen_and_reply(dialogue_id: int, current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
+async def listen_and_reply(dialogue_id: int, current_user: Dict[str, Any] = Depends(require_student)):
     print(f"🔄 [API] POST /listen-and-reply/{dialogue_id} endpoint called")
     try:
         dialogue_data = get_dialogue_by_id(dialogue_id)
@@ -129,7 +234,7 @@ Also records progress tracking data in Supabase database.
 )
 async def evaluate_listen_reply(
     request: AudioEvaluationRequest,
-    current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)
+    current_user: Dict[str, Any] = Depends(require_student)
 ):
     print(f"🔄 [API] POST /evaluate-listen-reply endpoint called")
     print(f"📝 [API] Request details: dialogue_id={request.dialogue_id}, filename={request.filename}")
@@ -267,6 +372,10 @@ async def evaluate_listen_reply(
             else:
                 print(f"⚠️ [API] No valid user ID provided, skipping progress tracking")
             
+            # Check if the exercise is completed
+            exercise_completion_status = await check_exercise_completion(request.user_id)
+            print(f"✅ [API] Exercise completion status: {exercise_completion_status}")
+
             return {
                 "success": True,
                 "ai_prompt": ai_prompt,
@@ -275,7 +384,8 @@ async def evaluate_listen_reply(
                 "user_text": user_text,
                 "evaluation": evaluation,
                 "progress_recorded": progress_recorded,
-                "unlocked_content": unlocked_content
+                "unlocked_content": unlocked_content,
+                "exercise_completion_status": exercise_completion_status
             }
 
         except Exception as e:
