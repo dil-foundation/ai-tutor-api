@@ -10,7 +10,7 @@ from app.services.tts import synthesize_speech, synthesize_speech_exercises
 from app.services.stt import transcribe_audio_bytes_eng_only
 from app.services.feedback import evaluate_response_ex2_stage1
 from app.supabase_client import progress_tracker
-from app.auth_middleware import get_current_user, require_student,require_admin_or_teacher_or_student
+from app.auth_middleware import get_current_user, require_student
 router = APIRouter()
 
 PROMPTS_FILE = os.path.join(os.path.dirname(__file__), '..', 'data', 'quick_response_prompts.json')
@@ -40,8 +40,113 @@ def get_prompt_by_id(prompt_id: int):
         return None
 
 
+async def check_exercise_completion(user_id: str) -> dict:
+    """Check if user has completed the full Quick Response exercise (Stage 1, Exercise 2)"""
+    print(f"🔍 [COMPLETION] Checking exercise completion for user: {user_id}")
+    
+    try:
+        # Get total prompts count
+        total_prompts = 0
+        try:
+            with open(PROMPTS_FILE, 'r', encoding='utf-8') as f:
+                prompts = json.load(f)
+                total_prompts = len(prompts)
+                print(f"📊 [COMPLETION] Total prompts available: {total_prompts}")
+        except Exception as e:
+            print(f"❌ [COMPLETION] Error reading prompts file: {str(e)}")
+            total_prompts = 8  # Default fallback based on data file
+        
+        # Get user's progress for Stage 1 Exercise 2
+        progress_result = await progress_tracker.get_user_topic_progress(
+            user_id=user_id,
+            stage_id=1,
+            exercise_id=2
+        )
+        
+        if not progress_result["success"]:
+            print(f"❌ [COMPLETION] Failed to get progress: {progress_result.get('error')}")
+            return {
+                "exercise_completed": False,
+                "progress_percentage": 0,
+                "completed_topics": 0,
+                "total_topics": total_prompts,
+                "current_topic_id": 1,
+                "error": progress_result.get("error", "Failed to get progress")
+            }
+        
+        # Get current topic information
+        current_topic_result = await progress_tracker.get_current_topic_for_exercise(
+            user_id=user_id,
+            stage_id=1,
+            exercise_id=2
+        )
+        
+        if not current_topic_result["success"]:
+            print(f"❌ [COMPLETION] Failed to get current topic: {current_topic_result.get('error')}")
+            return {
+                "exercise_completed": False,
+                "progress_percentage": 0,
+                "completed_topics": 0,
+                "total_topics": total_prompts,
+                "current_topic_id": 1,
+                "error": current_topic_result.get("error", "Failed to get current topic")
+            }
+        
+        # Extract progress data
+        topic_progress = progress_result.get("data", [])
+        current_topic_id = current_topic_result.get("current_topic_id", 1)
+        is_exercise_completed = current_topic_result.get("is_completed", False)
+        
+        # Calculate completion metrics
+        completed_topics = len(topic_progress) if topic_progress else 0
+        progress_percentage = (completed_topics / total_prompts) * 100 if total_prompts > 0 else 0
+        
+        # Determine if exercise is truly completed
+        # Exercise is completed ONLY when ALL topics are completed
+        exercise_completed = completed_topics >= total_prompts and completed_topics > 0
+        
+        print(f"📊 [COMPLETION] Completion status calculated:")
+        print(f"   - Total prompts: {total_prompts}")
+        print(f"   - Completed topics: {completed_topics}")
+        print(f"   - Current topic ID: {current_topic_id}")
+        print(f"   - Progress percentage: {progress_percentage:.1f}%")
+        print(f"   - Exercise completed: {exercise_completed}")
+        
+        # Additional logging for completion logic
+        if completed_topics >= total_prompts:
+            print(f"🎉 [COMPLETION] All {total_prompts} prompts completed! Exercise is finished!")
+        elif completed_topics > 0:
+            print(f"📈 [COMPLETION] {completed_topics}/{total_prompts} prompts completed. Exercise in progress...")
+        else:
+            print(f"🆕 [COMPLETION] No prompts completed yet. Exercise just started.")
+        
+        return {
+            "exercise_completed": exercise_completed,
+            "progress_percentage": round(progress_percentage, 1),
+            "completed_topics": completed_topics,
+            "total_topics": total_prompts,
+            "current_topic_id": current_topic_id,
+            "stage_id": 1,
+            "exercise_id": 2,
+            "exercise_name": "Quick Response Prompts",
+            "stage_name": "Stage 1 – A1 Beginner",
+            "completion_date": topic_progress[-1].get("created_at") if topic_progress and exercise_completed else None
+        }
+        
+    except Exception as e:
+        print(f"❌ [COMPLETION] Error checking exercise completion: {str(e)}")
+        return {
+            "exercise_completed": False,
+            "progress_percentage": 0,
+            "completed_topics": 0,
+            "total_topics": 8,
+            "current_topic_id": 1,
+            "error": f"Failed to check completion status: {str(e)}"
+        }
+
+
 @router.get("/prompts")
-async def get_all_prompts(current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
+async def get_all_prompts(current_user: Dict[str, Any] = Depends(require_student)):
     """Get all available prompts for Quick Response exercise"""
     print("🔄 [API] GET /prompts endpoint called")
     try:
@@ -55,7 +160,7 @@ async def get_all_prompts(current_user: Dict[str, Any] = Depends(require_admin_o
         raise HTTPException(status_code=500, detail=f"Failed to load prompts: {str(e)}")
 
 @router.get("/prompts/{prompt_id}")
-async def get_prompt(prompt_id: int, current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
+async def get_prompt(prompt_id: int, current_user: Dict[str, Any] = Depends(require_student)):
     """Get a specific prompt by ID"""
     print(f"🔄 [API] GET /prompts/{prompt_id} endpoint called")
     try:
@@ -90,7 +195,7 @@ and returns the generated audio file as the response.
 """,
     tags=["Stage 1 - Exercise 2 (Quick Response)"]
 )
-async def quick_response(prompt_id: int, current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
+async def quick_response(prompt_id: int, current_user: Dict[str, Any] = Depends(require_student)):
     print(f"🔄 [API] POST /quick-response/{prompt_id} endpoint called")
     try:
         prompt_data = get_prompt_by_id(prompt_id)
@@ -128,7 +233,7 @@ Also records progress tracking data in Supabase database.
 )
 async def evaluate_quick_response(
     request: AudioEvaluationRequest,
-    current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)
+    current_user: Dict[str, Any] = Depends(require_student)
 ):
     print(f"🔄 [API] POST /evaluate-quick-response endpoint called")
     print(f"📝 [API] Request details: prompt_id={request.prompt_id}, filename={request.filename}")
@@ -264,6 +369,10 @@ async def evaluate_quick_response(
             else:
                 print(f"⚠️ [API] No valid user ID provided, skipping progress tracking")
             
+            # Check if the exercise is completed
+            exercise_completion_status = await check_exercise_completion(request.user_id)
+            print(f"📊 [API] Exercise completion status: {exercise_completion_status}")
+
             return {
                 "success": True,
                 "expected_answers": expected_answers,
@@ -271,7 +380,8 @@ async def evaluate_quick_response(
                 "user_text": user_text,
                 "evaluation": evaluation,
                 "progress_recorded": progress_recorded,
-                "unlocked_content": unlocked_content
+                "unlocked_content": unlocked_content,
+                "exercise_completion_status": exercise_completion_status
             }
 
         except Exception as e:

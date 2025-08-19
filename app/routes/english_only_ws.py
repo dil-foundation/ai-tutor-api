@@ -11,7 +11,7 @@ This module provides a ChatGPT-like voice mode experience for English learning:
 """
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from app.services.tts import synthesize_speech_bytes
+from app.services.tts import synthesize_speech_bytes,synthesize_slow_correction_audio
 from app.services.feedback import analyze_english_input_eng_only
 from app.services import stt
 from app.utils.profiler import Profiler
@@ -199,6 +199,13 @@ async def english_only_conversation(websocket: WebSocket):
             conversation_text = analysis_result.get("conversation_text", "Let's continue.")
             print(f"🎯 [ENGLISH_ONLY] AI Response: {conversation_text}")
 
+            # Check if correction is needed
+            needs_correction = analysis_result.get("needs_correction", False)
+            corrected_sentence = analysis_result.get("corrected_sentence", "")
+            correction_type = analysis_result.get("correction_type", "none")
+            
+            print(f"🔍 [ENGLISH_ONLY] Correction needed: {needs_correction}, Type: {correction_type}")
+
             # Generate TTS for the AI's response
             if conversation_text in tts_cache:
                 response_audio = tts_cache[conversation_text]
@@ -207,19 +214,41 @@ async def english_only_conversation(websocket: WebSocket):
                 tts_cache[conversation_text] = response_audio
             profiler.mark("🔊 TTS response generated")
 
-            # Send back the response, adapting to the old JSON structure but using the new stage logic
+            # Generate slow correction audio if needed
+            correction_audio = None
+            if needs_correction and corrected_sentence:
+                print(f"🎯 [ENGLISH_ONLY] Generating slow correction audio for: '{corrected_sentence}'")
+                try:
+                    correction_audio = await synthesize_slow_correction_audio(corrected_sentence)
+                    profiler.mark("🔊 Slow correction audio generated")
+                except Exception as e:
+                    print(f"❌ [ENGLISH_ONLY] Failed to generate correction audio: {e}")
+                    correction_audio = None
+
+            # Send back the response with correction data
             await safe_send_json(websocket, {
                 "response": conversation_text,
                 "conversation_text": conversation_text,
                 "step": conversation_stage,  # Use the new stage as the "step"
                 "original_text": transcribed_text,
                 "user_name": user_name,
+                "needs_correction": needs_correction,
+                "corrected_sentence": corrected_sentence,
+                "correction_type": correction_type,
                 "analysis": { # Provide a simplified analysis object
                     "next_stage": conversation_stage,
                     "current_topic": current_topic
                 }
             })
+            
+            # Send main response audio
             await safe_send_bytes(websocket, response_audio)
+            
+            # Send correction audio if available
+            if correction_audio:
+                print(f"🎵 [ENGLISH_ONLY] Sending correction audio to frontend")
+                await safe_send_bytes(websocket, correction_audio)
+                profiler.mark("🎵 Correction audio sent")
 
             profiler.summary()
             
