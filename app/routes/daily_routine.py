@@ -14,6 +14,7 @@ from app.auth_middleware import get_current_user, require_student,require_admin_
 router = APIRouter()
 
 DAILY_ROUTINE_FILE = os.path.join(os.path.dirname(__file__), '..', 'data', 'daily_routine_narration.json')
+ROUTINES_FILE = os.path.join(os.path.dirname(__file__), '..', 'data', 'daily_routine_narration.json') # Renamed to avoid conflict
 
 class AudioEvaluationRequest(BaseModel):
     audio_base64: str
@@ -38,6 +39,127 @@ def get_phrase_by_id(phrase_id: int):
     except Exception as e:
         print(f"❌ [PHRASE] Error reading phrase file: {str(e)}")
         return None
+
+def get_routine_by_id(routine_id: int):
+    print(f"🔍 [ROUTINE] Looking for routine with ID: {routine_id}")
+    try:
+        with open(ROUTINES_FILE, 'r', encoding='utf-8') as f:
+            routines = json.load(f)
+            print(f"📖 [ROUTINE] Loaded {len(routines)} routines from file")
+            for routine in routines:
+                if routine['id'] == routine_id:
+                    print(f"✅ [ROUTINE] Found routine: {routine['title']}")
+                    return routine  # Return the full routine object
+            print(f"❌ [ROUTINE] Routine with ID {routine_id} not found")
+            return None
+    except Exception as e:
+        print(f"❌ [ROUTINE] Error reading routines file: {str(e)}")
+        return None
+
+
+async def check_exercise_completion(user_id: str) -> dict:
+    """Check if user has completed the full Daily Routine exercise (Stage 2, Exercise 1)"""
+    print(f"🔍 [COMPLETION] Checking exercise completion for user: {user_id}")
+    
+    try:
+        # Get total routines count
+        total_routines = 0
+        try:
+            with open(ROUTINES_FILE, 'r', encoding='utf-8') as f:
+                routines = json.load(f)
+                total_routines = len(routines)
+                print(f"📊 [COMPLETION] Total routines available: {total_routines}")
+        except Exception as e:
+            print(f"❌ [COMPLETION] Error reading routines file: {str(e)}")
+            total_routines = 15  # Default fallback based on data file
+        
+        # Get user's progress for Stage 2 Exercise 1
+        progress_result = await progress_tracker.get_user_topic_progress(
+            user_id=user_id,
+            stage_id=2,
+            exercise_id=1
+        )
+        
+        if not progress_result["success"]:
+            print(f"❌ [COMPLETION] Failed to get progress: {progress_result.get('error')}")
+            return {
+                "exercise_completed": False,
+                "progress_percentage": 0,
+                "completed_topics": 0,
+                "total_topics": total_routines,
+                "current_topic_id": 1,
+                "error": progress_result.get("error", "Failed to get progress")
+            }
+        
+        # Get current topic information
+        current_topic_result = await progress_tracker.get_current_topic_for_exercise(
+            user_id=user_id,
+            stage_id=2,
+            exercise_id=1
+        )
+        
+        if not current_topic_result["success"]:
+            print(f"❌ [COMPLETION] Failed to get current topic: {current_topic_result.get('error')}")
+            return {
+                "exercise_completed": False,
+                "progress_percentage": 0,
+                "completed_topics": 0,
+                "total_topics": total_routines,
+                "current_topic_id": 1,
+                "error": current_topic_result.get("error", "Failed to get current topic")
+            }
+        
+        # Extract progress data
+        topic_progress = progress_result.get("data", [])
+        current_topic_id = current_topic_result.get("current_topic_id", 1)
+        is_exercise_completed = current_topic_result.get("is_completed", False)
+        
+        # Calculate completion metrics
+        completed_topics = len(topic_progress) if topic_progress else 0
+        progress_percentage = (completed_topics / total_routines) * 100 if total_routines > 0 else 0
+        
+        # Determine if exercise is truly completed
+        # Exercise is completed ONLY when ALL topics are completed
+        exercise_completed = completed_topics >= total_routines and completed_topics > 0
+        
+        print(f"📊 [COMPLETION] Completion status calculated:")
+        print(f"   - Total routines: {total_routines}")
+        print(f"   - Completed topics: {completed_topics}")
+        print(f"   - Current topic ID: {current_topic_id}")
+        print(f"   - Progress percentage: {progress_percentage:.1f}%")
+        print(f"   - Exercise completed: {exercise_completed}")
+        
+        # Additional logging for completion logic
+        if completed_topics >= total_routines:
+            print(f"🎉 [COMPLETION] All {total_routines} routines completed! Exercise is finished!")
+        elif completed_topics > 0:
+            print(f"📈 [COMPLETION] {completed_topics}/{total_routines} routines completed. Exercise in progress...")
+        else:
+            print(f"🆕 [COMPLETION] No routines completed yet. Exercise just started.")
+        
+        return {
+            "exercise_completed": exercise_completed,
+            "progress_percentage": round(progress_percentage, 1),
+            "completed_topics": completed_topics,
+            "total_topics": total_routines,
+            "current_topic_id": current_topic_id,
+            "stage_id": 2,
+            "exercise_id": 1,
+            "exercise_name": "Daily Routine Narration",
+            "stage_name": "Stage 2 – A2 Elementary",
+            "completion_date": topic_progress[-1].get("created_at") if topic_progress and exercise_completed else None
+        }
+        
+    except Exception as e:
+        print(f"❌ [COMPLETION] Error checking exercise completion: {str(e)}")
+        return {
+            "exercise_completed": False,
+            "progress_percentage": 0,
+            "completed_topics": 0,
+            "total_topics": 15,
+            "current_topic_id": 1,
+            "error": f"Failed to check completion status: {str(e)}"
+        }
 
 
 @router.get("/daily-routine-phrases")
@@ -281,6 +403,10 @@ async def evaluate_daily_routine(
             else:
                 print(f"⚠️ [API] No valid user ID provided, skipping progress tracking")
             
+            # Check if the exercise is completed
+            exercise_completion_status = await check_exercise_completion(request.user_id)
+            print(f"📊 [API] Exercise completion status: {exercise_completion_status}")
+
             return {
                 "success": True,
                 "phrase": phrase_text,
@@ -293,7 +419,8 @@ async def evaluate_daily_routine(
                 "keyword_matches": keyword_matches,
                 "total_keywords": total_keywords,
                 "fluency_score": fluency_score,
-                "grammar_score": grammar_score
+                "grammar_score": grammar_score,
+                "exercise_completed": exercise_completion_status["exercise_completed"]
             }
 
         except Exception as e:

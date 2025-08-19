@@ -10,7 +10,7 @@ from app.services.tts import synthesize_speech, synthesize_speech_exercises
 from app.services.stt import transcribe_audio_bytes_eng_only
 from app.services.feedback import evaluate_response_ex3_stage1
 from app.supabase_client import progress_tracker
-from app.auth_middleware import get_current_user, require_student
+from app.auth_middleware import get_current_user, require_student,require_admin_or_teacher_or_student
 router = APIRouter()
 
 DIALOGUE_FILE = os.path.join(os.path.dirname(__file__), '..', 'data', 'functional_dialogue.json')
@@ -146,7 +146,7 @@ async def check_exercise_completion(user_id: str) -> dict:
 
 
 @router.get("/dialogues")
-async def get_all_dialogues(current_user: Dict[str, Any] = Depends(require_student)):
+async def get_all_dialogues(current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
     """Get all available dialogues for Listen and Reply exercise"""
     print("🔄 [API] GET /dialogues endpoint called")
     try:
@@ -160,7 +160,7 @@ async def get_all_dialogues(current_user: Dict[str, Any] = Depends(require_stude
         raise HTTPException(status_code=500, detail=f"Failed to load dialogues: {str(e)}")
 
 @router.get("/dialogues/{dialogue_id}")
-async def get_dialogue(dialogue_id: int, current_user: Dict[str, Any] = Depends(require_student)):
+async def get_dialogue(dialogue_id: int, current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
     """Get a specific dialogue by ID"""
     print(f"🔄 [API] GET /dialogues/{dialogue_id} endpoint called")
     try:
@@ -196,7 +196,7 @@ and returns the generated audio file as the response.
 """,
     tags=["Stage 1 - Exercise 3 (Listen and Reply)"]
 )
-async def listen_and_reply(dialogue_id: int, current_user: Dict[str, Any] = Depends(require_student)):
+async def listen_and_reply(dialogue_id: int, current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
     print(f"🔄 [API] POST /listen-and-reply/{dialogue_id} endpoint called")
     try:
         dialogue_data = get_dialogue_by_id(dialogue_id)
@@ -234,7 +234,7 @@ Also records progress tracking data in Supabase database.
 )
 async def evaluate_listen_reply(
     request: AudioEvaluationRequest,
-    current_user: Dict[str, Any] = Depends(require_student)
+    current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)
 ):
     print(f"🔄 [API] POST /evaluate-listen-reply endpoint called")
     print(f"📝 [API] Request details: dialogue_id={request.dialogue_id}, filename={request.filename}")
