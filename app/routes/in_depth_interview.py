@@ -40,6 +40,100 @@ def get_prompt_by_id(prompt_id: int):
         print(f"❌ [PROMPT] Error reading prompt file: {str(e)}")
         return None
 
+
+async def check_exercise_completion(user_id: str) -> dict:
+    """Check if user has completed the full In-Depth Interview exercise (Stage 5, Exercise 3)"""
+    print(f"🔍 [COMPLETION] Checking exercise completion for user: {user_id}")
+    
+    try:
+        # Get total prompts count
+        prompts = []
+        try:
+            with open(IN_DEPTH_INTERVIEW_FILE, 'r', encoding='utf-8') as f:
+                prompts = json.load(f)
+        except Exception as e:
+            print(f"❌ [COMPLETION] Error reading prompts file: {str(e)}")
+        
+        total_topics = len(prompts)
+        print(f"📊 [COMPLETION] Total prompts available: {total_topics}")
+        
+        # Get user's progress for stage 5, exercise 3
+        progress_result = await progress_tracker.get_user_topic_progress(
+            user_id=user_id,
+            stage_id=5,
+            exercise_id=3
+        )
+        
+        if not progress_result["success"]:
+            print(f"❌ [COMPLETION] Failed to get user progress: {progress_result.get('error')}")
+            return {
+                "exercise_completed": False,
+                "progress_percentage": 0.0,
+                "completed_topics": 0,
+                "total_topics": total_topics,
+                "current_topic_id": 1,
+                "stage_id": 5,
+                "exercise_id": 3,
+                "exercise_name": "In-Depth Interview",
+                "stage_name": "Stage 5 – C1 Advanced",
+                "error": progress_result.get("error", "Failed to get progress")
+            }
+        
+        user_progress = progress_result.get("data", [])
+        completed_topics = len([record for record in user_progress if record.get("completed", False)])
+        
+        # Get current topic ID
+        current_topic_result = await progress_tracker.get_current_topic_for_exercise(
+            user_id=user_id,
+            stage_id=5,
+            exercise_id=3
+        )
+        
+        current_topic_id = 1
+        if current_topic_result["success"]:
+            current_topic_id = current_topic_result.get("current_topic_id", 1)
+        
+        # Calculate progress percentage
+        progress_percentage = (completed_topics / total_topics * 100) if total_topics > 0 else 0.0
+        
+        # Determine if exercise is truly completed
+        # Exercise is completed ONLY when ALL topics are completed
+        exercise_completed = completed_topics >= total_topics and completed_topics > 0
+        
+        print(f"📊 [COMPLETION] Completion status calculated:")
+        print(f"   - Total prompts: {total_topics}")
+        print(f"   - Completed topics: {completed_topics}")
+        print(f"   - Current topic ID: {current_topic_id}")
+        print(f"   - Progress percentage: {progress_percentage:.1f}%")
+        print(f"   - Exercise completed: {exercise_completed}")
+        
+        return {
+            "exercise_completed": exercise_completed,
+            "progress_percentage": progress_percentage,
+            "completed_topics": completed_topics,
+            "total_topics": total_topics,
+            "current_topic_id": current_topic_id,
+            "stage_id": 5,
+            "exercise_id": 3,
+            "exercise_name": "In-Depth Interview",
+            "stage_name": "Stage 5 – C1 Advanced"
+        }
+        
+    except Exception as e:
+        print(f"❌ [COMPLETION] Error checking exercise completion: {str(e)}")
+        return {
+            "exercise_completed": False,
+            "progress_percentage": 0.0,
+            "completed_topics": 0,
+            "total_topics": 0,
+            "current_topic_id": 1,
+            "stage_id": 5,
+            "exercise_id": 3,
+            "exercise_name": "In-Depth Interview",
+            "stage_name": "Stage 5 – C1 Advanced",
+            "error": str(e)
+        }
+
 @router.get("/in-depth-interview-prompts")
 async def get_all_prompts(current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
     """Get all available prompts for In-Depth Interview exercise"""
@@ -290,6 +384,26 @@ async def evaluate_in_depth_interview(
             else:
                 print(f"⚠️ [API] No valid user ID provided, skipping progress tracking")
             
+            # Check exercise completion status
+            exercise_completion_status = None
+            try:
+                exercise_completion_status = await check_exercise_completion(request.user_id)
+                print(f"📊 [IN_DEPTH_INTERVIEW] Exercise completion status: {exercise_completion_status}")
+            except Exception as completion_error:
+                print(f"⚠️ [IN_DEPTH_INTERVIEW] Failed to check exercise completion: {str(completion_error)}")
+                exercise_completion_status = {
+                    "exercise_completed": False,
+                    "progress_percentage": 0.0,
+                    "completed_topics": 0,
+                    "total_topics": 0,
+                    "current_topic_id": 1,
+                    "stage_id": 5,
+                    "exercise_id": 3,
+                    "exercise_name": "In-Depth Interview",
+                    "stage_name": "Stage 5 – C1 Advanced",
+                    "error": str(completion_error)
+                }
+            
             return {
                 "success": True,
                 "question": question_text,
@@ -302,7 +416,8 @@ async def evaluate_in_depth_interview(
                 "keyword_matches": keyword_matches,
                 "total_keywords": total_keywords,
                 "fluency_score": fluency_score,
-                "grammar_score": grammar_score
+                "grammar_score": grammar_score,
+                "exercise_completion": exercise_completion_status
             }
 
         except Exception as e:

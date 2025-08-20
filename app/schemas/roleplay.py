@@ -51,6 +51,7 @@ class RoleplayEvaluationResponse(BaseModel):
     unlocked_content: List[str] = []
     error: Optional[str] = None
     message: Optional[str] = None
+    exercise_completion: Optional[Dict[str, Any]] = None
 
 class ScenarioInfo(BaseModel):
     id: int
