@@ -15,6 +15,7 @@ from app.auth_middleware import get_current_user, require_student, require_admin
 router = APIRouter()
 
 STORYTELLING_FILE = os.path.join(os.path.dirname(__file__), '..', 'data', 'stage3_exercise1.json')
+STORIES_FILE = os.path.join(os.path.dirname(__file__), '..', 'data', 'stage3_exercise1.json')
 
 class AudioEvaluationRequest(BaseModel):
     audio_base64: str
@@ -39,6 +40,128 @@ def get_prompt_by_id(prompt_id: int):
     except Exception as e:
         print(f"❌ [PROMPT] Error reading prompt file: {str(e)}")
         return None
+
+def get_story_by_id(story_id: int):
+    print(f"🔍 [STORY] Looking for story with ID: {story_id}")
+    try:
+        with open(STORIES_FILE, 'r', encoding='utf-8') as f:
+            stories = json.load(f)
+            print(f"📖 [STORY] Loaded {len(stories)} stories from file")
+            for story in stories:
+                if story['id'] == story_id:
+                    print(f"✅ [STORY] Found story: {story['title']}")
+                    return story  # Return the full story object
+            print(f"❌ [STORY] Story with ID {story_id} not found")
+            return None
+    except Exception as e:
+        print(f"❌ [STORY] Error reading stories file: {str(e)}")
+        return None
+
+
+async def check_exercise_completion(user_id: str) -> dict:
+    """Check if user has completed the full Storytelling exercise (Stage 3, Exercise 1)"""
+    print(f"🔍 [COMPLETION] Checking exercise completion for user: {user_id}")
+    
+    try:
+        # Get total stories count
+        total_stories = 0
+        try:
+            with open(STORIES_FILE, 'r', encoding='utf-8') as f:
+                stories = json.load(f)
+                total_stories = len(stories)
+                print(f"📊 [COMPLETION] Total stories available: {total_stories}")
+        except Exception as e:
+            print(f"❌ [COMPLETION] Error reading stories file: {str(e)}")
+            total_stories = 18  # Default fallback based on data file
+        
+        # Get user's progress for Stage 3 Exercise 1
+        progress_result = await progress_tracker.get_user_topic_progress(
+            user_id=user_id,
+            stage_id=3,
+            exercise_id=1
+        )
+        
+        if not progress_result["success"]:
+            print(f"❌ [COMPLETION] Failed to get progress: {progress_result.get('error')}")
+            return {
+                "exercise_completed": False,
+                "progress_percentage": 0,
+                "completed_topics": 0,
+                "total_topics": total_stories,
+                "current_topic_id": 1,
+                "error": progress_result.get("error", "Failed to get progress")
+            }
+        
+        # Get current topic information
+        current_topic_result = await progress_tracker.get_current_topic_for_exercise(
+            user_id=user_id,
+            stage_id=3,
+            exercise_id=1
+        )
+        
+        if not current_topic_result["success"]:
+            print(f"❌ [COMPLETION] Failed to get current topic: {current_topic_result.get('error')}")
+            return {
+                "exercise_completed": False,
+                "progress_percentage": 0,
+                "completed_topics": 0,
+                "total_topics": total_stories,
+                "current_topic_id": 1,
+                "error": current_topic_result.get("error", "Failed to get current topic")
+            }
+        
+        # Extract progress data
+        topic_progress = progress_result.get("data", [])
+        current_topic_id = current_topic_result.get("current_topic_id", 1)
+        is_exercise_completed = current_topic_result.get("is_completed", False)
+        
+        # Calculate completion metrics
+        completed_topics = len(topic_progress) if topic_progress else 0
+        progress_percentage = (completed_topics / total_stories) * 100 if total_stories > 0 else 0
+        
+        # Determine if exercise is truly completed
+        # Exercise is completed ONLY when ALL topics are completed
+        exercise_completed = completed_topics >= total_stories and completed_topics > 0
+        
+        print(f"📊 [COMPLETION] Completion status calculated:")
+        print(f"   - Total stories: {total_stories}")
+        print(f"   - Completed topics: {completed_topics}")
+        print(f"   - Current topic ID: {current_topic_id}")
+        print(f"   - Progress percentage: {progress_percentage:.1f}%")
+        print(f"   - Exercise completed: {exercise_completed}")
+        
+        # Additional logging for completion logic
+        if completed_topics >= total_stories:
+            print(f"🎉 [COMPLETION] All {total_stories} stories completed! Exercise is finished!")
+        elif completed_topics > 0:
+            print(f"📈 [COMPLETION] {completed_topics}/{total_stories} stories completed. Exercise in progress...")
+        else:
+            print(f"🆕 [COMPLETION] No stories completed yet. Exercise just started.")
+        
+        return {
+            "exercise_completed": exercise_completed,
+            "progress_percentage": round(progress_percentage, 1),
+            "completed_topics": completed_topics,
+            "total_topics": total_stories,
+            "current_topic_id": current_topic_id,
+            "stage_id": 3,
+            "exercise_id": 1,
+            "exercise_name": "Storytelling Practice",
+            "stage_name": "Stage 3 – B1 Intermediate",
+            "completion_date": topic_progress[-1].get("created_at") if topic_progress and exercise_completed else None
+        }
+        
+    except Exception as e:
+        print(f"❌ [COMPLETION] Error checking exercise completion: {str(e)}")
+        return {
+            "exercise_completed": False,
+            "progress_percentage": 0,
+            "completed_topics": 0,
+            "total_topics": 18,
+            "current_topic_id": 1,
+            "error": f"Failed to check completion status: {str(e)}"
+        }
+
 
 @router.get("/storytelling-prompts")
 async def get_all_prompts(current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
@@ -282,6 +405,10 @@ async def evaluate_storytelling(
             else:
                 print(f"⚠️ [API] No valid user ID provided, skipping progress tracking")
             
+            # Check if the exercise is completed
+            exercise_completion_status = await check_exercise_completion(request.user_id)
+            print(f"📊 [API] Exercise completion status: {exercise_completion_status}")
+
             return {
                 "success": True,
                 "prompt": prompt_text,
@@ -294,7 +421,8 @@ async def evaluate_storytelling(
                 "keyword_matches": keyword_matches,
                 "total_keywords": total_keywords,
                 "fluency_score": fluency_score,
-                "grammar_score": grammar_score
+                "grammar_score": grammar_score,
+                "exercise_completion_status": exercise_completion_status
             }
 
         except Exception as e:

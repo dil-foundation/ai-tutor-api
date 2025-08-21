@@ -22,6 +22,108 @@ from typing import List, Dict, Any
 
 router = APIRouter()
 
+def get_scenario_by_id(scenario_id: int):
+    """Get a specific scenario by ID"""
+    scenarios = roleplay_agent.get_all_scenarios()
+    for scenario in scenarios:
+        if scenario["id"] == scenario_id:
+            return scenario
+    return None
+
+
+async def check_exercise_completion(user_id: str) -> dict:
+    """Check if user has completed the full Roleplay Simulation exercise (Stage 2, Exercise 3)"""
+    print(f"🔍 [COMPLETION] Checking exercise completion for user: {user_id}")
+    
+    try:
+        # Get total scenarios count
+        total_topics = len(roleplay_agent.get_all_scenarios())
+        print(f"📊 [COMPLETION] Total scenarios available: {total_topics}")
+        
+        # Get user's progress for stage 2, exercise 3
+        progress_result = await progress_tracker.get_user_topic_progress(
+            user_id=user_id,
+            stage_id=2,
+            exercise_id=3
+        )
+        
+        if not progress_result["success"]:
+            print(f"❌ [COMPLETION] Failed to get user progress: {progress_result.get('error')}")
+            return {
+                "exercise_completed": False,
+                "progress_percentage": 0.0,
+                "completed_topics": 0,
+                "total_topics": total_topics,
+                "current_topic_id": 1,
+                "stage_id": 2,
+                "exercise_id": 3,
+                "exercise_name": "Roleplay Simulation",
+                "stage_name": "Stage 2 – A2 Elementary",
+                "error": progress_result.get("error", "Failed to get progress")
+            }
+        
+        user_progress = progress_result.get("data", [])
+        completed_topics = len([record for record in user_progress if record.get("completed", False)])
+        
+        # Get current topic ID
+        current_topic_result = await progress_tracker.get_current_topic_for_exercise(
+            user_id=user_id,
+            stage_id=2,
+            exercise_id=3
+        )
+        
+        current_topic_id = 1
+        if current_topic_result["success"]:
+            current_topic_id = current_topic_result.get("current_topic_id", 1)
+        
+        # Calculate progress percentage
+        progress_percentage = (completed_topics / total_topics * 100) if total_topics > 0 else 0.0
+        
+        # Determine if exercise is truly completed
+        # Exercise is completed ONLY when ALL topics are completed
+        exercise_completed = completed_topics >= total_topics and completed_topics > 0
+        
+        print(f"📊 [COMPLETION] Completion status calculated:")
+        print(f"   - Total scenarios: {total_topics}")
+        print(f"   - Completed topics: {completed_topics}")
+        print(f"   - Current topic ID: {current_topic_id}")
+        print(f"   - Progress percentage: {progress_percentage:.1f}%")
+        print(f"   - Exercise completed: {exercise_completed}")
+        
+        # Additional logging for completion logic
+        if completed_topics >= total_topics:
+            print(f"🎉 [COMPLETION] User has completed all {total_topics} scenarios!")
+        else:
+            print(f"📚 [COMPLETION] User still needs to complete {total_topics - completed_topics} more scenarios")
+        
+        return {
+            "exercise_completed": exercise_completed,
+            "progress_percentage": progress_percentage,
+            "completed_topics": completed_topics,
+            "total_topics": total_topics,
+            "current_topic_id": current_topic_id,
+            "stage_id": 2,
+            "exercise_id": 3,
+            "exercise_name": "Roleplay Simulation",
+            "stage_name": "Stage 2 – A2 Elementary"
+        }
+        
+    except Exception as e:
+        print(f"❌ [COMPLETION] Error checking exercise completion: {str(e)}")
+        return {
+            "exercise_completed": False,
+            "progress_percentage": 0.0,
+            "completed_topics": 0,
+            "total_topics": 0,
+            "current_topic_id": 1,
+            "stage_id": 2,
+            "exercise_id": 3,
+            "exercise_name": "Roleplay Simulation",
+            "stage_name": "Stage 2 – A2 Elementary",
+            "error": str(e)
+        }
+
+
 @router.get("/roleplay-scenarios", response_model=ScenariosResponse)
 async def get_roleplay_scenarios(
     user_id: str, 
@@ -377,6 +479,27 @@ async def evaluate_roleplay_session(
                 print(f"❌ [ROLEPLAY] Error recording progress: {str(e)}")
                 # Don't fail the entire request if progress tracking fails
         
+        # Check exercise completion status
+        exercise_completion_status = None
+        if request.user_id and request.user_id.strip():
+            try:
+                exercise_completion_status = await check_exercise_completion(request.user_id)
+                print(f"📊 [ROLEPLAY] Exercise completion status: {exercise_completion_status}")
+            except Exception as completion_error:
+                print(f"⚠️ [ROLEPLAY] Failed to check exercise completion: {str(completion_error)}")
+                exercise_completion_status = {
+                    "exercise_completed": False,
+                    "progress_percentage": 0.0,
+                    "completed_topics": 0,
+                    "total_topics": 0,
+                    "current_topic_id": 1,
+                    "stage_id": 2,
+                    "exercise_id": 3,
+                    "exercise_name": "Roleplay Simulation",
+                    "stage_name": "Stage 2 – A2 Elementary",
+                    "error": str(completion_error)
+                }
+        
         # Clean up session from Redis
         try:
             roleplay_agent.delete_session(request.session_id)
@@ -410,10 +533,29 @@ async def evaluate_roleplay_session(
             unlocked_content=unlocked_content
         )
         
-    except HTTPException:
-        raise
     except Exception as e:
         print(f"❌ [ROLEPLAY] Error evaluating roleplay: {str(e)}")
+        
+        # Check exercise completion status even for errors
+        exercise_completion_status = None
+        if request.user_id and request.user_id.strip():
+            try:
+                exercise_completion_status = await check_exercise_completion(request.user_id)
+            except Exception as completion_error:
+                print(f"⚠️ [ROLEPLAY] Failed to check exercise completion: {str(completion_error)}")
+                exercise_completion_status = {
+                    "exercise_completed": False,
+                    "progress_percentage": 0.0,
+                    "completed_topics": 0,
+                    "total_topics": 0,
+                    "current_topic_id": 1,
+                    "stage_id": 2,
+                    "exercise_id": 3,
+                    "exercise_name": "Roleplay Simulation",
+                    "stage_name": "Stage 2 – A2 Elementary",
+                    "error": str(completion_error)
+                }
+        
         return RoleplayEvaluationResponse(
             success=False,
             overall_score=0,
@@ -438,5 +580,6 @@ async def evaluate_roleplay_session(
             progress_recorded=False,
             unlocked_content=[],
             error="evaluation_failed",
-            message=f"Failed to evaluate roleplay: {str(e)}"
-        ) 
+            message=f"Failed to evaluate roleplay: {str(e)}",
+            exercise_completion=exercise_completion_status
+        )

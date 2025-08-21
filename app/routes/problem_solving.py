@@ -39,6 +39,101 @@ def get_scenario_by_id(scenario_id: int):
             return scenario
     return None
 
+
+async def check_exercise_completion(user_id: str) -> dict:
+    """Check if user has completed the full Problem Solving exercise (Stage 3, Exercise 3)"""
+    print(f"🔍 [COMPLETION] Checking exercise completion for user: {user_id}")
+    
+    try:
+        # Get total scenarios count
+        scenarios = load_scenarios()
+        total_topics = len(scenarios)
+        print(f"📊 [COMPLETION] Total scenarios available: {total_topics}")
+        
+        # Get user's progress for stage 3, exercise 3
+        progress_result = await progress_tracker.get_user_topic_progress(
+            user_id=user_id,
+            stage_id=3,
+            exercise_id=3
+        )
+        
+        if not progress_result["success"]:
+            print(f"❌ [COMPLETION] Failed to get user progress: {progress_result.get('error')}")
+            return {
+                "exercise_completed": False,
+                "progress_percentage": 0.0,
+                "completed_topics": 0,
+                "total_topics": total_topics,
+                "current_topic_id": 1,
+                "stage_id": 3,
+                "exercise_id": 3,
+                "exercise_name": "Problem Solving",
+                "stage_name": "Stage 3 – B1 Intermediate",
+                "error": progress_result.get("error", "Failed to get progress")
+            }
+        
+        user_progress = progress_result.get("data", [])
+        completed_topics = len([record for record in user_progress if record.get("completed", False)])
+        
+        # Get current topic ID
+        current_topic_result = await progress_tracker.get_current_topic_for_exercise(
+            user_id=user_id,
+            stage_id=3,
+            exercise_id=3
+        )
+        
+        current_topic_id = 1
+        if current_topic_result["success"]:
+            current_topic_id = current_topic_result.get("current_topic_id", 1)
+        
+        # Calculate progress percentage
+        progress_percentage = (completed_topics / total_topics * 100) if total_topics > 0 else 0.0
+        
+        # Determine if exercise is truly completed
+        # Exercise is completed ONLY when ALL topics are completed
+        exercise_completed = completed_topics >= total_topics and completed_topics > 0
+        
+        print(f"📊 [COMPLETION] Completion status calculated:")
+        print(f"   - Total scenarios: {total_topics}")
+        print(f"   - Completed topics: {completed_topics}")
+        print(f"   - Current topic ID: {current_topic_id}")
+        print(f"   - Progress percentage: {progress_percentage:.1f}%")
+        print(f"   - Exercise completed: {exercise_completed}")
+        
+        # Additional logging for completion logic
+        if completed_topics >= total_topics:
+            print(f"🎉 [COMPLETION] User has completed all {total_topics} scenarios!")
+        else:
+            print(f"📚 [COMPLETION] User still needs to complete {total_topics - completed_topics} more scenarios")
+        
+        return {
+            "exercise_completed": exercise_completed,
+            "progress_percentage": progress_percentage,
+            "completed_topics": completed_topics,
+            "total_topics": total_topics,
+            "current_topic_id": current_topic_id,
+            "stage_id": 3,
+            "exercise_id": 3,
+            "exercise_name": "Problem Solving",
+            "stage_name": "Stage 3 – B1 Intermediate"
+        }
+        
+    except Exception as e:
+        print(f"❌ [COMPLETION] Error checking exercise completion: {str(e)}")
+        return {
+            "exercise_completed": False,
+            "progress_percentage": 0.0,
+            "completed_topics": 0,
+            "total_topics": 0,
+            "current_topic_id": 1,
+            "stage_id": 3,
+            "exercise_id": 3,
+            "exercise_name": "Problem Solving",
+            "stage_name": "Stage 3 – B1 Intermediate",
+            "error": str(e)
+        }
+
+
 @router.get(
     "/problem-solving-scenarios",
     summary="Get all problem-solving scenarios",
@@ -296,6 +391,27 @@ async def evaluate_problem_solving(
             else:
                 print(f"⚠️ [API] No valid user ID provided, skipping progress tracking")
             
+            # Check exercise completion status
+            exercise_completion_status = None
+            if request.user_id and request.user_id.strip():
+                try:
+                    exercise_completion_status = await check_exercise_completion(request.user_id)
+                    print(f"📊 [API] Exercise completion status: {exercise_completion_status}")
+                except Exception as completion_error:
+                    print(f"⚠️ [API] Failed to check exercise completion: {str(completion_error)}")
+                    exercise_completion_status = {
+                        "exercise_completed": False,
+                        "progress_percentage": 0.0,
+                        "completed_topics": 0,
+                        "total_topics": 0,
+                        "current_topic_id": 1,
+                        "stage_id": 3,
+                        "exercise_id": 3,
+                        "exercise_name": "Problem Solving",
+                        "stage_name": "Stage 3 – B1 Intermediate",
+                        "error": str(completion_error)
+                    }
+            
             return {
                 "success": True,
                 "problem_description": scenario_data['problem_description'],
@@ -311,18 +427,41 @@ async def evaluate_problem_solving(
                 "grammar_score": grammar_score,
                 "response_type": evaluation.get("response_type", ""),
                 "scenario_title": scenario_data['title'],
-                "scenario_context": scenario_data['context']
+                "scenario_context": scenario_data['context'],
+                "exercise_completion": exercise_completion_status
             }
 
         except Exception as e:
             print(f"❌ [API] Error evaluating response: {str(e)}")
+            
+            # Check exercise completion status even for evaluation errors
+            exercise_completion_status = None
+            if request.user_id and request.user_id.strip():
+                try:
+                    exercise_completion_status = await check_exercise_completion(request.user_id)
+                except Exception as completion_error:
+                    print(f"⚠️ [API] Failed to check exercise completion: {str(completion_error)}")
+                    exercise_completion_status = {
+                        "exercise_completed": False,
+                        "progress_percentage": 0.0,
+                        "completed_topics": 0,
+                        "total_topics": 0,
+                        "current_topic_id": 1,
+                        "stage_id": 3,
+                        "exercise_id": 3,
+                        "exercise_name": "Problem Solving",
+                        "stage_name": "Stage 3 – B1 Intermediate",
+                        "error": str(completion_error)
+                    }
+            
             return {
                 "success": False,
                 "error": "evaluation_failed",
                 "message": "Failed to evaluate response. Please try again.",
                 "expected_keywords": scenario_data['expected_keywords'],
                 "problem_description": scenario_data['problem_description'],
-                "user_text": user_text
+                "user_text": user_text,
+                "exercise_completion": exercise_completion_status
             }
         
     except HTTPException:

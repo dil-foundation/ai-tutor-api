@@ -22,6 +22,100 @@ def load_questions():
         print(f"❌ [QUICK_ANSWER] Error loading questions: {e}")
         return []
 
+
+async def check_exercise_completion(user_id: str) -> dict:
+    """Check if user has completed the full Quick Answer exercise (Stage 2, Exercise 2)"""
+    print(f"🔍 [COMPLETION] Checking exercise completion for user: {user_id}")
+    
+    try:
+        # Get total questions count
+        questions = load_questions()
+        total_topics = len(questions)
+        print(f"📊 [COMPLETION] Total questions available: {total_topics}")
+        
+        # Get user's progress for stage 2, exercise 2
+        progress_result = await progress_tracker.get_user_topic_progress(
+            user_id=user_id,
+            stage_id=2,
+            exercise_id=2
+        )
+        
+        if not progress_result["success"]:
+            print(f"❌ [COMPLETION] Failed to get user progress: {progress_result.get('error')}")
+            return {
+                "exercise_completed": False,
+                "progress_percentage": 0.0,
+                "completed_topics": 0,
+                "total_topics": total_topics,
+                "current_topic_id": 1,
+                "stage_id": 2,
+                "exercise_id": 2,
+                "exercise_name": "Quick Answer",
+                "stage_name": "Stage 2 – A2 Elementary",
+                "error": progress_result.get("error", "Failed to get progress")
+            }
+        
+        user_progress = progress_result.get("data", [])
+        completed_topics = len([record for record in user_progress if record.get("completed", False)])
+        
+        # Get current topic ID
+        current_topic_result = await progress_tracker.get_current_topic_for_exercise(
+            user_id=user_id,
+            stage_id=2,
+            exercise_id=2
+        )
+        
+        current_topic_id = 1
+        if current_topic_result["success"]:
+            current_topic_id = current_topic_result.get("current_topic_id", 1)
+        
+        # Calculate progress percentage
+        progress_percentage = (completed_topics / total_topics * 100) if total_topics > 0 else 0.0
+        
+        # Determine if exercise is truly completed
+        # Exercise is completed ONLY when ALL topics are completed
+        exercise_completed = completed_topics >= total_topics and completed_topics > 0
+        
+        print(f"📊 [COMPLETION] Completion status calculated:")
+        print(f"   - Total questions: {total_topics}")
+        print(f"   - Completed topics: {completed_topics}")
+        print(f"   - Current topic ID: {current_topic_id}")
+        print(f"   - Progress percentage: {progress_percentage:.1f}%")
+        print(f"   - Exercise completed: {exercise_completed}")
+        
+        # Additional logging for completion logic
+        if completed_topics >= total_topics:
+            print(f"🎉 [COMPLETION] User has completed all {total_topics} questions!")
+        else:
+            print(f"📚 [COMPLETION] User still needs to complete {total_topics - completed_topics} more questions")
+        
+        return {
+            "exercise_completed": exercise_completed,
+            "progress_percentage": progress_percentage,
+            "completed_topics": completed_topics,
+            "total_topics": total_topics,
+            "current_topic_id": current_topic_id,
+            "stage_id": 2,
+            "exercise_id": 2,
+            "exercise_name": "Quick Answer",
+            "stage_name": "Stage 2 – A2 Elementary"
+        }
+        
+    except Exception as e:
+        print(f"❌ [COMPLETION] Error checking exercise completion: {str(e)}")
+        return {
+            "exercise_completed": False,
+            "progress_percentage": 0.0,
+            "completed_topics": 0,
+            "total_topics": 0,
+            "current_topic_id": 1,
+            "stage_id": 2,
+            "exercise_id": 2,
+            "exercise_name": "Quick Answer",
+            "stage_name": "Stage 2 – A2 Elementary",
+            "error": str(e)
+        }
+
 class AudioEvaluationRequest(BaseModel):
     audio_base64: str
     question_id: int
@@ -226,6 +320,26 @@ async def evaluate_quick_answer_audio(
                 unlock_result = await progress_tracker.check_and_unlock_content(request.user_id)
                 unlocked_content = unlock_result.get("unlocked_content", []) if unlock_result.get("success") else []
                 
+                # Check exercise completion status
+                exercise_completion_status = None
+                try:
+                    exercise_completion_status = await check_exercise_completion(request.user_id)
+                    print(f"📊 [QUICK_ANSWER] Exercise completion status: {exercise_completion_status}")
+                except Exception as completion_error:
+                    print(f"⚠️ [QUICK_ANSWER] Failed to check exercise completion: {str(completion_error)}")
+                    exercise_completion_status = {
+                        "exercise_completed": False,
+                        "progress_percentage": 0.0,
+                        "completed_topics": 0,
+                        "total_topics": 0,
+                        "current_topic_id": 1,
+                        "stage_id": 2,
+                        "exercise_id": 2,
+                        "exercise_name": "Quick Answer",
+                        "stage_name": "Stage 2 – A2 Elementary",
+                        "error": str(completion_error)
+                    }
+                
                 return {
                     "success": True,
                     "question": question["question"],
@@ -236,10 +350,30 @@ async def evaluate_quick_answer_audio(
                     "unlocked_content": unlocked_content,
                     "answer_accuracy": evaluation.get("answer_accuracy", 0),
                     "grammar_score": evaluation.get("grammar_score", 0),
-                    "fluency_score": evaluation.get("fluency_score", 0)
+                    "fluency_score": evaluation.get("fluency_score", 0),
+                    "exercise_completion": exercise_completion_status
                 }
             else:
                 print(f"⚠️ [QUICK_ANSWER] Progress recording failed: {progress_result.get('error')}")
+                # Check exercise completion status even when progress recording fails
+                exercise_completion_status = None
+                try:
+                    exercise_completion_status = await check_exercise_completion(request.user_id)
+                except Exception as completion_error:
+                    print(f"⚠️ [QUICK_ANSWER] Failed to check exercise completion: {str(completion_error)}")
+                    exercise_completion_status = {
+                        "exercise_completed": False,
+                        "progress_percentage": 0.0,
+                        "completed_topics": 0,
+                        "total_topics": 0,
+                        "current_topic_id": 1,
+                        "stage_id": 2,
+                        "exercise_id": 2,
+                        "exercise_name": "Quick Answer",
+                        "stage_name": "Stage 2 – A2 Elementary",
+                        "error": str(completion_error)
+                    }
+                
                 return {
                     "success": True,
                     "question": question["question"],
@@ -249,11 +383,31 @@ async def evaluate_quick_answer_audio(
                     "progress_recorded": False,
                     "answer_accuracy": evaluation.get("answer_accuracy", 0),
                     "grammar_score": evaluation.get("grammar_score", 0),
-                    "fluency_score": evaluation.get("fluency_score", 0)
+                    "fluency_score": evaluation.get("fluency_score", 0),
+                    "exercise_completion": exercise_completion_status
                 }
                 
         except Exception as e:
             print(f"❌ [QUICK_ANSWER] Error recording progress: {e}")
+            # Check exercise completion status even when progress recording fails
+            exercise_completion_status = None
+            try:
+                exercise_completion_status = await check_exercise_completion(request.user_id)
+            except Exception as completion_error:
+                print(f"⚠️ [QUICK_ANSWER] Failed to check exercise completion: {str(completion_error)}")
+                exercise_completion_status = {
+                    "exercise_completed": False,
+                    "progress_percentage": 0.0,
+                    "completed_topics": 0,
+                    "total_topics": 0,
+                    "current_topic_id": 1,
+                    "stage_id": 2,
+                    "exercise_id": 2,
+                    "exercise_name": "Quick Answer",
+                    "stage_name": "Stage 2 – A2 Elementary",
+                    "error": str(completion_error)
+                }
+            
             return {
                 "success": True,
                 "question": question["question"],
@@ -263,7 +417,8 @@ async def evaluate_quick_answer_audio(
                 "progress_recorded": False,
                 "answer_accuracy": evaluation.get("answer_accuracy", 0),
                 "grammar_score": evaluation.get("grammar_score", 0),
-                "fluency_score": evaluation.get("fluency_score", 0)
+                "fluency_score": evaluation.get("fluency_score", 0),
+                "exercise_completion": exercise_completion_status
             }
 
     except HTTPException:

@@ -25,6 +25,101 @@ def load_interview_questions():
         logging.error(f"Error loading interview questions: {e}")
         return []
 
+
+async def check_exercise_completion(user_id: str) -> dict:
+    """Check if user has completed the full Mock Interview exercise (Stage 4, Exercise 2)"""
+    print(f"🔍 [COMPLETION] Checking exercise completion for user: {user_id}")
+    
+    try:
+        # Get total questions count
+        questions = load_interview_questions()
+        total_topics = len(questions)
+        print(f"📊 [COMPLETION] Total questions available: {total_topics}")
+        
+        # Get user's progress for stage 4, exercise 2
+        progress_result = await progress_tracker.get_user_topic_progress(
+            user_id=user_id,
+            stage_id=4,
+            exercise_id=2
+        )
+        
+        if not progress_result["success"]:
+            print(f"❌ [COMPLETION] Failed to get user progress: {progress_result.get('error')}")
+            return {
+                "exercise_completed": False,
+                "progress_percentage": 0.0,
+                "completed_topics": 0,
+                "total_topics": total_topics,
+                "current_topic_id": 1,
+                "stage_id": 4,
+                "exercise_id": 2,
+                "exercise_name": "Mock Interview",
+                "stage_name": "Stage 4 – B2 Upper Intermediate",
+                "error": progress_result.get("error", "Failed to get progress")
+            }
+        
+        user_progress = progress_result.get("data", [])
+        completed_topics = len([record for record in user_progress if record.get("completed", False)])
+        
+        # Get current topic ID
+        current_topic_result = await progress_tracker.get_current_topic_for_exercise(
+            user_id=user_id,
+            stage_id=4,
+            exercise_id=2
+        )
+        
+        current_topic_id = 1
+        if current_topic_result["success"]:
+            current_topic_id = current_topic_result.get("current_topic_id", 1)
+        
+        # Calculate progress percentage
+        progress_percentage = (completed_topics / total_topics * 100) if total_topics > 0 else 0.0
+        
+        # Determine if exercise is truly completed
+        # Exercise is completed ONLY when ALL topics are completed
+        exercise_completed = completed_topics >= total_topics and completed_topics > 0
+        
+        print(f"📊 [COMPLETION] Completion status calculated:")
+        print(f"   - Total questions: {total_topics}")
+        print(f"   - Completed topics: {completed_topics}")
+        print(f"   - Current topic ID: {current_topic_id}")
+        print(f"   - Progress percentage: {progress_percentage:.1f}%")
+        print(f"   - Exercise completed: {exercise_completed}")
+        
+        # Additional logging for completion logic
+        if completed_topics >= total_topics:
+            print(f"🎉 [COMPLETION] User has completed all {total_topics} questions!")
+        else:
+            print(f"📚 [COMPLETION] User still needs to complete {total_topics - completed_topics} more questions")
+        
+        return {
+            "exercise_completed": exercise_completed,
+            "progress_percentage": progress_percentage,
+            "completed_topics": completed_topics,
+            "total_topics": total_topics,
+            "current_topic_id": current_topic_id,
+            "stage_id": 4,
+            "exercise_id": 2,
+            "exercise_name": "Mock Interview",
+            "stage_name": "Stage 4 – B2 Upper Intermediate"
+        }
+        
+    except Exception as e:
+        print(f"❌ [COMPLETION] Error checking exercise completion: {str(e)}")
+        return {
+            "exercise_completed": False,
+            "progress_percentage": 0.0,
+            "completed_topics": 0,
+            "total_topics": 0,
+            "current_topic_id": 1,
+            "stage_id": 4,
+            "exercise_id": 2,
+            "exercise_name": "Mock Interview",
+            "stage_name": "Stage 4 – B2 Upper Intermediate",
+            "error": str(e)
+        }
+
+
 class AudioEvaluationRequest(BaseModel):
     audio_base64: str
     question_id: int
@@ -211,6 +306,25 @@ async def evaluate_mock_interview(
         except Exception as e:
             print(f"⚠️ [API] Content unlock check failed: {e}")
             evaluation["unlocked_content"] = []
+        
+        # Check for exercise completion
+        try:
+            exercise_completion_status = await check_exercise_completion(request.user_id)
+            evaluation["exercise_completion_status"] = exercise_completion_status
+        except Exception as e:
+            print(f"⚠️ [API] Exercise completion check failed: {e}")
+            evaluation["exercise_completion_status"] = {
+                "exercise_completed": False,
+                "progress_percentage": 0.0,
+                "completed_topics": 0,
+                "total_topics": 0,
+                "current_topic_id": 1,
+                "stage_id": 4,
+                "exercise_id": 2,
+                "exercise_name": "Mock Interview",
+                "stage_name": "Stage 4 – B2 Upper Intermediate",
+                "error": str(e)
+            }
         
         return evaluation
         

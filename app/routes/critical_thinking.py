@@ -40,6 +40,100 @@ def get_topic_by_id(topic_id: int):
         print(f"❌ [TOPIC] Error reading topic file: {str(e)}")
         return None
 
+
+async def check_exercise_completion(user_id: str) -> dict:
+    """Check if user has completed the full Critical Thinking exercise (Stage 5, Exercise 1)"""
+    print(f"🔍 [COMPLETION] Checking exercise completion for user: {user_id}")
+    
+    try:
+        # Get total topics count
+        topics = []
+        try:
+            with open(CRITICAL_THINKING_FILE, 'r', encoding='utf-8') as f:
+                topics = json.load(f)
+        except Exception as e:
+            print(f"❌ [COMPLETION] Error reading topics file: {str(e)}")
+        
+        total_topics = len(topics)
+        print(f"📊 [COMPLETION] Total topics available: {total_topics}")
+        
+        # Get user's progress for stage 5, exercise 1
+        progress_result = await progress_tracker.get_user_topic_progress(
+            user_id=user_id,
+            stage_id=5,
+            exercise_id=1
+        )
+        
+        if not progress_result["success"]:
+            print(f"❌ [COMPLETION] Failed to get user progress: {progress_result.get('error')}")
+            return {
+                "exercise_completed": False,
+                "progress_percentage": 0.0,
+                "completed_topics": 0,
+                "total_topics": total_topics,
+                "current_topic_id": 1,
+                "stage_id": 5,
+                "exercise_id": 1,
+                "exercise_name": "Critical Thinking Dialogues",
+                "stage_name": "Stage 5 – C1 Advanced",
+                "error": progress_result.get("error", "Failed to get progress")
+            }
+        
+        user_progress = progress_result.get("data", [])
+        completed_topics = len([record for record in user_progress if record.get("completed", False)])
+        
+        # Get current topic ID
+        current_topic_result = await progress_tracker.get_current_topic_for_exercise(
+            user_id=user_id,
+            stage_id=5,
+            exercise_id=1
+        )
+        
+        current_topic_id = 1
+        if current_topic_result["success"]:
+            current_topic_id = current_topic_result.get("current_topic_id", 1)
+        
+        # Calculate progress percentage
+        progress_percentage = (completed_topics / total_topics * 100) if total_topics > 0 else 0.0
+        
+        # Determine if exercise is truly completed
+        # Exercise is completed ONLY when ALL topics are completed
+        exercise_completed = completed_topics >= total_topics and completed_topics > 0
+        
+        print(f"📊 [COMPLETION] Completion status calculated:")
+        print(f"   - Total topics: {total_topics}")
+        print(f"   - Completed topics: {completed_topics}")
+        print(f"   - Current topic ID: {current_topic_id}")
+        print(f"   - Progress percentage: {progress_percentage:.1f}%")
+        print(f"   - Exercise completed: {exercise_completed}")
+        
+        return {
+            "exercise_completed": exercise_completed,
+            "progress_percentage": progress_percentage,
+            "completed_topics": completed_topics,
+            "total_topics": total_topics,
+            "current_topic_id": current_topic_id,
+            "stage_id": 5,
+            "exercise_id": 1,
+            "exercise_name": "Critical Thinking Dialogues",
+            "stage_name": "Stage 5 – C1 Advanced"
+        }
+        
+    except Exception as e:
+        print(f"❌ [COMPLETION] Error checking exercise completion: {str(e)}")
+        return {
+            "exercise_completed": False,
+            "progress_percentage": 0.0,
+            "completed_topics": 0,
+            "total_topics": 0,
+            "current_topic_id": 1,
+            "stage_id": 5,
+            "exercise_id": 1,
+            "exercise_name": "Critical Thinking Dialogues",
+            "stage_name": "Stage 5 – C1 Advanced",
+            "error": str(e)
+        }
+
 @router.get("/critical-thinking-topics")
 async def get_all_topics(current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
     """Get all available topics for Critical Thinking Dialogues exercise"""
@@ -287,6 +381,26 @@ async def evaluate_critical_thinking(
             else:
                 print(f"⚠️ [API] No valid user ID provided, skipping progress tracking")
             
+            # Check exercise completion status
+            exercise_completion_status = None
+            try:
+                exercise_completion_status = await check_exercise_completion(request.user_id)
+                print(f"📊 [CRITICAL_THINKING] Exercise completion status: {exercise_completion_status}")
+            except Exception as completion_error:
+                print(f"⚠️ [CRITICAL_THINKING] Failed to check exercise completion: {str(completion_error)}")
+                exercise_completion_status = {
+                    "exercise_completed": False,
+                    "progress_percentage": 0.0,
+                    "completed_topics": 0,
+                    "total_topics": 0,
+                    "current_topic_id": 1,
+                    "stage_id": 5,
+                    "exercise_id": 1,
+                    "exercise_name": "Critical Thinking Dialogues",
+                    "stage_name": "Stage 5 – C1 Advanced",
+                    "error": str(completion_error)
+                }
+            
             return {
                 "success": True,
                 "topic": topic_data['topic'],
@@ -302,7 +416,8 @@ async def evaluate_critical_thinking(
                 "grammar_score": grammar_score,
                 "argument_type": evaluation.get("argument_type", ""),
                 "topic_title": topic_data['topic'],
-                "topic_category": topic_data['category']
+                "topic_category": topic_data['category'],
+                "exercise_completion": exercise_completion_status
             }
 
         except Exception as e:
