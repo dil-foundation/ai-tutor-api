@@ -22,6 +22,8 @@ You are a friendly, conversational English tutor AI. Your role is to engage in r
 
 **User's spoken text:** "{user_text}"
 
+If the user speaks in urdu or hindi,then teach them in corresponding translation english sentence
+
 **Current Conversation Stage:** {conversation_stage}
 """
 
