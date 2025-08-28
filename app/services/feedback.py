@@ -9,177 +9,455 @@ client = OpenAI(api_key=OPENAI_API_KEY)
 
 def analyze_english_input_eng_only(user_text: str, conversation_stage: str, current_topic: str = None) -> dict:
     """
-    Implements a multi-stage conversational AI for English learning.
-    It adapts its behavior based on the conversation_stage.
+    Enhanced multi-stage conversational AI for English learning with consistent Urdu correction
+    and specialized logic flows for different learning areas.
+    
+    Features:
+    - Consistent Urdu-to-English correction for every response
+    - Separate logic flows for Vocabulary, Sentence Structure, and Topics
+    - Fallback to normal NLP conversation outside learning areas
+    - Professional error handling and edge case management
     """
-    print(f"Analyzing input for stage: {conversation_stage} with topic: {current_topic}")
+    print(f"🔍 [ENGLISH_ONLY] Analyzing input for stage: {conversation_stage} with topic: {current_topic}")
+    print(f"📝 User input: '{user_text}'")
 
-    # Default prompt for general conversation and correction
-    prompt_template = f"""
-You are a friendly, conversational English tutor AI. Your role is to engage in real conversations while gently correcting English mistakes.
+    # Enhanced base prompt with consistent Urdu correction
+    base_prompt = f"""
+You are a professional, friendly English tutor AI designed to help learners improve their English skills. 
+Your role is to engage in real conversations while providing consistent, gentle corrections.
 
-**Urdu Input Handling:** If the user speaks in Urdu, first provide your conversational response in English. Then, on a new line at the end, add: "By the way, in English you could say, \\"<the English translation of the user's Urdu sentence>\\"."
+**CRITICAL: Urdu Input Handling - ALWAYS CORRECT EVERY TIME**
+If the user speaks in Urdu, Hindi, or any non-English language:
+1. First, provide your conversational response in English
+2. Then, ALWAYS add: "By the way, in English you could say, \\"<the English translation of the user's sentence>\\"."
+3. This correction must happen EVERY TIME, not just once
 
 **User's spoken text:** "{user_text}"
 
-If the user speaks in urdu or hindi,then teach them in corresponding translation english sentence
-
 **Current Conversation Stage:** {conversation_stage}
-"""
+**Current Topic:** {current_topic if current_topic else 'None'}
 
-    if conversation_stage == "intent_detection":
-        prompt_template += """
-**Task:** This is the user's first response after your greeting. Your goal is to understand their intent and guide them.
-1.  **Analyze for Broken English:** First, check if the user's sentence is grammatically incorrect or "broken" (e.g., "Myself name is Mike," "Today itself raining day").
-2.  **Correct if Needed:**
-    *   If the English is broken, understand the user's intent and gently correct them. Start your response with: "In English you could say this like, '<corrected sentence>'."
-    *   After the correction, continue to the next step.
-3.  **Detect Intent & Offer Options:** Understand their learning goal (e.g., "Learn English," "Improve speaking"). Formulate a kind, encouraging response and offer the next steps: "Would you like to learn Vocabulary, Sentence Structure, Grammar, or have a topic-based discussion?" Combine this with the correction if one was made.
-
-**Example for Broken English:**
-- User says: "Myself name is Mike"
-- Your response should start with: "In English you could say this like, 'My name is Mike.' Great, I'm glad to assist you... Would you like to learn..."
-
-**JSON Output:**
-{{
-    "conversation_text": "<Your kind response, with correction if needed, and then options>",
-    "next_stage": "option_selection",
-    "needs_correction": <true/false>,
-    "corrected_sentence": "<the corrected version of user's sentence, if correction needed>",
-    "correction_type": "<grammar|pronunciation|structure|none>"
-}}
-"""
-    elif conversation_stage == "option_selection":
-        prompt_template += """
-**Task:** The user was just offered learning options. Your goal is to understand their choice and transition to the correct learning path.
-1.  **Detect Choice:** Analyze the user's response to identify which option they chose (Vocabulary, Sentence Structure, Topic-based discussion, etc.).
-2.  **Formulate Transition:** Based on their choice, generate the appropriate transition message.
-    *   If "Vocabulary": "Great! Let me help you learn vocabulary." -> next_stage: "vocabulary_learning"
-    *   If "Sentence Structure": "Great, talk to me about anything and I'll help you correct the pronunciation." -> next_stage: "sentence_practice"
-    *   If "Topic-based discussion": "Great, what topic would you like to discuss?" -> next_stage: "topic_discussion_prompt"
-    *   If unclear, ask for clarification.
-
-**JSON Output:**
-{{
-    "conversation_text": "<Your transition message>",
-    "next_stage": "<The next stage based on their choice>",
-    "needs_correction": <true/false>,
-    "corrected_sentence": "<the corrected version of user's sentence, if correction needed>",
-    "correction_type": "<grammar|pronunciation|structure|none>"
-}}
-"""
-    elif conversation_stage == "vocabulary_learning":
-        prompt_template += """
-**Task:** You are in a vocabulary building session.
-1.  **Assistive Flow:** Engage the user in exercises to build their vocabulary. You can introduce a new word, ask them to use it in a sentence, or define it.
-2.  **Maintain Context:** Continue the vocabulary session.
-
-**JSON Output:**
-{{
-    "conversation_text": "<Your vocabulary exercise prompt>",
-    "next_stage": "vocabulary_learning",
-    "needs_correction": <true/false>,
-    "corrected_sentence": "<the corrected version of user's sentence, if correction needed>",
-    "correction_type": "<grammar|pronunciation|structure|none>"
-}}
-"""
-    elif conversation_stage == "sentence_practice":
-        prompt_template += """
-**Task:** You are in a sentence practice session.
-1.  **Analyze Sentence:** Evaluate the user's sentence.
-2.  **Provide Feedback:**
-    *   If the sentence is grammatically incorrect, provide a gentle, assistive correction.
-    *   If the sentence is correct, continue the conversation naturally without correction. Ask a follow-up question to keep the conversation flowing.
-3.  **Maintain Context:** Continue the sentence practice session.
-
-**JSON Output:**
-{{
-    "conversation_text": "<Your conversational response, with or without correction>",
-    "next_stage": "sentence_practice",
-    "needs_correction": <true/false>,
-    "corrected_sentence": "<the corrected version of user's sentence, if correction needed>",
-    "correction_type": "<grammar|pronunciation|structure|none>"
-}}
-"""
-    elif conversation_stage == "topic_discussion_prompt":
-        prompt_template += """
-**Task:** The user wants to discuss a topic and you have just asked them to name one. Their response should contain the topic.
-1.  **Extract Topic:** Identify the topic from the user's response.
-2.  **Confirm and Engage:** Confirm the topic and ask an engaging, open-ended question to start the discussion. For example: "Ah, movies! That's a great topic. What kind of movies do you enjoy?"
-
-**JSON Output:**
-{{
-    "conversation_text": "<Your confirmation and first question>",
-    "next_stage": "topic_discussion",
-    "extracted_topic": "<The topic you identified>",
-    "needs_correction": <true/false>,
-    "corrected_sentence": "<the corrected version of user's sentence, if correction needed>",
-    "correction_type": "<grammar|pronunciation|structure|none>"
-}}
-"""
-    elif conversation_stage == "topic_discussion":
-        prompt_template += f"""
-**Current Discussion Topic:** {current_topic}
-
-**Task:** You are in a topic-based discussion about "{current_topic}".
-1.  **Continue Conversation:** Engage with the user's response in a natural, conversational way.
-2.  **Provide Gentle Correction:** If their English is broken or grammatically incorrect, gently correct it while continuing the conversation on topic. Don't let the correction derail the discussion.
-3.  **Stay on Topic:** Ask relevant follow-up questions to keep the discussion about "{current_topic}" going.
-
-**JSON Output:**
-{{
-    "conversation_text": "<Your on-topic conversational response, with or without correction>",
-    "next_stage": "topic_discussion",
-    "needs_correction": <true/false>,
-    "corrected_sentence": "<the corrected version of user's sentence, if correction needed>",
-    "correction_type": "<grammar|pronunciation|structure|none>"
-}}
-"""
-    else: # Fallback / main_conversation
-        prompt_template += """
-**Task:** Engage in a general conversation.
-1.  **Analyze Sentence:** Evaluate the user's sentence.
-2.  **Provide Feedback:** If the sentence is grammatically incorrect, provide a gentle, assistive correction. If correct, continue the conversation naturally.
-3.  **Maintain Context:** Continue the general conversation.
-
-**JSON Output:**
-{{
-    "conversation_text": "<Your conversational response>",
-    "next_stage": "main_conversation",
-    "needs_correction": <true/false>,
-    "corrected_sentence": "<the corrected version of user's sentence, if correction needed>",
-    "correction_type": "<grammar|pronunciation|structure|none>"
-}}
+**Response Format Requirements:**
+- Always respond in a warm, encouraging tone
+- Provide corrections when needed (grammar, pronunciation, structure)
+- Maintain conversation flow naturally
+- Use the exact JSON format specified for each stage
 """
 
     try:
-        response = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[{"role": "user", "content": prompt_template}],
-            response_format={"type": "json_object"},
-            temperature=0.7,
-            max_tokens=500
-        )
-        output = response.choices[0].message.content.strip()
-        print(f"✅ [ENGLISH_ONLY] GPT Raw Output: {output}")
-        result = json.loads(output)
-        
-        # Ensure correction fields are present with defaults
-        result.setdefault("needs_correction", False)
-        result.setdefault("corrected_sentence", "")
-        result.setdefault("correction_type", "none")
-        
-        return result
+        # Stage-specific logic implementation
+        if conversation_stage == "greeting":
+            return _handle_greeting_stage(user_text, base_prompt)
+        elif conversation_stage == "intent_detection":
+            return _handle_intent_detection_stage(user_text, base_prompt)
+        elif conversation_stage == "option_selection":
+            return _handle_option_selection_stage(user_text, base_prompt)
+        elif conversation_stage == "vocabulary_learning":
+            return _handle_vocabulary_learning_stage(user_text, base_prompt, current_topic)
+        elif conversation_stage == "sentence_practice":
+            return _handle_sentence_practice_stage(user_text, base_prompt, current_topic)
+        elif conversation_stage == "topic_discussion_prompt":
+            return _handle_topic_discussion_prompt_stage(user_text, base_prompt)
+        elif conversation_stage == "topic_discussion":
+            return _handle_topic_discussion_stage(user_text, base_prompt, current_topic)
+        elif conversation_stage == "grammar_focus":
+            return _handle_grammar_focus_stage(user_text, base_prompt, current_topic)
+        else:
+            # Fallback to normal NLP conversation for unknown stages
+            return _handle_fallback_conversation(user_text, base_prompt, conversation_stage)
 
     except Exception as e:
-        print(f"❌ [ENGLISH_ONLY] Error during analysis: {str(e)}")
-        # Fallback response
+        print(f"❌ [ENGLISH_ONLY] Critical error during analysis: {str(e)}")
+        # Professional fallback response with error logging
         return {
-            "conversation_text": f"I'm having a little trouble at the moment, but I understood: '{user_text}'. Let's continue!",
-            "next_stage": conversation_stage, # Maintain current stage on error
+            "conversation_text": f"I'm experiencing a technical difficulty at the moment, but I understood: '{user_text}'. Let's continue our conversation!",
+            "next_stage": conversation_stage,
+            "needs_correction": False,
+            "corrected_sentence": "",
+            "correction_type": "none",
+            "error_occurred": True,
+            "error_message": str(e)
+        }
+
+def _handle_greeting_stage(user_text: str, base_prompt: str) -> dict:
+    """Handle the initial greeting stage with enhanced Urdu correction"""
+    prompt = base_prompt + """
+**Task:** This is the user's first response after your greeting. Your goal is to understand their intent and guide them.
+
+**Requirements:**
+1. **Language Detection:** Check if the user is speaking in Urdu, Hindi, or English
+2. **Consistent Correction:** If non-English, ALWAYS provide the English translation
+3. **Intent Analysis:** Understand their learning goal (vocabulary, grammar, speaking, etc.)
+4. **Professional Guidance:** Offer clear learning options with encouragement
+
+**Learning Options to Offer:**
+- Vocabulary Building
+- Sentence Structure & Grammar
+- Topic-based Discussion
+- Pronunciation Practice
+- General Conversation Practice
+
+**JSON Output:**
+{
+    "conversation_text": "<Your encouraging response with correction if needed, then learning options>",
+    "next_stage": "option_selection",
+    "needs_correction": <true/false>,
+    "corrected_sentence": "<English translation if user spoke in Urdu/Hindi>",
+    "correction_type": "<urdu_translation|grammar|pronunciation|structure|none>",
+    "detected_language": "<english|urdu|hindi|mixed>",
+    "user_intent": "<vocabulary|grammar|speaking|general|unknown>"
+}
+"""
+    
+    return _execute_ai_analysis(prompt, "greeting")
+
+def _handle_intent_detection_stage(user_text: str, base_prompt: str) -> dict:
+    """Handle intent detection with enhanced analysis"""
+    prompt = base_prompt + """
+**Task:** Analyze the user's response to understand their specific learning needs and preferences.
+
+**Analysis Requirements:**
+1. **Language Assessment:** Determine if they're speaking English, Urdu, or mixed
+2. **Learning Preference:** Identify their preferred learning method
+3. **Skill Level:** Assess their current English proficiency
+4. **Motivation:** Understand their learning goals and motivation
+
+**Response Strategy:**
+- Provide immediate correction for any non-English input
+- Offer personalized learning path recommendations
+- Maintain encouraging and supportive tone
+- Set clear expectations for the learning session
+
+**JSON Output:**
+{
+    "conversation_text": "<Personalized response with corrections and learning path>",
+    "next_stage": "option_selection",
+    "needs_correction": <true/false>,
+    "corrected_sentence": "<English translation if needed>",
+    "correction_type": "<urdu_translation|grammar|pronunciation|structure|none>",
+    "learning_path": "<vocabulary|grammar|conversation|mixed>",
+    "skill_assessment": "<beginner|intermediate|advanced>"
+}
+"""
+    
+    return _execute_ai_analysis(prompt, "intent_detection")
+
+def _handle_option_selection_stage(user_text: str, base_prompt: str) -> dict:
+    """Handle learning option selection with intelligent routing"""
+    prompt = base_prompt + """
+**Task:** The user has been offered learning options. Analyze their choice and transition to the appropriate learning path.
+
+**Option Detection:**
+1. **Vocabulary Building:** Words, definitions, usage examples
+2. **Sentence Structure:** Grammar, sentence formation, syntax
+3. **Topic Discussion:** Specific subjects, current events, interests
+4. **Pronunciation:** Speaking practice, accent improvement
+5. **General Conversation:** Free-flowing English practice
+
+**Intelligent Routing Logic:**
+- If "Vocabulary" → next_stage: "vocabulary_learning"
+- If "Sentence Structure" or "Grammar" → next_stage: "sentence_practice"
+- If "Topic" or "Discussion" → next_stage: "topic_discussion_prompt"
+- If "Pronunciation" → next_stage: "pronunciation_practice"
+- If unclear → Ask for clarification and remain in "option_selection"
+
+**JSON Output:**
+{
+    "conversation_text": "<Transition message based on their choice>",
+    "next_stage": "<vocabulary_learning|sentence_practice|topic_discussion_prompt|pronunciation_practice|option_selection>",
+    "needs_correction": <true/false>,
+    "corrected_sentence": "<English translation if needed>",
+    "correction_type": "<urdu_translation|grammar|pronunciation|structure|none>",
+    "selected_option": "<vocabulary|grammar|topic|pronunciation|unclear>",
+    "transition_message": "<Specific transition text>"
+}
+"""
+    
+    return _execute_ai_analysis(prompt, "option_selection")
+
+def _handle_vocabulary_learning_stage(user_text: str, base_prompt: str, current_topic: str = None) -> dict:
+    """Handle vocabulary learning with specialized logic"""
+    # Fix the f-string formatting issue by properly escaping curly braces
+    topic_context = current_topic if current_topic else 'General Vocabulary'
+    
+    prompt = base_prompt + f"""
+**Task:** You are in a specialized vocabulary building session. This is NOT general conversation.
+
+**Vocabulary Learning Requirements:**
+1. **Word Introduction:** Introduce new vocabulary words relevant to the context
+2. **Definition & Usage:** Provide clear definitions and example sentences
+3. **Practice Exercises:** Ask user to use words in sentences
+4. **Consistent Correction:** ALWAYS correct any non-English input with English translations
+5. **Progressive Difficulty:** Gradually increase word complexity based on user progress
+
+**Current Topic Context:** {topic_context}
+
+**Vocabulary Session Flow:**
+- Introduce 1-2 new words per interaction
+- Provide pronunciation guidance
+- Ask for sentence creation using new words
+- Give feedback on usage
+- Maintain vocabulary focus throughout
+
+**JSON Output:**
+{{
+    "conversation_text": "<Vocabulary-focused response with new words and exercises>",
+    "next_stage": "vocabulary_learning",
+    "needs_correction": <true/false>,
+    "corrected_sentence": "<English translation if needed>",
+    "correction_type": "<urdu_translation|grammar|pronunciation|structure|none>",
+    "vocabulary_words": ["<word1>", "<word2>"],
+    "learning_activity": "<word_introduction|sentence_practice|definition_review|pronunciation_practice>",
+    "session_progress": "<beginning|middle|advanced>"
+}}
+"""
+    
+    return _execute_ai_analysis(prompt, "vocabulary_learning")
+
+def _handle_sentence_practice_stage(user_text: str, base_prompt: str, current_topic: str = None) -> dict:
+    """Handle sentence practice with grammar focus"""
+    # Fix the f-string formatting issue by properly escaping curly braces
+    topic_context = current_topic if current_topic else 'General Grammar'
+    
+    prompt = base_prompt + f"""
+**Task:** You are in a specialized sentence structure and grammar practice session. This is NOT general conversation.
+
+**Sentence Practice Requirements:**
+1. **Grammar Analysis:** Evaluate sentence structure, verb tense, word order
+2. **Immediate Correction:** Provide gentle corrections for grammatical errors
+3. **Explanation:** Explain why the correction is needed
+4. **Practice Reinforcement:** Ask follow-up questions to reinforce correct usage
+5. **Consistent Urdu Correction:** ALWAYS translate any non-English input
+
+**Current Topic Context:** {topic_context}
+
+**Grammar Focus Areas:**
+- Subject-verb agreement
+- Tense consistency
+- Article usage (a, an, the)
+- Preposition placement
+- Sentence structure
+
+**JSON Output:**
+{{
+    "conversation_text": "<Grammar-focused response with corrections and practice>",
+    "next_stage": "sentence_practice",
+    "needs_correction": <true/false>,
+    "corrected_sentence": "<Corrected version of user's sentence>",
+    "correction_type": "<grammar|tense|structure|article|preposition|none>",
+    "grammar_rule": "<Specific grammar rule being practiced>",
+    "practice_suggestion": "<Next practice activity>"
+}}
+"""
+    
+    return _execute_ai_analysis(prompt, "sentence_practice")
+
+def _handle_topic_discussion_prompt_stage(user_text: str, base_prompt: str) -> dict:
+    """Handle topic selection prompt"""
+    prompt = base_prompt + """
+**Task:** The user wants to discuss a topic. Extract their topic choice and confirm it.
+
+**Topic Extraction Requirements:**
+1. **Identify Topic:** Extract the specific topic from user's response
+2. **Confirm Choice:** Acknowledge and confirm the selected topic
+3. **Engage Interest:** Show enthusiasm for the topic choice
+4. **Set Expectations:** Explain how the discussion will proceed
+5. **Language Correction:** ALWAYS provide English translations for non-English input
+
+**Topic Discussion Setup:**
+- Confirm the topic clearly
+- Ask an engaging opening question
+- Explain the learning approach for this topic
+- Maintain English-only conversation with corrections
+
+**JSON Output:**
+{
+    "conversation_text": "<Topic confirmation and engagement message>",
+    "next_stage": "topic_discussion",
+    "needs_correction": <true/false>,
+    "corrected_sentence": "<English translation if needed>",
+    "correction_type": "<urdu_translation|grammar|pronunciation|structure|none>",
+    "extracted_topic": "<The specific topic identified>",
+    "discussion_approach": "<How we'll approach this topic>"
+}
+"""
+    
+    return _execute_ai_analysis(prompt, "topic_discussion_prompt")
+
+def _handle_topic_discussion_stage(user_text: str, base_prompt: str, current_topic: str) -> dict:
+    """Handle ongoing topic discussion with learning focus"""
+    prompt = base_prompt + f"""
+**Task:** You are in a topic-based discussion about "{current_topic}". This is a learning-focused conversation.
+
+**Topic Discussion Requirements:**
+1. **Stay on Topic:** Keep conversation focused on "{current_topic}"
+2. **Language Learning:** Use the topic to teach English vocabulary and expressions
+3. **Consistent Correction:** ALWAYS correct any non-English input with English translations
+4. **Engaging Questions:** Ask relevant follow-up questions to maintain interest
+5. **Learning Integration:** Naturally incorporate English learning into the discussion
+
+**Discussion Strategy:**
+- Connect user's responses to the topic
+- Introduce topic-specific vocabulary
+- Practice natural English expressions
+- Maintain conversational flow
+- Provide gentle corrections when needed
+
+**JSON Output:**
+{{
+    "conversation_text": "<Topic-focused response with learning elements>",
+    "next_stage": "topic_discussion",
+    "needs_correction": <true/false>,
+    "corrected_sentence": "<English translation if needed>",
+    "correction_type": "<urdu_translation|grammar|pronunciation|structure|none>",
+    "topic_vocabulary": ["<relevant_word1>", "<relevant_word2>"],
+    "discussion_progress": "<beginning|middle|advanced>",
+    "next_question": "<Follow-up question to maintain engagement>"
+}}
+"""
+    
+    return _execute_ai_analysis(prompt, "topic_discussion")
+
+def _handle_grammar_focus_stage(user_text: str, base_prompt: str, current_topic: str = None) -> dict:
+    """Handle grammar-focused learning sessions"""
+    # Fix the f-string formatting issue by properly escaping curly braces
+    topic_context = current_topic if current_topic else 'General Grammar'
+    
+    prompt = base_prompt + f"""
+**Task:** You are in a specialized grammar learning session. Focus on specific grammar rules and structures.
+
+**Grammar Learning Requirements:**
+1. **Rule Explanation:** Clearly explain grammar rules being practiced
+2. **Error Correction:** Identify and correct grammatical mistakes
+3. **Practice Examples:** Provide examples of correct usage
+4. **Progressive Learning:** Build complexity gradually
+5. **Consistent Urdu Correction:** ALWAYS translate any non-English input
+
+**Current Topic Context:** {topic_context}
+
+**Grammar Focus Areas:**
+- Parts of speech
+- Sentence structure
+- Verb conjugation
+- Tense usage
+- Punctuation rules
+
+**JSON Output:**
+{{
+    "conversation_text": "<Grammar-focused response with rule explanation>",
+    "next_stage": "grammar_focus",
+    "needs_correction": <true/false>,
+    "corrected_sentence": "<Corrected version of user's sentence>",
+    "correction_type": "<grammar|tense|structure|punctuation|none>",
+    "grammar_rule": "<Specific grammar rule being taught>",
+    "practice_examples": ["<example1>", "<example2>"]
+}}
+"""
+    
+    return _execute_ai_analysis(prompt, "grammar_focus")
+
+def _handle_fallback_conversation(user_text: str, base_prompt: str, conversation_stage: str) -> dict:
+    """Handle unknown stages with fallback to normal NLP conversation"""
+    prompt = base_prompt + f"""
+**Task:** You are in an unknown conversation stage: "{conversation_stage}". Provide a natural, helpful response.
+
+**Fallback Requirements:**
+1. **Natural Response:** Engage in normal conversation
+2. **Language Correction:** ALWAYS correct any non-English input
+3. **Helpful Guidance:** Offer assistance or clarification
+4. **Stage Recovery:** Try to understand what the user needs
+5. **Professional Tone:** Maintain helpful and encouraging demeanor
+
+**Response Strategy:**
+- Acknowledge the current situation
+- Ask clarifying questions if needed
+- Provide helpful guidance
+- Maintain English learning focus
+- Offer to return to structured learning
+
+**JSON Output:**
+{
+    "conversation_text": "<Natural, helpful response with guidance>",
+    "next_stage": "option_selection",
+    "needs_correction": <true/false>,
+    "corrected_sentence": "<English translation if needed>",
+    "correction_type": "<urdu_translation|grammar|pronunciation|structure|none>",
+    "fallback_reason": "<Why fallback was triggered>",
+    "recovery_suggestion": "<How to return to structured learning>"
+}
+"""
+    
+    return _execute_ai_analysis(prompt, "fallback")
+
+def _execute_ai_analysis(prompt: str, stage_name: str) -> dict:
+    """Execute AI analysis with professional error handling"""
+    try:
+        print(f"🤖 [ENGLISH_ONLY] Executing AI analysis for stage: {stage_name}")
+        
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[{"role": "user", "content": prompt}],
+            response_format={"type": "json_object"},
+            temperature=0.7,
+            max_tokens=800,  # Increased for more detailed responses
+            timeout=30  # 30 second timeout
+        )
+        
+        output = response.choices[0].message.content.strip()
+        print(f"✅ [ENGLISH_ONLY] GPT Raw Output for {stage_name}: {output}")
+        
+        # Parse JSON response with error handling
+        try:
+            result = json.loads(output)
+        except json.JSONDecodeError as json_error:
+            print(f"❌ [ENGLISH_ONLY] JSON parsing error for {stage_name}: {json_error}")
+            # Return fallback response with error information
+            return {
+                "conversation_text": f"I'm having trouble processing that response. Let's continue our conversation!",
+                "next_stage": "option_selection",
+                "needs_correction": False,
+                "corrected_sentence": "",
+                "correction_type": "none",
+                "error_occurred": True,
+                "error_type": "json_parsing",
+                "original_output": output
+            }
+        
+        # Ensure all required fields are present with defaults
+        required_fields = {
+            "conversation_text": "Let's continue our conversation!",
+            "next_stage": "option_selection",
             "needs_correction": False,
             "corrected_sentence": "",
             "correction_type": "none"
+        }
+        
+        for field, default_value in required_fields.items():
+            if field not in result:
+                result[field] = default_value
+                print(f"⚠️ [ENGLISH_ONLY] Missing field '{field}' for {stage_name}, using default: {default_value}")
+        
+        # Validate and sanitize the response
+        result["conversation_text"] = str(result["conversation_text"]).strip()
+        if not result["conversation_text"]:
+            result["conversation_text"] = "Let's continue our conversation!"
+        
+        print(f"✅ [ENGLISH_ONLY] Successfully processed {stage_name} response")
+        return result
+        
+    except Exception as e:
+        print(f"❌ [ENGLISH_ONLY] Critical error during AI analysis for {stage_name}: {str(e)}")
+        # Return comprehensive fallback response
+        return {
+            "conversation_text": f"I'm experiencing a technical difficulty at the moment. Let's continue our conversation!",
+            "next_stage": "option_selection",
+            "needs_correction": False,
+            "corrected_sentence": "",
+            "correction_type": "none",
+            "error_occurred": True,
+            "error_type": "ai_execution",
+            "error_message": str(e),
+            "stage": stage_name
         }
 
 # --- Keep existing helper functions below if they are still needed by other parts of the app ---
