@@ -470,6 +470,7 @@ async def _process_progress_data_for_frontend(summary: dict, stages: list, exerc
                     elif exercise_attempts > 0:
                         exercise_status = "in_progress"
                         # Calculate progress based on topics completed
+                        # FIXED: Use current_topic_id to estimate completed topics (more accurate than previous logic)
                         exercise_completed_topics = min(current_topic_id - 1, exercise_topics)
                         exercise_progress = (exercise_completed_topics / exercise_topics) * 100
                     
