@@ -72,7 +72,7 @@ async def check_exercise_completion(user_id: str) -> dict:
                 print(f"📊 [COMPLETION] Total stories available: {total_stories}")
         except Exception as e:
             print(f"❌ [COMPLETION] Error reading stories file: {str(e)}")
-            total_stories = 18  # Default fallback based on data file
+            total_stories = 10  # Default fallback based on data file
         
         # Get user's progress for Stage 3 Exercise 1
         progress_result = await progress_tracker.get_user_topic_progress(

@@ -54,7 +54,7 @@ async def check_exercise_completion(user_id: str) -> dict:
                 print(f"📊 [COMPLETION] Total dialogues available: {total_dialogues}")
         except Exception as e:
             print(f"❌ [COMPLETION] Error reading dialogues file: {str(e)}")
-            total_dialogues = 12  # Default fallback based on data file
+            total_dialogues = 20  # Default fallback based on data file
         
         # Get user's progress for Stage 1 Exercise 3
         progress_result = await progress_tracker.get_user_topic_progress(

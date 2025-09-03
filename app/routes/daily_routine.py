@@ -71,7 +71,7 @@ async def check_exercise_completion(user_id: str) -> dict:
                 print(f"📊 [COMPLETION] Total routines available: {total_routines}")
         except Exception as e:
             print(f"❌ [COMPLETION] Error reading routines file: {str(e)}")
-            total_routines = 15  # Default fallback based on data file
+            total_routines = 20  # Default fallback based on data file
         
         # Get user's progress for Stage 2 Exercise 1
         progress_result = await progress_tracker.get_user_topic_progress(

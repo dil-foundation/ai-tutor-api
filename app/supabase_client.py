@@ -191,10 +191,10 @@ class SupabaseProgressTracker:
                 }
             
             # Calculate average session duration
-            total_sessions = sum(1 for record in daily_analytics.data if record.get('exercises_completed', 0) > 0)
+            total_days_with_activity = sum(1 for record in daily_analytics.data if record.get('total_time_minutes', 0) > 0)
             total_time_minutes = sum(record.get('total_time_minutes', 0) for record in daily_analytics.data)
             
-            average_session_duration = total_time_minutes / total_sessions if total_sessions > 0 else 0.0
+            average_session_duration = total_time_minutes / total_days_with_activity if total_days_with_activity > 0 else 0.0
             
             # Calculate weekly hours (last 7 days)
             seven_days_ago = date.today() - timedelta(days=7)
