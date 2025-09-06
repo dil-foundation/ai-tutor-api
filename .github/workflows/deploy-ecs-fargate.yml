@@ -1,0 +1,190 @@
+name: Deploy to ECS Fargate
+
+on:
+  workflow_run:
+    workflows: ["Build and Push to ECR"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Image tag to deploy (leave empty for latest)'
+        required: false
+        default: 'latest'
+      force_deploy:
+        description: 'Force deployment even if tests fail'
+        type: boolean
+        default: false
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: ai-tutor-api
+  ECS_CLUSTER: ai-tutor-cluster
+  ECS_SERVICE: ai-tutor-service
+  ECS_TASK_DEFINITION: ai-tutor-task-definition
+  ECS_CONTAINER_NAME: ai-tutor-backend
+
+jobs:
+  deploy:
+    name: Deploy to ECS Fargate
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Download deployment artifact
+      if: github.event_name == 'workflow_run'
+      uses: actions/download-artifact@v4
+      with:
+        name: deployment-info
+        path: ./deployment-info
+
+    - name: Set image details
+      id: image-details
+      run: |
+        if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+          if [ -n "${{ github.event.inputs.image_tag }}" ]; then
+            IMAGE_TAG="${{ github.event.inputs.image_tag }}"
+          else
+            IMAGE_TAG="latest"
+          fi
+        else
+          # Read from deployment artifact
+          IMAGE_TAG=$(jq -r '.image_tag' ./deployment-info/deployment-info.json)
+        fi
+        
+        IMAGE_URI="${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:${IMAGE_TAG}"
+        
+        echo "image_tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
+        echo "image_uri=${IMAGE_URI}" >> $GITHUB_OUTPUT
+        echo "Image URI: ${IMAGE_URI}"
+        echo "Image Tag: ${IMAGE_TAG}"
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Download current task definition
+      run: |
+        aws ecs describe-task-definition \
+          --task-definition ${{ env.ECS_TASK_DEFINITION }} \
+          --query taskDefinition > task-definition.json
+        
+        echo "Current task definition downloaded"
+
+    - name: Update task definition with new image
+      run: |
+        # Update the image URI in the task definition
+        jq --arg IMAGE_URI "${{ steps.image-details.outputs.image_uri }}" \
+           --arg CONTAINER_NAME "${{ env.ECS_CONTAINER_NAME }}" \
+           '(.containerDefinitions[] | select(.name == $CONTAINER_NAME) | .image) = $IMAGE_URI' \
+           task-definition.json > updated-task-definition.json
+        
+        # Remove fields that shouldn't be in the new task definition
+        jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .placementConstraints, .compatibilities, .registeredAt, .registeredBy)' \
+           updated-task-definition.json > final-task-definition.json
+        
+        echo "Task definition updated with new image: ${{ steps.image-details.outputs.image_uri }}"
+
+    - name: Register new task definition
+      id: register-task-definition
+      run: |
+        NEW_TASK_DEFINITION=$(aws ecs register-task-definition \
+          --cli-input-json file://final-task-definition.json \
+          --query 'taskDefinition.taskDefinitionArn' \
+          --output text)
+        
+        echo "new_task_definition_arn=${NEW_TASK_DEFINITION}" >> $GITHUB_OUTPUT
+        echo "New task definition registered: ${NEW_TASK_DEFINITION}"
+
+    - name: Update ECS service
+      run: |
+        # Update the ECS service with the new task definition
+        aws ecs update-service \
+          --cluster ${{ env.ECS_CLUSTER }} \
+          --service ${{ env.ECS_SERVICE }} \
+          --task-definition ${{ steps.register-task-definition.outputs.new_task_definition_arn }} \
+          --force-new-deployment
+        
+        echo "ECS service updated with new task definition"
+
+    - name: Wait for deployment to complete
+      run: |
+        echo "Waiting for deployment to complete..."
+        aws ecs wait services-stable \
+          --cluster ${{ env.ECS_CLUSTER }} \
+          --services ${{ env.ECS_SERVICE }}
+        
+        echo "Deployment completed successfully"
+
+    - name: Get service status
+      run: |
+        # Get the current service status
+        SERVICE_STATUS=$(aws ecs describe-services \
+          --cluster ${{ env.ECS_CLUSTER }} \
+          --services ${{ env.ECS_SERVICE }} \
+          --query 'services[0].status' \
+          --output text)
+        
+        RUNNING_COUNT=$(aws ecs describe-services \
+          --cluster ${{ env.ECS_CLUSTER }} \
+          --services ${{ env.ECS_SERVICE }} \
+          --query 'services[0].runningCount' \
+          --output text)
+        
+        DESIRED_COUNT=$(aws ecs describe-services \
+          --cluster ${{ env.ECS_CLUSTER }} \
+          --services ${{ env.ECS_SERVICE }} \
+          --query 'services[0].desiredCount' \
+          --output text)
+        
+        echo "Service Status: $SERVICE_STATUS"
+        echo "Running Count: $RUNNING_COUNT"
+        echo "Desired Count: $DESIRED_COUNT"
+        
+        if [ "$SERVICE_STATUS" != "ACTIVE" ] || [ "$RUNNING_COUNT" != "$DESIRED_COUNT" ]; then
+          echo "❌ Deployment failed or service is not stable"
+          exit 1
+        else
+          echo "✅ Deployment successful - service is running and stable"
+        fi
+
+    - name: Health check
+      run: |
+        # Get the load balancer DNS name or public IP
+        # This assumes you have a load balancer configured
+        # You may need to adjust this based on your infrastructure setup
+        
+        # For now, we'll just check that the service is running
+        echo "Performing health check..."
+        
+        # Get task ARNs
+        TASK_ARNS=$(aws ecs list-tasks \
+          --cluster ${{ env.ECS_CLUSTER }} \
+          --service-name ${{ env.ECS_SERVICE }} \
+          --query 'taskArns[0]' \
+          --output text)
+        
+        if [ "$TASK_ARNS" != "None" ] && [ -n "$TASK_ARNS" ]; then
+          echo "✅ Task is running: $TASK_ARNS"
+        else
+          echo "❌ No tasks found for the service"
+          exit 1
+        fi
+
+    - name: Deployment summary
+      run: |
+        echo "## 🚀 Deployment Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Image:** ${{ steps.image-details.outputs.image_uri }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Task Definition:** ${{ steps.register-task-definition.outputs.new_task_definition_arn }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Cluster:** ${{ env.ECS_CLUSTER }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Service:** ${{ env.ECS_SERVICE }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Region:** ${{ env.AWS_REGION }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "✅ Deployment completed successfully!" >> $GITHUB_STEP_SUMMARY

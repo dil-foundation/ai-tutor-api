@@ -1,0 +1,209 @@
+name: Rollback Deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_image_tag:
+        description: 'Image tag to rollback to (e.g., previous-commit-sha)'
+        required: true
+        type: string
+      confirm_rollback:
+        description: 'Confirm rollback (type "ROLLBACK" to confirm)'
+        required: true
+        type: string
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: ai-tutor-api
+  ECS_CLUSTER: ai-tutor-cluster
+  ECS_SERVICE: ai-tutor-service
+  ECS_TASK_DEFINITION: ai-tutor-task-definition
+  ECS_CONTAINER_NAME: ai-tutor-backend
+
+jobs:
+  rollback:
+    name: Rollback ECS Deployment
+    runs-on: ubuntu-latest
+    if: github.event.inputs.confirm_rollback == 'ROLLBACK'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Verify image exists in ECR
+      run: |
+        IMAGE_URI="${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:${{ github.event.inputs.target_image_tag }}"
+        echo "Checking if image exists: $IMAGE_URI"
+        
+        # Check if image exists in ECR
+        aws ecr describe-images \
+          --repository-name ${{ env.ECR_REPOSITORY }} \
+          --image-ids imageTag=${{ github.event.inputs.target_image_tag }} \
+          --region ${{ env.AWS_REGION }}
+        
+        echo "image_uri=$IMAGE_URI" >> $GITHUB_ENV
+        echo "✅ Image found in ECR"
+
+    - name: Download current task definition
+      run: |
+        aws ecs describe-task-definition \
+          --task-definition ${{ env.ECS_TASK_DEFINITION }} \
+          --query taskDefinition > current-task-definition.json
+        
+        echo "Current task definition downloaded"
+
+    - name: Update task definition with rollback image
+      run: |
+        # Update the image URI in the task definition
+        jq --arg IMAGE_URI "${{ env.image_uri }}" \
+           --arg CONTAINER_NAME "${{ env.ECS_CONTAINER_NAME }}" \
+           '(.containerDefinitions[] | select(.name == $CONTAINER_NAME) | .image) = $IMAGE_URI' \
+           current-task-definition.json > rollback-task-definition.json
+        
+        # Remove fields that shouldn't be in the new task definition
+        jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .placementConstraints, .compatibilities, .registeredAt, .registeredBy)' \
+           rollback-task-definition.json > final-rollback-task-definition.json
+        
+        echo "Task definition updated for rollback to: ${{ env.image_uri }}"
+
+    - name: Register rollback task definition
+      id: register-rollback-task-definition
+      run: |
+        NEW_TASK_DEFINITION=$(aws ecs register-task-definition \
+          --cli-input-json file://final-rollback-task-definition.json \
+          --query 'taskDefinition.taskDefinitionArn' \
+          --output text)
+        
+        echo "rollback_task_definition_arn=${NEW_TASK_DEFINITION}" >> $GITHUB_OUTPUT
+        echo "Rollback task definition registered: ${NEW_TASK_DEFINITION}"
+
+    - name: Update ECS service with rollback image
+      run: |
+        # Update the ECS service with the rollback task definition
+        aws ecs update-service \
+          --cluster ${{ env.ECS_CLUSTER }} \
+          --service ${{ env.ECS_SERVICE }} \
+          --task-definition ${{ steps.register-rollback-task-definition.outputs.rollback_task_definition_arn }} \
+          --force-new-deployment
+        
+        echo "ECS service updated with rollback task definition"
+
+    - name: Wait for rollback to complete
+      run: |
+        echo "Waiting for rollback deployment to complete..."
+        aws ecs wait services-stable \
+          --cluster ${{ env.ECS_CLUSTER }} \
+          --services ${{ env.ECS_SERVICE }}
+        
+        echo "Rollback deployment completed"
+
+    - name: Verify rollback deployment
+      run: |
+        # Get the current service status
+        SERVICE_STATUS=$(aws ecs describe-services \
+          --cluster ${{ env.ECS_CLUSTER }} \
+          --services ${{ env.ECS_SERVICE }} \
+          --query 'services[0].status' \
+          --output text)
+        
+        RUNNING_COUNT=$(aws ecs describe-services \
+          --cluster ${{ env.ECS_CLUSTER }} \
+          --services ${{ env.ECS_SERVICE }} \
+          --query 'services[0].runningCount' \
+          --output text)
+        
+        DESIRED_COUNT=$(aws ecs describe-services \
+          --cluster ${{ env.ECS_CLUSTER }} \
+          --services ${{ env.ECS_SERVICE }} \
+          --query 'services[0].desiredCount' \
+          --output text)
+        
+        # Get the current task definition
+        CURRENT_TASK_DEF=$(aws ecs describe-services \
+          --cluster ${{ env.ECS_CLUSTER }} \
+          --services ${{ env.ECS_SERVICE }} \
+          --query 'services[0].taskDefinition' \
+          --output text)
+        
+        echo "Service Status: $SERVICE_STATUS"
+        echo "Running Count: $RUNNING_COUNT"
+        echo "Desired Count: $DESIRED_COUNT"
+        echo "Current Task Definition: $CURRENT_TASK_DEF"
+        
+        if [ "$SERVICE_STATUS" != "ACTIVE" ] || [ "$RUNNING_COUNT" != "$DESIRED_COUNT" ]; then
+          echo "❌ Rollback failed or service is not stable"
+          exit 1
+        else
+          echo "✅ Rollback successful - service is running and stable"
+        fi
+
+    - name: Health check after rollback
+      run: |
+        echo "Performing health check after rollback..."
+        
+        # Get task ARNs
+        TASK_ARNS=$(aws ecs list-tasks \
+          --cluster ${{ env.ECS_CLUSTER }} \
+          --service-name ${{ env.ECS_SERVICE }} \
+          --query 'taskArns[0]' \
+          --output text)
+        
+        if [ "$TASK_ARNS" != "None" ] && [ -n "$TASK_ARNS" ]; then
+          echo "✅ Task is running after rollback: $TASK_ARNS"
+        else
+          echo "❌ No tasks found for the service after rollback"
+          exit 1
+        fi
+
+    - name: Rollback summary
+      run: |
+        echo "## 🔄 Rollback Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Rolled back to image:** ${{ env.image_uri }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Target image tag:** ${{ github.event.inputs.target_image_tag }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Task Definition:** ${{ steps.register-rollback-task-definition.outputs.rollback_task_definition_arn }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Cluster:** ${{ env.ECS_CLUSTER }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Service:** ${{ env.ECS_SERVICE }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Region:** ${{ env.AWS_REGION }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "✅ Rollback completed successfully!" >> $GITHUB_STEP_SUMMARY
+
+  list-available-images:
+    name: List Available Images
+    runs-on: ubuntu-latest
+    if: github.event.inputs.confirm_rollback != 'ROLLBACK'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: List available images
+      run: |
+        echo "## Available Images for Rollback" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "Recent images in ECR repository:" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+        aws ecr list-images \
+          --repository-name ${{ env.ECR_REPOSITORY }} \
+          --region ${{ env.AWS_REGION }} \
+          --query 'imageIds[?imageTag!=null].[imageTag,imagePushedAt]' \
+          --output table \
+          --max-items 20 >> $GITHUB_STEP_SUMMARY
+        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "Use one of these image tags for rollback." >> $GITHUB_STEP_SUMMARY
