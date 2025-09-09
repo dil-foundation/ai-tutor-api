@@ -54,6 +54,7 @@ from app.routes import (
     messaging
 )
 from .database import get_db, engine
+from .services.settings_manager import get_ai_settings
 
 
 from fastapi import FastAPI
@@ -101,6 +102,11 @@ logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
 async def startup_event():
     """Application startup event"""
     print("🚀 [STARTUP] AI English Tutor Backend starting...")
+
+    # Proactively fetch and cache AI settings on startup
+    print("⚙️ [STARTUP] Initializing AI Tutor settings...")
+    await get_ai_settings()
+    
     print("📊 [STARTUP] Features enabled:")
     print("   - Progress Tracking System")
     print("   - Learning Exercises")

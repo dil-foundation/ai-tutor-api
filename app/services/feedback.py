@@ -2,9 +2,40 @@ from openai import OpenAI
 from app.config import OPENAI_API_KEY
 import json
 import re
+import asyncio
+from app.services.settings_manager import get_ai_settings
+from app.schemas.settings import AISettings
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 
+
+# --- Dynamic System Prompt Builder for AI Tutor Settings ---
+
+def _build_system_prompt_from_settings(base_prompt: str, settings: AISettings) -> str:
+    """
+    Constructs a dynamic system prompt by augmenting a base prompt with AI settings.
+    This function ensures that the AI's behavior aligns with the configuration
+    set by the administrator in the AI Tutor Settings.
+    """
+    prompt_parts = [base_prompt]
+
+    # Append settings-based instructions to the prompt
+    prompt_parts.append("\n--- AI Behavior Guidelines ---")
+    prompt_parts.append(f"Your personality must be: {settings.personality_type}.")
+    prompt_parts.append(f"Adopt a {settings.response_style} response style.")
+    prompt_parts.append(f"When correcting errors, your style should be {settings.error_correction_style}.")
+
+    if settings.cultural_sensitivity:
+        prompt_parts.append("Always ensure your responses are culturally sensitive and universally appropriate.")
+    if settings.age_appropriate:
+        prompt_parts.append("Ensure your language and topics are age-appropriate for all learners.")
+    if settings.professional_context:
+        prompt_parts.append("Maintain a professional context in all your examples and conversational topics.")
+    
+    if settings.custom_prompts and settings.custom_prompts.strip():
+        prompt_parts.append(f"\n**CRITICAL CUSTOM INSTRUCTIONS:**\n{settings.custom_prompts}")
+
+    return "\n".join(prompt_parts)
 
 
 def analyze_english_input_eng_only(user_text: str, conversation_stage: str, current_topic: str = None) -> dict:
@@ -389,17 +420,34 @@ def _handle_fallback_conversation(user_text: str, base_prompt: str, conversation
     
     return _execute_ai_analysis(prompt, "fallback")
 
+
 def _execute_ai_analysis(prompt: str, stage_name: str) -> dict:
-    """Execute AI analysis with professional error handling"""
+    """
+    Execute AI analysis with professional error handling and dynamic settings.
+    This is the core function that communicates with the OpenAI API for the
+    'English Only' feature, now enhanced to respect dynamic AI Tutor Settings.
+    """
     try:
         print(f"🤖 [ENGLISH_ONLY] Executing AI analysis for stage: {stage_name}")
+
+        # --- Professional Integration of AI Tutor Settings ---
+        # 1. Fetch the latest AI settings. Caching is handled by the settings manager.
+        settings = asyncio.run(get_ai_settings())
+
+        # 2. Build the final, dynamic system prompt by augmenting the base prompt with settings.
+        final_prompt = _build_system_prompt_from_settings(prompt, settings)
+        
+        # 3. Calculate max_tokens from settings. 1 word is roughly 1.5 tokens.
+        # We'll also cap it at a reasonable maximum to prevent excessive responses.
+        max_tokens_limit = min(int(settings.max_response_length * 1.5), 2048)
+        print(f"⚙️ [SETTINGS] Applying max_response_length: {settings.max_response_length} words (~{max_tokens_limit} tokens)")
         
         response = client.chat.completions.create(
             model="gpt-4o",
-            messages=[{"role": "user", "content": prompt}],
+            messages=[{"role": "user", "content": final_prompt}],
             response_format={"type": "json_object"},
             temperature=0.7,
-            max_tokens=800,  # Increased for more detailed responses
+            max_tokens=max_tokens_limit,  # Apply dynamic token limit
             timeout=30  # 30 second timeout
         )
         
@@ -422,6 +470,7 @@ def _execute_ai_analysis(prompt: str, stage_name: str) -> dict:
                 "error_type": "json_parsing",
                 "original_output": output
             }
+
         
         # Ensure all required fields are present with defaults
         required_fields = {
