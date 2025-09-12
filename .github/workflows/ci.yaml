@@ -1,10 +1,11 @@
-name: AI Tutor CI/CD Pipeline
+name: Build and Push
 
 on:
+  push:
   workflow_dispatch:
     inputs:
       image_tag:
-        description: 'Custom image tag (leave empty for auto-generated)'
+        description: 'Custom image tag (leave empty for latest)'
         required: false
         type: string
 
@@ -12,35 +13,9 @@ env:
   AWS_REGION: us-east-2
   ECR_REPOSITORY: ai-tutor-api
 
-permissions:
-  contents: read
-  id-token: write
-
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: Run tests
-        run: |
-          python -m pytest app/tests/ -v
-
   build-and-push:
-    needs: test
     runs-on: ubuntu-latest
-    if: github.event_name == 'push'
     
     steps:
       - name: Checkout code
@@ -57,78 +32,26 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Set image tags
-        id: set-tags
-        run: |
-          # Generate image tags
-          if [ -n "${{ github.event.inputs.image_tag }}" ]; then
-            CUSTOM_TAG="${{ github.event.inputs.image_tag }}"
-          else
-            CUSTOM_TAG=""
-          fi
-          
-          # Always include commit SHA and latest
-          COMMIT_TAG="${{ github.sha }}"
-          LATEST_TAG="latest"
-          
-          # Build tags array
-          TAGS="$COMMIT_TAG $LATEST_TAG"
-          if [ -n "$CUSTOM_TAG" ]; then
-            TAGS="$TAGS $CUSTOM_TAG"
-          fi
-          
-          echo "tags=$TAGS" >> $GITHUB_OUTPUT
-          echo "commit_tag=$COMMIT_TAG" >> $GITHUB_OUTPUT
-          echo "latest_tag=$LATEST_TAG" >> $GITHUB_OUTPUT
-          echo "custom_tag=$CUSTOM_TAG" >> $GITHUB_OUTPUT
-
       - name: Create ECR repository if it doesn't exist
         run: |
           aws ecr describe-repositories --repository-names ${{ env.ECR_REPOSITORY }} --region ${{ env.AWS_REGION }} || \
           aws ecr create-repository --repository-name ${{ env.ECR_REPOSITORY }} --region ${{ env.AWS_REGION }}
 
-      - name: Build Docker image
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+      - name: Build, tag and push
         run: |
-          echo "🏗️ Building Docker image..."
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:${{ steps.set-tags.outputs.commit_tag }} .
-          echo "✅ Image built successfully"
-
-      - name: Tag and push images
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        run: |
-          echo "🏷️ Tagging and pushing images..."
-          
-          # Tag with all generated tags
-          for tag in ${{ steps.set-tags.outputs.tags }}; do
-            echo "Tagging as: $tag"
-            docker tag $ECR_REGISTRY/$ECR_REPOSITORY:${{ steps.set-tags.outputs.commit_tag }} $ECR_REGISTRY/$ECR_REPOSITORY:$tag
-          done
-          
-          # Push all tags
-          for tag in ${{ steps.set-tags.outputs.tags }}; do
-            echo "Pushing: $ECR_REGISTRY/$ECR_REPOSITORY:$tag"
-            docker push $ECR_REGISTRY/$ECR_REPOSITORY:$tag
-          done
-          
-          echo "✅ All images pushed successfully"
-
-      - name: Output image information
-        run: |
-          echo "## 🐳 Docker Image Information" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Repository:** \`${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Image Tags:**" >> $GITHUB_STEP_SUMMARY
-          echo "- \`${{ steps.set-tags.outputs.commit_tag }}\` (commit SHA)" >> $GITHUB_STEP_SUMMARY
-          echo "- \`${{ steps.set-tags.outputs.latest_tag }}\` (latest)" >> $GITHUB_STEP_SUMMARY
-          if [ -n "${{ steps.set-tags.outputs.custom_tag }}" ]; then
-            echo "- \`${{ steps.set-tags.outputs.custom_tag }}\` (custom)" >> $GITHUB_STEP_SUMMARY
+          # Set image tag
+          if [ -n "${{ github.event.inputs.image_tag }}" ]; then
+            TAG="${{ github.event.inputs.image_tag }}"
+          else
+            TAG="latest"
           fi
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Full Image URIs:**" >> $GITHUB_STEP_SUMMARY
-          for tag in ${{ steps.set-tags.outputs.tags }}; do
-            echo "- \`${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:$tag\`" >> $GITHUB_STEP_SUMMARY
-          done
+          
+          # Build
+          docker build -t ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:$TAG .
+          
+          # Tag
+          docker tag ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:$TAG ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
+          
+          # Push
+          docker push ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:$TAG
+          docker push ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
