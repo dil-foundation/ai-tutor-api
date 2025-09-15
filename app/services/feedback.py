@@ -5,6 +5,8 @@ import re
 import asyncio
 from app.services.settings_manager import get_ai_settings
 from app.schemas.settings import AISettings
+from app.services.safety_manager import get_ai_safety_settings
+from app.schemas.safety import AISafetyEthicsSettings
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 
@@ -37,6 +39,27 @@ def _build_system_prompt_from_settings(base_prompt: str, settings: AISettings) -
 
     return "\n".join(prompt_parts)
 
+def _apply_safety_guidelines(prompt: str, safety_settings: AISafetyEthicsSettings) -> str:
+    """
+    Applies a layer of safety and ethics rules to an existing system prompt.
+    This ensures all AI responses adhere to the configured safety standards.
+    """
+    prompt_parts = [prompt]
+    prompt_parts.append("\n--- AI Safety & Ethics Mandates (Strictly Enforced) ---")
+    if safety_settings.harmful_content_prevention:
+        prompt_parts.append("- You must strictly avoid generating harmful, unethical, racist, sexist, toxic, dangerous, or illegal content.")
+    if safety_settings.toxicity_detection:
+        prompt_parts.append("- You must not use or promote toxic language or behavior.")
+    if safety_settings.bias_detection:
+        prompt_parts.append("- You must remain neutral and avoid any form of political, social, or personal bias.")
+    if safety_settings.gender_bias_monitoring:
+        prompt_parts.append("- Your language must be free of gender bias.")
+    if safety_settings.cultural_bias_detection:
+        prompt_parts.append("- Be culturally sensitive and avoid stereotypes.")
+    if safety_settings.inclusive_language:
+        prompt_parts.append("- You must use inclusive and respectful language at all times.")
+    
+    return "\n".join(prompt_parts)
 
 def analyze_english_input_eng_only(user_text: str, conversation_stage: str, current_topic: str = None) -> dict:
     """
@@ -430,14 +453,20 @@ def _execute_ai_analysis(prompt: str, stage_name: str) -> dict:
     try:
         print(f"🤖 [ENGLISH_ONLY] Executing AI analysis for stage: {stage_name}")
 
-        # --- Professional Integration of AI Tutor Settings ---
-        # 1. Fetch the latest AI settings. Caching is handled by the settings manager.
-        settings = asyncio.run(get_ai_settings())
+        # --- Professional Integration of AI Tutor Settings & Safety ---
+        # 1. Fetch both AI behavior and safety settings concurrently for efficiency.
+        settings, safety_settings = asyncio.run(asyncio.gather(
+            get_ai_settings(),
+            get_ai_safety_settings()
+        ))
 
-        # 2. Build the final, dynamic system prompt by augmenting the base prompt with settings.
-        final_prompt = _build_system_prompt_from_settings(prompt, settings)
+        # 2. Build the behavioral prompt using the original, unchanged flow.
+        behavioral_prompt = _build_system_prompt_from_settings(prompt, settings)
         
-        # 3. Calculate max_tokens from settings. 1 word is roughly 1.5 tokens.
+        # 3. Layer the mandatory safety guidelines on top of the behavioral prompt.
+        final_prompt = _apply_safety_guidelines(behavioral_prompt, safety_settings)
+        
+        # 4. Calculate max_tokens from settings. 1 word is roughly 1.5 tokens.
         # We'll also cap it at a reasonable maximum to prevent excessive responses.
         max_tokens_limit = min(int(settings.max_response_length * 1.5), 2048)
         print(f"⚙️ [SETTINGS] Applying max_response_length: {settings.max_response_length} words (~{max_tokens_limit} tokens)")
