@@ -2,6 +2,11 @@ name: Build and Push
 
 on:
   workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to build from'
+        required: true
+        default: 'main'
 
 
 env:
