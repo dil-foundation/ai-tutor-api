@@ -7,6 +7,11 @@ on:
         description: 'Branch to build from'
         required: true
         default: 'main'
+      image_tag:
+        description: 'Docker image tag'
+        required: false
+        default: 'latest'
+
 
 env:
   AWS_REGION: us-east-2
