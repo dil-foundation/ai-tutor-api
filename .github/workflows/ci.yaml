@@ -1,13 +1,8 @@
 name: Build and Push
 
 on:
-  push:
   workflow_dispatch:
-    inputs:
-      image_tag:
-        description: 'Custom image tag (leave empty for latest)'
-        required: false
-        type: string
+
 
 env:
   AWS_REGION: us-east-2
