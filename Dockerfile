@@ -10,11 +10,14 @@ RUN apt-get update && apt-get install -y \
     ffmpeg \
     && apt-get clean
 
+# Upgrade pip first
+RUN pip install --upgrade pip
+
 # Copy the requirements file
 COPY requirements.txt .
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Install Python dependencies with timeout and retry configurations
+RUN pip install --no-cache-dir --timeout=1000 --retries=5 -r requirements.txt
 
 # Copy the application code
 COPY app/ app/
