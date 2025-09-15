@@ -18,8 +18,6 @@ Version: 1.0.0
 import logging
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.orm import Session
-from sqlalchemy.sql import text
 
 # Import all route modules
 from app.routes import (
@@ -53,7 +51,6 @@ from app.routes import (
     teacher_dashboard,
     messaging
 )
-from .database import get_db, engine
 from .services.settings_manager import get_ai_settings
 from .services.safety_manager import get_ai_safety_settings
 
