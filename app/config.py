@@ -14,13 +14,6 @@ ELEVEN_VOICE_ID = os.getenv("ELEVEN_VOICE_ID", "mActWQg9kibLro6Z2ouY")
 # General Config
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
 
-# Database Config - used by database.py for SQLAlchemy
-DB_USER = os.getenv("DB_USER")
-DB_PASSWORD = os.getenv("DB_PASSWORD")
-DB_HOST = os.getenv("DB_HOST")
-DB_NAME = os.getenv("DB_NAME")
-
-
 # Wordpress API Credentials
 WP_SITE_URL = os.getenv("WP_SITE_URL")
 WP_API_USERNAME = os.getenv("WP_API_USERNAME")

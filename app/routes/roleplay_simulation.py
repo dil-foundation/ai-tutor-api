@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends
-from sqlalchemy.orm import Session
-from app.database import get_db
+# from sqlalchemy.orm import Session
+# from app.database import get_db
 from app.schemas.roleplay import (
     RoleplayStartRequest, 
     RoleplayUserReply, 
@@ -127,7 +127,6 @@ async def check_exercise_completion(user_id: str) -> dict:
 @router.get("/roleplay-scenarios", response_model=ScenariosResponse)
 async def get_roleplay_scenarios(
     user_id: str, 
-    db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)
 ):
     """
@@ -394,7 +393,6 @@ async def get_roleplay_history(session_id: str, current_user: Dict[str, Any] = D
 @router.post("/roleplay/evaluate", response_model=RoleplayEvaluationResponse)
 async def evaluate_roleplay_session(
     request: RoleplayEvaluationRequest, 
-    db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)
 ):
     """

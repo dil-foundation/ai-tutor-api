@@ -18,8 +18,6 @@ Version: 1.0.0
 import logging
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.orm import Session
-from sqlalchemy.sql import text
 
 # Import all route modules
 from app.routes import (
@@ -53,13 +51,13 @@ from app.routes import (
     teacher_dashboard,
     messaging
 )
-from .database import get_db, engine
 from .services.settings_manager import get_ai_settings
+from .services.safety_manager import get_ai_safety_settings
 
 
 from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel  
 from gtts import gTTS
 import io
 
@@ -106,6 +104,10 @@ async def startup_event():
     # Proactively fetch and cache AI settings on startup
     print("⚙️ [STARTUP] Initializing AI Tutor settings...")
     await get_ai_settings()
+
+    # Proactively fetch and cache AI Safety & Ethics settings on startup
+    print("🛡️ [STARTUP] Initializing AI Safety & Ethics settings...")
+    await get_ai_safety_settings()
     
     print("📊 [STARTUP] Features enabled:")
     print("   - Progress Tracking System")
