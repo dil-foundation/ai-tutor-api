@@ -586,7 +586,8 @@ async def _process_progress_data_for_frontend(summary: dict, stages: list, exerc
             })
         
         # Time-based achievements
-        total_practice_hours = summary.get('total_time_spent_minutes', 0) / 60
+        total_practice_minutes = summary.get('total_time_spent_minutes', 0)
+        total_practice_hours = total_practice_minutes / 60
         if total_practice_hours >= 1:
             achievements.append({
                 "name": "Dedicated Learner",
@@ -664,6 +665,12 @@ async def _process_progress_data_for_frontend(summary: dict, stages: list, exerc
         weekly_learning_hours = summary.get('weekly_learning_hours', 0)
         monthly_learning_hours = summary.get('monthly_learning_hours', 0)
         
+        # Format total practice time for display
+        if total_practice_minutes < 60:
+            total_practice_time_display = f"{total_practice_minutes:.1f}m"
+        else:
+            total_practice_time_display = f"{total_practice_hours:.1f}h"
+
         processed_data = {
             "current_stage": {
                 "id": current_stage_id,
@@ -674,7 +681,7 @@ async def _process_progress_data_for_frontend(summary: dict, stages: list, exerc
             "overall_progress": overall_progress,
             "total_progress": overall_progress,  # For compatibility
             "streak_days": streak_days,
-            "total_practice_time": round(total_practice_hours, 1),
+            "total_practice_time": total_practice_time_display,
             "total_exercises_completed": summary.get('total_exercises_completed', 0),
             "longest_streak": longest_streak,
             "average_session_duration": average_session_duration,
@@ -697,7 +704,7 @@ async def _process_progress_data_for_frontend(summary: dict, stages: list, exerc
         print(f"   - Current stage: {current_stage_id}")
         print(f"   - Overall progress: {overall_progress:.1f}%")
         print(f"   - Streak days: {streak_days}")
-        print(f"   - Total practice time: {processed_data['total_practice_time']}h")
+        print(f"   - Total practice time: {processed_data['total_practice_time']}")
         print(f"   - Achievements count: {len(achievements)}")
         print(f"   - Completed stages: {total_completed_stages}")
         print(f"   - Completed exercises: {total_completed_exercises}")
@@ -715,7 +722,7 @@ async def _process_progress_data_for_frontend(summary: dict, stages: list, exerc
             "overall_progress": 0,
             "total_progress": 0,
             "streak_days": 0,
-            "total_practice_time": 0,
+            "total_practice_time": "0.0m",
             "total_exercises_completed": 0,
             "longest_streak": 0,
             "average_session_duration": 0,

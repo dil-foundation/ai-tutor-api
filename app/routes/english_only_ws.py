@@ -65,7 +65,7 @@ async def async_transcribe_audio_eng_only(audio_bytes: bytes):
     )
 
 # Async wrapper for English feedback analysis with enhanced stage management
-async def async_analyze_english_input(user_text: str, stage: str, topic: str = None):
+async def async_analyze_english_input(user_text: str, stage: str, topic: Optional[str] = None):
     """Run English analysis in thread pool with enhanced stage management"""
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(
@@ -73,7 +73,8 @@ async def async_analyze_english_input(user_text: str, stage: str, topic: str = N
         analyze_english_input_eng_only,
         user_text,
         stage,
-        topic
+        topic,
+        loop  # Pass the running event loop to the thread
     )
 
 # Enhanced TTS caching with metadata
