@@ -49,7 +49,8 @@ from app.routes import (
     progress_tracking,
     admin_dashboard,
     teacher_dashboard,
-    messaging
+    messaging,
+    auth
 )
 from .services.settings_manager import get_ai_settings
 from .services.safety_manager import get_ai_safety_settings
@@ -126,8 +127,9 @@ async def shutdown_event():
 # Include all API routers with proper organization
 print("🚀 [MAIN] Initializing AI English Tutor API...")
 
-# User management routes
+# User management and authentication
 app.include_router(user.router, prefix="/user", tags=["User Management"])
+app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
 
 # Translation services
 app.include_router(translator.router, prefix="/api/translate", tags=["Translation"])
