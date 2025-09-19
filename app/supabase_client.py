@@ -224,9 +224,14 @@ class SupabaseProgressTracker:
                 'monthly_learning_hours': 0.0
             }
     
-    async def initialize_user_progress(self, user_id: str) -> dict:
-        """Initialize user progress when they first start using the app"""
+    async def initialize_user_progress(self, user_id: str, assigned_start_stage: int = 1, english_proficiency_text: str = None) -> dict:
+        """
+        Initialize user progress.
+        If an `assigned_start_stage` is provided, the user starts from that stage, 
+        and all previous stages are marked as completed.
+        """
         print(f"🔄 [INIT] Starting progress initialization for user: {user_id}")
+        print(f"🚀 [INIT] Assigned Start Stage: {assigned_start_stage}")
         try:
             print(f"🔍 [INIT] Checking if user progress already exists...")
             
@@ -242,65 +247,91 @@ class SupabaseProgressTracker:
             
             print(f"🆕 [INIT] No existing progress found, creating new user progress...")
             
+            # Determine the stages to mark as completed
+            completed_stages = list(range(1, assigned_start_stage))
+            unlocked_stages = list(range(1, assigned_start_stage + 1))
+            
             # Initialize user progress summary
             current_date = date.today()
             
             progress_summary = {
                 "user_id": user_id,
-                "current_stage": 1,
+                "current_stage": assigned_start_stage,
                 "current_exercise": 1,
                 "topic_id": 1,
                 "urdu_enabled": True,
-                "unlocked_stages": [1],
-                "unlocked_exercises": {"1": [1]},
-                "overall_progress_percentage": 0.00,
+                "unlocked_stages": unlocked_stages,
+                "unlocked_exercises": {str(stage): [1, 2, 3] for stage in unlocked_stages},
+                "overall_progress_percentage": (len(completed_stages) / 6) * 100,
                 "total_time_spent_minutes": 0,
-                "total_exercises_completed": 0,
+                "total_exercises_completed": len(completed_stages) * 3,
                 "streak_days": 0,
                 "longest_streak": 0,
                 "average_session_duration_minutes": 0.00,
                 "weekly_learning_hours": 0.00,
                 "monthly_learning_hours": 0.00,
                 "first_activity_date": current_date.isoformat(),
-                "last_activity_date": current_date.isoformat()
+                "last_activity_date": current_date.isoformat(),
+                "english_proficiency_text": english_proficiency_text,
+                "assigned_start_stage": assigned_start_stage
             }
             
             print(f"📝 [INIT] Creating progress summary: {progress_summary}")
             result = self.client.table('ai_tutor_user_progress_summary').insert(progress_summary).execute()
             print(f"✅ [INIT] Progress summary created: {result.data[0] if result.data else 'No data'}")
             
-            # Initialize stage progress for stage 1
+            # Initialize stage progress for all stages up to the assigned one
             current_timestamp = datetime.now().isoformat()
+            stage_progress_data = []
             
-            stage_progress = {
+            # Mark previous stages as completed
+            for stage_id in completed_stages:
+                stage_progress_data.append({
+                    "user_id": user_id,
+                    "stage_id": stage_id,
+                    "started_at": current_timestamp,
+                    "completed_at": current_timestamp, # Mark as completed
+                    "completed": True,
+                    "progress_percentage": 100.0,
+                    "exercises_completed": 3
+                })
+
+            # Add the current (assigned) stage as started
+            stage_progress_data.append({
                 "user_id": user_id,
-                "stage_id": 1,
+                "stage_id": assigned_start_stage,
                 "started_at": current_timestamp
-            }
+            })
             
-            print(f"📝 [INIT] Creating stage progress: {stage_progress}")
-            stage_result = self.client.table('ai_tutor_user_stage_progress').insert(stage_progress).execute()
-            print(f"✅ [INIT] Stage progress created: {stage_result.data[0] if stage_result.data else 'No data'}")
-            
-            # Initialize exercise progress for stage 1 exercises
-            exercise_progress_data = [
-                {"user_id": user_id, "stage_id": 1, "exercise_id": 1, "started_at": current_timestamp},
-                {"user_id": user_id, "stage_id": 1, "exercise_id": 2, "started_at": current_timestamp},
-                {"user_id": user_id, "stage_id": 1, "exercise_id": 3, "started_at": current_timestamp}
-            ]
-            
-            print(f"📝 [INIT] Creating exercise progress for {len(exercise_progress_data)} exercises")
-            exercise_result = self.client.table('ai_tutor_user_exercise_progress').insert(exercise_progress_data).execute()
-            print(f"✅ [INIT] Exercise progress created: {len(exercise_result.data) if exercise_result.data else 0} records")
+            print(f"📝 [INIT] Creating stage progress for {len(stage_progress_data)} stages")
+            stage_result = self.client.table('ai_tutor_user_stage_progress').insert(stage_progress_data).execute()
+            print(f"✅ [INIT] Stage progress created: {len(stage_result.data) if stage_result.data else 0} records")
             
             # Initialize learning unlocks
-            unlock_data = [
-                {"user_id": user_id, "stage_id": 1, "exercise_id": None, "is_unlocked": True, "unlock_criteria_met": True},
-                {"user_id": user_id, "stage_id": 1, "exercise_id": 1, "is_unlocked": True, "unlock_criteria_met": True},
-                {"user_id": user_id, "stage_id": 1, "exercise_id": 2, "is_unlocked": False, "unlock_criteria_met": False},
-                {"user_id": user_id, "stage_id": 1, "exercise_id": 3, "is_unlocked": False, "unlock_criteria_met": False}
-            ]
-            
+            unlock_data = []
+            for stage_id in unlocked_stages:
+                # Unlock the stage itself
+                unlock_data.append({
+                    "user_id": user_id, 
+                    "stage_id": stage_id, 
+                    "exercise_id": None, 
+                    "is_unlocked": True, 
+                    "unlock_criteria_met": True,
+                    "unlocked_at": current_timestamp,
+                    "unlocked_by_criteria": "Unlocked during initial proficiency assessment"
+                })
+                # Unlock all exercises within the stage
+                for exercise_id in [1, 2, 3]:
+                    unlock_data.append({
+                        "user_id": user_id, 
+                        "stage_id": stage_id, 
+                        "exercise_id": exercise_id, 
+                        "is_unlocked": True, 
+                        "unlock_criteria_met": True,
+                        "unlocked_at": current_timestamp,
+                        "unlocked_by_criteria": "Unlocked during initial proficiency assessment"
+                    })
+
             print(f"📝 [INIT] Creating learning unlocks: {len(unlock_data)} unlock records")
             unlock_result = self.client.table('ai_tutor_learning_unlocks').insert(unlock_data).execute()
             print(f"✅ [INIT] Learning unlocks created: {len(unlock_result.data) if unlock_result.data else 0} records")
