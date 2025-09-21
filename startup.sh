@@ -78,6 +78,17 @@ else
 fi
 echo "=========================================="
 
+echo "🔐 Setting up Google Cloud credentials..."
+if [ -n "$GOOGLE_CREDENTIALS" ]; then
+  echo "Writing Google credentials to /app/credentials/google-credentials.json"
+  echo "$GOOGLE_CREDENTIALS" > /app/credentials/google-credentials.json
+  chmod 600 /app/credentials/google-credentials.json
+  echo "✅ Google credentials file created successfully"
+else
+  echo "❌ GOOGLE_CREDENTIALS environment variable not set"
+fi
+echo "=========================================="
+
 echo "🐍 Python Environment Check:"
 echo "Python executable: $(which python)"
 echo "Pip version: $(pip --version 2>&1)"
