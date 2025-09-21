@@ -18,9 +18,38 @@ Version: 1.0.0
 import logging
 import os
 import json
+import sys
 from pathlib import Path
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
+
+# Configure comprehensive logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+        logging.StreamHandler(sys.stderr)
+    ]
+)
+
+# Create logger for this module
+logger = logging.getLogger(__name__)
+
+# Print startup banner to ensure logs are visible
+print("=" * 80)
+print("🚀 AI ENGLISH TUTOR BACKEND STARTING UP")
+print("=" * 80)
+print(f"Python version: {sys.version}")
+print(f"Working directory: {os.getcwd()}")
+print(f"Environment variables loaded:")
+for key in ['OPENAI_API_KEY', 'SUPABASE_URL', 'REDIS_HOST', 'ELEVEN_API_KEY']:
+    value = os.getenv(key)
+    if value:
+        print(f"  ✅ {key}: {'*' * min(len(value), 10)}...")
+    else:
+        print(f"  ❌ {key}: NOT SET")
+print("=" * 80)
 
 # Import all route modules
 from app.routes import (
@@ -137,22 +166,72 @@ logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
 async def startup_event():
     """Application startup event"""
     print("🚀 [STARTUP] AI English Tutor Backend starting...")
+    logger.info("🚀 [STARTUP] AI English Tutor Backend starting...")
+    
+    # Log all environment variables for debugging
+    print("🔍 [STARTUP] Environment Variables Check:")
+    logger.info("🔍 [STARTUP] Environment Variables Check:")
+    
+    env_vars = [
+        'OPENAI_API_KEY', 'SUPABASE_URL', 'SUPABASE_SERVICE_KEY',
+        'ELEVEN_API_KEY', 'ELEVEN_VOICE_ID', 'REDIS_HOST', 'REDIS_PORT',
+        'WP_SITE_URL', 'WP_API_USERNAME', 'WP_API_APPLICATION_PASSWORD',
+        'GOOGLE_APPLICATION_CREDENTIALS_JSON', 'ENVIRONMENT'
+    ]
+    
+    for var in env_vars:
+        value = os.getenv(var)
+        if value:
+            masked_value = f"{'*' * min(len(value), 10)}..." if len(value) > 10 else "***"
+            print(f"  ✅ {var}: {masked_value}")
+            logger.info(f"  ✅ {var}: {masked_value}")
+        else:
+            print(f"  ❌ {var}: NOT SET")
+            logger.warning(f"  ❌ {var}: NOT SET")
 
-    # Proactively fetch and cache AI settings on startup
-    print("⚙️ [STARTUP] Initializing AI Tutor settings...")
-    await get_ai_settings()
+    # Try to initialize settings but don't fail startup if it fails
+    try:
+        print("⚙️ [STARTUP] Initializing AI Tutor settings...")
+        logger.info("⚙️ [STARTUP] Initializing AI Tutor settings...")
+        await get_ai_settings()
+        print("✅ [STARTUP] AI Tutor settings initialized successfully")
+        logger.info("✅ [STARTUP] AI Tutor settings initialized successfully")
+    except Exception as e:
+        print(f"⚠️ [STARTUP] Failed to initialize AI Tutor settings: {str(e)}")
+        logger.error(f"⚠️ [STARTUP] Failed to initialize AI Tutor settings: {str(e)}")
+        print("⚠️ [STARTUP] Continuing with default settings...")
+        logger.warning("⚠️ [STARTUP] Continuing with default settings...")
 
-    # Proactively fetch and cache AI Safety & Ethics settings on startup
-    print("🛡️ [STARTUP] Initializing AI Safety & Ethics settings...")
-    await get_ai_safety_settings()
+    try:
+        print("🛡️ [STARTUP] Initializing AI Safety & Ethics settings...")
+        logger.info("🛡️ [STARTUP] Initializing AI Safety & Ethics settings...")
+        await get_ai_safety_settings()
+        print("✅ [STARTUP] AI Safety & Ethics settings initialized successfully")
+        logger.info("✅ [STARTUP] AI Safety & Ethics settings initialized successfully")
+    except Exception as e:
+        print(f"⚠️ [STARTUP] Failed to initialize AI Safety & Ethics settings: {str(e)}")
+        logger.error(f"⚠️ [STARTUP] Failed to initialize AI Safety & Ethics settings: {str(e)}")
+        print("⚠️ [STARTUP] Continuing with default settings...")
+        logger.warning("⚠️ [STARTUP] Continuing with default settings...")
     
     print("📊 [STARTUP] Features enabled:")
-    print("   - Progress Tracking System")
-    print("   - Learning Exercises")
-    print("   - Real-time Conversation")
-    print("   - Translation Services")
-    print("   - English-Only AI Tutor")
+    logger.info("📊 [STARTUP] Features enabled:")
+    features = [
+        "Progress Tracking System",
+        "Learning Exercises", 
+        "Real-time Conversation",
+        "Translation Services",
+        "English-Only AI Tutor"
+    ]
+    
+    for feature in features:
+        print(f"   - {feature}")
+        logger.info(f"   - {feature}")
+    
     print("✅ [STARTUP] Application started successfully")
+    logger.info("✅ [STARTUP] Application started successfully")
+    print("🌐 [STARTUP] Server is ready to accept connections on port 8000")
+    logger.info("🌐 [STARTUP] Server is ready to accept connections on port 8000")
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -237,19 +316,18 @@ async def health_check():
 
 @app.get("/health")
 async def root_health_check():
-    """Root health check endpoint"""
-    return {
-        "status": "healthy", 
-        "service": "ai_tutor_backend",
-        "version": "1.0.0",
-        "features": [
-            "progress_tracking",
-            "learning_exercises", 
-            "real_time_conversation",
-            "translation_services",
-            "english_only_tutor"
-        ]
-    }
+    """Root health check endpoint - simplified for ALB health checks"""
+    return {"status": "ok"}
+
+@app.get("/healthz")
+async def kubernetes_health_check():
+    """Kubernetes-style health check endpoint"""
+    return {"status": "ok"}
+
+@app.get("/")
+async def root():
+    """Root endpoint that can also serve as health check"""
+    return {"message": "AI Tutor Backend is running", "status": "ok"}
 
 
 @app.get("/api/status")

@@ -19,6 +19,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the application code
 COPY app/ app/
 
+# Copy startup script
+COPY startup.sh /app/startup.sh
+RUN chmod +x /app/startup.sh
+
 # Create credentials directory (for backward compatibility)
 RUN mkdir -p /app/credentials
 
@@ -34,5 +38,5 @@ ENV OTEL_EXPORTER_OTLP_PROTOCOL=grpc
 # Expose the FastAPI default port
 EXPOSE 8000
 
-# Start the FastAPI app
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips=*"]
+# Start the FastAPI app using startup script
+CMD ["/app/startup.sh"]
