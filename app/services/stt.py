@@ -82,8 +82,6 @@ def transcribe_audio_bytes_eng(audio_bytes: bytes) -> dict:
     Returns a dictionary with transcription and language info
     """
     try:
-        if AudioSegment is None:
-            raise HTTPException(status_code=500, detail="Audio processing not available due to Python 3.13 compatibility issues")
         # Allow pydub to auto-detect format
         audio_segment = AudioSegment.from_file(io.BytesIO(audio_bytes))
         mono_audio_segment = audio_segment.set_channels(1)
@@ -148,8 +146,6 @@ def is_english_input(transcription_result: dict) -> bool:
 
 def transcribe_audio_bytes(audio_bytes: bytes, language_code: str = "ur-PK") -> str:
     try:
-        if AudioSegment is None:
-            raise HTTPException(status_code=500, detail="Audio processing not available due to Python 3.13 compatibility issues")
         # Allow pydub to auto-detect format
         audio_segment = AudioSegment.from_file(io.BytesIO(audio_bytes))
         mono_audio_segment = audio_segment.set_channels(1)
@@ -195,8 +191,6 @@ def transcribe_audio_bytes_user_repeat(audio_bytes: bytes) -> dict:
     Returns a dictionary with transcription and language info
     """
     try:
-        if AudioSegment is None:
-            raise HTTPException(status_code=500, detail="Audio processing not available due to Python 3.13 compatibility issues")
         # Allow pydub to auto-detect format
         audio_segment = AudioSegment.from_file(io.BytesIO(audio_bytes))
         mono_audio_segment = audio_segment.set_channels(1)
