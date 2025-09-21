@@ -1,8 +1,11 @@
-import whisper
+try:
+    import whisper
+except ImportError:
+    whisper = None
 import tempfile
 import os
 
-model = whisper.load_model("base")
+model = whisper.load_model("base") if whisper else None
 
 def transcribe_with_whisper(audio_bytes: bytes) -> str:
     # Save audio bytes to a temporary .wav file

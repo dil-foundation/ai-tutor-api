@@ -21,7 +21,7 @@ def _get_default_settings() -> AISettings:
     logger.info(f"Default settings values being applied: {default_settings.model_dump_json(indent=2)}")
     return default_settings
 
-async def get_ai_settings() -> AISettings:
+def get_ai_settings() -> AISettings:
     """
     Fetches AI Tutor settings from the database with in-memory caching.
 

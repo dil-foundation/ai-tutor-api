@@ -1,7 +1,11 @@
 # app/services/stt_english.py
 
 from google.cloud import speech
-from pydub import AudioSegment
+try:
+    from pydub import AudioSegment
+except ImportError:
+    # Python 3.13 compatibility issue - audioop module removed
+    AudioSegment = None
 import io
 
 def transcribe_english_audio(audio_bytes: bytes) -> str:
@@ -12,6 +16,8 @@ def transcribe_english_audio(audio_bytes: bytes) -> str:
 
     # Let pydub auto-detect the format
     try:
+        if AudioSegment is None:
+            raise ValueError("Audio processing not available due to Python 3.13 compatibility issues")
         audio_segment = AudioSegment.from_file(io.BytesIO(audio_bytes))
     except Exception as e:
         raise ValueError(f"Unsupported audio format or corrupted file: {e}")

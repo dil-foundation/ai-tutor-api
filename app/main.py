@@ -105,7 +105,7 @@ async def startup_event():
 
     # Proactively fetch and cache AI settings on startup
     print("⚙️ [STARTUP] Initializing AI Tutor settings...")
-    await get_ai_settings()
+    get_ai_settings()  # Fixed: removed await
     
     print("📊 [STARTUP] Features enabled:")
     print("   - Progress Tracking System")

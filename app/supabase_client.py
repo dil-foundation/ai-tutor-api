@@ -868,5 +868,19 @@ class SupabaseProgressTracker:
             logger.error(f"Error checking content unlocks for {user_id}: {str(e)}")
             return {"success": False, "error": str(e)}
 
-# Global instance
-progress_tracker = SupabaseProgressTracker() 
+# Global instance - lazy initialization
+_progress_tracker_instance = None
+
+def get_progress_tracker():
+    """Get the global progress tracker instance (lazy initialization)"""
+    global _progress_tracker_instance
+    if _progress_tracker_instance is None:
+        _progress_tracker_instance = SupabaseProgressTracker()
+    return _progress_tracker_instance
+
+# For backward compatibility, create a property-like access
+class ProgressTrackerProxy:
+    def __getattr__(self, name):
+        return getattr(get_progress_tracker(), name)
+
+progress_tracker = ProgressTrackerProxy() 
