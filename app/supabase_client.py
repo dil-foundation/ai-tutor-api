@@ -82,7 +82,8 @@ class SupabaseProgressTracker:
     def __init__(self):
         self.client = supabase
         print("🔧 [SUPABASE] Progress Tracker initialized")
-        print(f"🔧 [SUPABASE] Connected to: {SUPABASE_URL}")
+        supabase_url = os.getenv("SUPABASE_URL", "Not configured")
+        print(f"🔧 [SUPABASE] Connected to: {supabase_url}")
         logger.info("Supabase Progress Tracker initialized")
     
     async def _calculate_streak(self, user_id: str, current_date: date) -> Tuple[int, int]:
@@ -944,5 +945,26 @@ class SupabaseProgressTracker:
             logger.error(f"Error checking content unlocks for {user_id}: {str(e)}")
             return {"success": False, "error": str(e)}
 
-# Global instance
-progress_tracker = SupabaseProgressTracker() 
+# Global instance - initialized safely to avoid module-level initialization issues
+progress_tracker = None
+
+def get_progress_tracker():
+    """Get the global progress tracker instance, creating it if necessary"""
+    global progress_tracker
+    if progress_tracker is None:
+        try:
+            progress_tracker = SupabaseProgressTracker()
+        except Exception as e:
+            print(f"⚠️ [SUPABASE] Failed to initialize progress tracker: {e}")
+            logger.warning(f"Failed to initialize progress tracker: {e}")
+            # Create a dummy tracker that won't break the application
+            progress_tracker = None
+    return progress_tracker
+
+# Try to initialize the progress tracker, but don't fail if it doesn't work
+try:
+    progress_tracker = SupabaseProgressTracker()
+except Exception as e:
+    print(f"⚠️ [SUPABASE] Failed to initialize progress tracker at module level: {e}")
+    logger.warning(f"Failed to initialize progress tracker at module level: {e}")
+    progress_tracker = None 
