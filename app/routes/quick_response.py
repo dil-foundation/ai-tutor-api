@@ -6,14 +6,14 @@ import os
 import base64
 from io import BytesIO
 from typing import Dict, Any
+from fastapi.concurrency import run_in_threadpool
 from app.services.tts import synthesize_speech, synthesize_speech_exercises
 from app.services.stt import transcribe_audio_bytes_eng_only
 from app.services.feedback import evaluate_response_ex2_stage1
-from app.supabase_client import progress_tracker
+from app.supabase_client import supabase, progress_tracker
 from app.auth_middleware import get_current_user, require_student,require_admin_or_teacher_or_student
 router = APIRouter()
 
-PROMPTS_FILE = os.path.join(os.path.dirname(__file__), '..', 'data', 'quick_response_prompts.json')
 
 class AudioEvaluationRequest(BaseModel):
     audio_base64: str
@@ -23,20 +23,35 @@ class AudioEvaluationRequest(BaseModel):
     time_spent_seconds: int
     urdu_used: bool
 
-def get_prompt_by_id(prompt_id: int):
-    print(f"🔍 [PROMPT] Looking for prompt with ID: {prompt_id}")
+async def get_prompt_by_id(prompt_id: int):
+    """Fetch a prompt from Supabase by its topic_number for Stage 1, Exercise 2."""
+    print(f"🔍 [DB] Looking for prompt with topic_number (ID): {prompt_id} for Stage 1, Exercise 2")
     try:
-        with open(PROMPTS_FILE, 'r', encoding='utf-8') as f:
-            prompts = json.load(f)
-            print(f"📖 [PROMPT] Loaded {len(prompts)} prompts from file")
-            for prompt in prompts:
-                if prompt['id'] == prompt_id:
-                    print(f"✅ [PROMPT] Found prompt: {prompt['question']}")
-                    return prompt  # Return the full prompt object
-            print(f"❌ [PROMPT] Prompt with ID {prompt_id} not found")
+        # parent_id for Stage 1, Exercise 2 ('Quick Response Prompts') is 8.
+        query = supabase.table("ai_tutor_content_hierarchy").select("id, topic_number, title, title_urdu, topic_data, category, difficulty").eq("level", "topic").eq("parent_id", 8).eq("topic_number", prompt_id).single()
+        response = await run_in_threadpool(query.execute)
+        
+        if response.data:
+            db_prompt = response.data
+            topic_data = db_prompt.get("topic_data", {})
+            
+            formatted_prompt = {
+                "id": db_prompt.get("topic_number"),
+                "db_id": db_prompt.get("id"),
+                "question": db_prompt.get("title"),
+                "question_urdu": db_prompt.get("title_urdu"),
+                "expected_answers": topic_data.get("expected_answers"),
+                "expected_answers_urdu": topic_data.get("expected_answers_urdu"),
+                "category": db_prompt.get("category"),
+                "difficulty": db_prompt.get("difficulty")
+            }
+            print(f"✅ [DB] Found prompt: {formatted_prompt['question']}")
+            return formatted_prompt
+        else:
+            print(f"❌ [DB] Prompt with topic_number {prompt_id} not found for parent_id 8")
             return None
     except Exception as e:
-        print(f"❌ [PROMPT] Error reading prompts file: {str(e)}")
+        print(f"❌ [DB] Error fetching prompt from Supabase: {str(e)}")
         return None
 
 
@@ -45,15 +60,20 @@ async def check_exercise_completion(user_id: str) -> dict:
     print(f"🔍 [COMPLETION] Checking exercise completion for user: {user_id}")
     
     try:
-        # Get total prompts count
+        # Get total prompts count from Supabase
         total_prompts = 0
         try:
-            with open(PROMPTS_FILE, 'r', encoding='utf-8') as f:
-                prompts = json.load(f)
-                total_prompts = len(prompts)
-                print(f"📊 [COMPLETION] Total prompts available: {total_prompts}")
+            # parent_id for 'Quick Response Prompts' is 8
+            query = supabase.table("ai_tutor_content_hierarchy").select("id", count="exact").eq("level", "topic").eq("parent_id", 8)
+            response = await run_in_threadpool(query.execute)
+            if response.count is not None:
+                total_prompts = response.count
+                print(f"📊 [COMPLETION] Total prompts available from DB: {total_prompts}")
+            else:
+                print("⚠️ [COMPLETION] Could not get count from Supabase, falling back to default.")
+                total_prompts = 25
         except Exception as e:
-            print(f"❌ [COMPLETION] Error reading prompts file: {str(e)}")
+            print(f"❌ [COMPLETION] Error getting prompt count from DB: {str(e)}")
             total_prompts = 25  # Default fallback based on data file
         
         # Get user's progress for Stage 1 Exercise 2
@@ -147,24 +167,44 @@ async def check_exercise_completion(user_id: str) -> dict:
 
 @router.get("/prompts")
 async def get_all_prompts(current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
-    """Get all available prompts for Quick Response exercise"""
+    """Get all available prompts for Quick Response exercise from Supabase"""
     print("🔄 [API] GET /prompts endpoint called")
     try:
-        print(f"📁 [API] Reading prompts file from: {PROMPTS_FILE}")
-        with open(PROMPTS_FILE, 'r', encoding='utf-8') as f:
-            prompts = json.load(f)
-        print(f"✅ [API] Successfully loaded {len(prompts)} prompts")
-        return {"prompts": prompts}
+        print("🔄 [DB] Fetching all prompts for Stage 1, Exercise 2 from Supabase")
+        # parent_id for 'Quick Response Prompts' is 8
+        query = supabase.table("ai_tutor_content_hierarchy").select("id, topic_number, title, title_urdu, topic_data, category, difficulty").eq("level", "topic").eq("parent_id", 8).order("topic_number", desc=False)
+        response = await run_in_threadpool(query.execute)
+
+        if response.data:
+            # Format data to be backward compatible with the old JSON structure.
+            prompts = []
+            for p in response.data:
+                topic_data = p.get("topic_data", {})
+                prompts.append({
+                    "id": p.get("topic_number"),
+                    "db_id": p.get("id"),
+                    "question": p.get("title"),
+                    "question_urdu": p.get("title_urdu"),
+                    "expected_answers": topic_data.get("expected_answers"),
+                    "expected_answers_urdu": topic_data.get("expected_answers_urdu"),
+                    "category": p.get("category"),
+                    "difficulty": p.get("difficulty")
+                })
+            print(f"✅ [DB] Successfully loaded {len(prompts)} prompts from Supabase")
+            return {"prompts": prompts}
+        else:
+            print("❌ [DB] No prompts found for Stage 1, Exercise 2")
+            return {"prompts": []}
     except Exception as e:
         print(f"❌ [API] Error in get_all_prompts: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to load prompts: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to load prompts from database: {str(e)}")
 
 @router.get("/prompts/{prompt_id}")
 async def get_prompt(prompt_id: int, current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
     """Get a specific prompt by ID"""
     print(f"🔄 [API] GET /prompts/{prompt_id} endpoint called")
     try:
-        prompt_data = get_prompt_by_id(prompt_id)
+        prompt_data = await get_prompt_by_id(prompt_id)
         if not prompt_data:
             print(f"❌ [API] Prompt {prompt_id} not found")
             raise HTTPException(status_code=404, detail="Prompt not found")
@@ -198,7 +238,7 @@ and returns the generated audio file as the response.
 async def quick_response(prompt_id: int, current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
     print(f"🔄 [API] POST /quick-response/{prompt_id} endpoint called")
     try:
-        prompt_data = get_prompt_by_id(prompt_id)
+        prompt_data = await get_prompt_by_id(prompt_id)
         if not prompt_data:
             print(f"❌ [API] Prompt {prompt_id} not found")
             raise HTTPException(status_code=404, detail="Prompt not found")
@@ -251,7 +291,7 @@ async def evaluate_quick_response(
     
     try:
         # Get the expected prompt data
-        prompt_data = get_prompt_by_id(request.prompt_id)
+        prompt_data = await get_prompt_by_id(request.prompt_id)
         if not prompt_data:
             print(f"❌ [API] Prompt {request.prompt_id} not found")
             raise HTTPException(status_code=404, detail="Prompt not found")
@@ -342,7 +382,7 @@ async def evaluate_quick_response(
                         user_id=request.user_id,
                         stage_id=1,  # Stage 1
                         exercise_id=2,  # Exercise 2 (Quick Response)
-                        topic_id=request.prompt_id,
+                        topic_id=prompt_data['db_id'], # Use the actual database ID
                         score=float(score),
                         urdu_used=request.urdu_used,
                         time_spent_seconds=time_spent,

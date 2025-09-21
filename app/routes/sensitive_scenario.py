@@ -6,15 +6,14 @@ import os
 import base64
 from io import BytesIO
 from typing import Dict, Any
+from fastapi.concurrency import run_in_threadpool
 from app.services.tts import synthesize_speech, synthesize_speech_exercises
 from app.services.stt import transcribe_audio_bytes_eng_only
 from app.services.feedback import evaluate_response_ex2_stage6
-from app.supabase_client import progress_tracker
+from app.supabase_client import supabase, progress_tracker
 from app.auth_middleware import get_current_user, require_student,require_admin_or_teacher_or_student
 
 router = APIRouter()
-
-SENSITIVE_SCENARIO_FILE = os.path.join(os.path.dirname(__file__), '..', 'data', 'stage6_exercise2.json')
 
 class AudioEvaluationRequest(BaseModel):
     audio_base64: str
@@ -24,20 +23,40 @@ class AudioEvaluationRequest(BaseModel):
     time_spent_seconds: int
     urdu_used: bool
 
-def get_scenario_by_id(scenario_id: int):
-    print(f"🔍 [SCENARIO] Looking for scenario with ID: {scenario_id}")
+async def get_scenario_by_id_from_db(scenario_id: int):
+    """Fetch a sensitive scenario topic from Supabase by its topic_number for Stage 6, Exercise 2."""
+    print(f"🔍 [DB] Looking for scenario with topic_number (ID): {scenario_id} for Stage 6, Exercise 2")
     try:
-        with open(SENSITIVE_SCENARIO_FILE, 'r', encoding='utf-8') as f:
-            scenarios = json.load(f)
-            print(f"📖 [SCENARIO] Loaded {len(scenarios)} scenarios from file")
-            for scenario in scenarios:
-                if scenario['id'] == scenario_id:
-                    print(f"✅ [SCENARIO] Found scenario: {scenario['scenario']}")
-                    return scenario  # Return the full scenario object
-            print(f"❌ [SCENARIO] Scenario with ID {scenario_id} not found")
+        # parent_id for Stage 6, Exercise 2 ('Advanced Diplomatic Communication') is 23.
+        query = supabase.table("ai_tutor_content_hierarchy").select("id, topic_number, title, topic_data, category, difficulty").eq("level", "topic").eq("parent_id", 23).eq("topic_number", scenario_id).single()
+        response = await run_in_threadpool(query.execute)
+        
+        if response.data:
+            db_item = response.data
+            topic_data = db_item.get("topic_data", {})
+            
+            formatted_item = {
+                "id": db_item.get("topic_number"),
+                "db_id": db_item.get("id"),
+                "scenario": db_item.get("title"),
+                "category": db_item.get("category"),
+                "difficulty": db_item.get("difficulty"),
+                "scenario_type": topic_data.get("scenario_type"),
+                "context": topic_data.get("context"),
+                "stakeholder_emotions": topic_data.get("stakeholder_emotions"),
+                "expected_structure": topic_data.get("expected_structure"),
+                "expected_keywords": topic_data.get("expected_keywords", []),
+                "vocabulary_focus": topic_data.get("vocabulary_focus", []),
+                "model_response": topic_data.get("model_response"),
+                "evaluation_criteria": topic_data.get("evaluation_criteria", {})
+            }
+            print(f"✅ [DB] Found scenario: {formatted_item['scenario']}")
+            return formatted_item
+        else:
+            print(f"❌ [DB] Scenario with topic_number {scenario_id} not found for parent_id 23")
             return None
     except Exception as e:
-        print(f"❌ [SCENARIO] Error reading scenario file: {str(e)}")
+        print(f"❌ [DB] Error fetching scenario from Supabase: {str(e)}")
         return None
 
 
@@ -46,16 +65,21 @@ async def check_exercise_completion(user_id: str) -> dict:
     print(f"🔍 [COMPLETION] Checking exercise completion for user: {user_id}")
     
     try:
-        # Get total scenarios count
-        scenarios = []
+        # Get total scenarios count from Supabase
+        total_topics = 0
         try:
-            with open(SENSITIVE_SCENARIO_FILE, 'r', encoding='utf-8') as f:
-                scenarios = json.load(f)
+            # parent_id for 'Advanced Diplomatic Communication' is 23
+            query = supabase.table("ai_tutor_content_hierarchy").select("id", count="exact").eq("level", "topic").eq("parent_id", 23)
+            response = await run_in_threadpool(query.execute)
+            if response.count is not None:
+                total_topics = response.count
+                print(f"📊 [COMPLETION] Total scenarios available from DB: {total_topics}")
+            else:
+                print("⚠️ [COMPLETION] Could not get count from Supabase, falling back to default.")
+                total_topics = 10 # Default fallback
         except Exception as e:
-            print(f"❌ [COMPLETION] Error reading scenarios file: {str(e)}")
-        
-        total_topics = len(scenarios)
-        print(f"📊 [COMPLETION] Total scenarios available: {total_topics}")
+            print(f"❌ [COMPLETION] Error getting scenario count from DB: {str(e)}")
+            total_topics = 10 # Default fallback
         
         # Get user's progress for stage 6, exercise 2
         progress_result = await progress_tracker.get_user_topic_progress(
@@ -139,39 +163,41 @@ async def get_all_scenarios(current_user: Dict[str, Any] = Depends(require_admin
     """Get all available scenarios for Sensitive Scenario exercise"""
     print("🔄 [API] GET /sensitive-scenario-scenarios endpoint called")
     try:
-        print(f"📁 [API] Reading scenario file from: {SENSITIVE_SCENARIO_FILE}")
-        with open(SENSITIVE_SCENARIO_FILE, 'r', encoding='utf-8') as f:
-            scenarios = json.load(f)
-        print(f"✅ [API] Successfully loaded {len(scenarios)} scenarios")
-        return {"scenarios": scenarios}
+        print("🔄 [DB] Fetching all scenarios for Stage 6, Exercise 2 from Supabase")
+        # parent_id for 'Advanced Diplomatic Communication' is 23
+        query = supabase.table("ai_tutor_content_hierarchy").select("id, topic_number, title, category, difficulty").eq("level", "topic").eq("parent_id", 23).order("topic_number", desc=False)
+        response = await run_in_threadpool(query.execute)
+
+        if response.data:
+            scenarios = []
+            for item in response.data:
+                scenarios.append({
+                    "id": item.get("topic_number"),
+                    "db_id": item.get("id"),
+                    "scenario": item.get("title"),
+                    "category": item.get("category"),
+                    "difficulty": item.get("difficulty"),
+                })
+            print(f"✅ [DB] Successfully loaded {len(scenarios)} scenarios from Supabase")
+            return {"scenarios": scenarios}
+        else:
+            print("❌ [DB] No scenarios found for Stage 6, Exercise 2")
+            return {"scenarios": []}
     except Exception as e:
         print(f"❌ [API] Error in get_all_scenarios: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to load scenarios: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to load scenarios from database: {str(e)}")
 
 @router.get("/sensitive-scenario-scenarios/{scenario_id}")
 async def get_scenario(scenario_id: int, current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
     """Get a specific scenario by ID"""
     print(f"🔄 [API] GET /sensitive-scenario-scenarios/{scenario_id} endpoint called")
     try:
-        scenario_data = get_scenario_by_id(scenario_id)
+        scenario_data = await get_scenario_by_id_from_db(scenario_id)
         if not scenario_data:
             print(f"❌ [API] Scenario {scenario_id} not found")
             raise HTTPException(status_code=404, detail="Scenario not found")
         print(f"✅ [API] Returning scenario: {scenario_data['scenario']}")
-        return {
-            "id": scenario_data['id'],
-            "scenario": scenario_data['scenario'],
-            "category": scenario_data['category'],
-            "difficulty": scenario_data['difficulty'],
-            "scenario_type": scenario_data['scenario_type'],
-            "context": scenario_data['context'],
-            "stakeholder_emotions": scenario_data['stakeholder_emotions'],
-            "expected_structure": scenario_data['expected_structure'],
-            "expected_keywords": scenario_data['expected_keywords'],
-            "vocabulary_focus": scenario_data['vocabulary_focus'],
-            "model_response": scenario_data['model_response'],
-            "evaluation_criteria": scenario_data['evaluation_criteria']
-        }
+        return scenario_data
     except HTTPException:
         raise
     except Exception as e:
@@ -191,7 +217,7 @@ and returns the generated audio file as the response.
 async def sensitive_scenario(scenario_id: int, current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
     print(f"🔄 [API] POST /sensitive-scenario/{scenario_id} endpoint called")
     try:
-        scenario_data = get_scenario_by_id(scenario_id)
+        scenario_data = await get_scenario_by_id_from_db(scenario_id)
         if not scenario_data:
             print(f"❌ [API] Scenario {scenario_id} not found")
             raise HTTPException(status_code=404, detail="Scenario not found")
@@ -243,7 +269,7 @@ async def evaluate_sensitive_scenario(
     
     try:
         # Get the expected scenario and keywords
-        scenario_data = get_scenario_by_id(request.scenario_id)
+        scenario_data = await get_scenario_by_id_from_db(request.scenario_id)
         if not scenario_data:
             print(f"❌ [API] Scenario {request.scenario_id} not found")
             raise HTTPException(status_code=404, detail="Scenario not found")
@@ -348,7 +374,7 @@ async def evaluate_sensitive_scenario(
                         user_id=request.user_id,
                         stage_id=6,  # Stage 6
                         exercise_id=2,  # Exercise 2 (Sensitive Scenario)
-                        topic_id=request.scenario_id,
+                        topic_id=scenario_data['db_id'],
                         score=float(score),
                         urdu_used=request.urdu_used,
                         time_spent_seconds=time_spent,

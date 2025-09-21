@@ -13,32 +13,110 @@ from app.schemas.roleplay import (
 from app.services.roleplay_agent import roleplay_agent
 from app.services.feedback import evaluate_response_ex3_stage2
 from app.services.stt import transcribe_audio_bytes_eng_only
-from app.supabase_client import progress_tracker
+from app.supabase_client import supabase, progress_tracker
 from app.redis_client import redis_client
 from app.auth_middleware import get_current_user, require_student,require_admin_or_teacher_or_student
 import json
 import base64
 from typing import List, Dict, Any
+from fastapi.concurrency import run_in_threadpool
 
 router = APIRouter()
 
-def get_scenario_by_id(scenario_id: int):
-    """Get a specific scenario by ID"""
-    scenarios = roleplay_agent.get_all_scenarios()
-    for scenario in scenarios:
-        if scenario["id"] == scenario_id:
-            return scenario
-    return None
+async def get_scenario_by_id_from_db(scenario_id: int):
+    """Fetch a roleplay scenario from Supabase by its topic_number for Stage 2, Exercise 3."""
+    print(f"🔍 [DB] Looking for scenario with topic_number (ID): {scenario_id} for Stage 2, Exercise 3")
+    try:
+        # parent_id for Stage 2, Exercise 3 ('Roleplay Simulation') is 12.
+        query = supabase.table("ai_tutor_content_hierarchy").select("id, topic_number, title, title_urdu, topic_data, category, difficulty").eq("level", "topic").eq("parent_id", 12).eq("topic_number", scenario_id).single()
+        response = await run_in_threadpool(query.execute)
+        
+        if response.data:
+            db_scenario = response.data
+            topic_data = db_scenario.get("topic_data", {})
+            
+            formatted_scenario = {
+                "id": db_scenario.get("topic_number"),
+                "db_id": db_scenario.get("id"),
+                "title": db_scenario.get("title"),
+                "title_urdu": db_scenario.get("title_urdu"),
+                "description": topic_data.get("description"),
+                "description_urdu": topic_data.get("description_urdu"),
+                "initial_prompt": topic_data.get("initial_prompt"),
+                "initial_prompt_urdu": topic_data.get("initial_prompt_urdu"),
+                "scenario_context": topic_data.get("scenario_context"),
+                "difficulty": db_scenario.get("difficulty"),
+                "expected_keywords": topic_data.get("expected_keywords", []),
+                "expected_keywords_urdu": topic_data.get("expected_keywords_urdu", []),
+                "ai_character": topic_data.get("ai_character"),
+                "conversation_flow": topic_data.get("conversation_flow"),
+                "cultural_context": topic_data.get("cultural_context"),
+            }
+            print(f"✅ [DB] Found scenario: {formatted_scenario['title']}")
+            return formatted_scenario
+        else:
+            print(f"❌ [DB] Scenario with topic_number {scenario_id} not found for parent_id 12")
+            return None
+    except Exception as e:
+        print(f"❌ [DB] Error fetching scenario from Supabase: {str(e)}")
+        return None
 
+async def get_all_scenarios_from_db():
+    """Fetch all roleplay scenarios from Supabase for Stage 2, Exercise 3."""
+    print("🔄 [DB] Fetching all scenarios for Stage 2, Exercise 3 from Supabase")
+    try:
+        query = supabase.table("ai_tutor_content_hierarchy").select("id, topic_number, title, title_urdu, topic_data, category, difficulty").eq("level", "topic").eq("parent_id", 12).order("topic_number", desc=False)
+        response = await run_in_threadpool(query.execute)
+
+        if response.data:
+            scenarios = []
+            for s in response.data:
+                topic_data = s.get("topic_data", {})
+                scenarios.append({
+                    "id": s.get("topic_number"),
+                    "db_id": s.get("id"),
+                    "title": s.get("title"),
+                    "title_urdu": s.get("title_urdu"),
+                    "description": topic_data.get("description"),
+                    "description_urdu": topic_data.get("description_urdu"),
+                    "initial_prompt": topic_data.get("initial_prompt"),
+                    "initial_prompt_urdu": topic_data.get("initial_prompt_urdu"),
+                    "scenario_context": topic_data.get("scenario_context"),
+                    "difficulty": s.get("difficulty"),
+                    "expected_keywords": topic_data.get("expected_keywords", []),
+                    "expected_keywords_urdu": topic_data.get("expected_keywords_urdu", []),
+                    "ai_character": topic_data.get("ai_character"),
+                    "conversation_flow": topic_data.get("conversation_flow"),
+                    "cultural_context": topic_data.get("cultural_context"),
+                })
+            print(f"✅ [DB] Successfully loaded {len(scenarios)} scenarios from Supabase")
+            return scenarios
+        else:
+            print("❌ [DB] No scenarios found for Stage 2, Exercise 3")
+            return []
+    except Exception as e:
+        print(f"❌ [DB] Error fetching all scenarios from Supabase: {str(e)}")
+        return []
 
 async def check_exercise_completion(user_id: str) -> dict:
     """Check if user has completed the full Roleplay Simulation exercise (Stage 2, Exercise 3)"""
     print(f"🔍 [COMPLETION] Checking exercise completion for user: {user_id}")
     
     try:
-        # Get total scenarios count
-        total_topics = len(roleplay_agent.get_all_scenarios())
-        print(f"📊 [COMPLETION] Total scenarios available: {total_topics}")
+        # Get total scenarios count from Supabase
+        total_topics = 0
+        try:
+            query = supabase.table("ai_tutor_content_hierarchy").select("id", count="exact").eq("level", "topic").eq("parent_id", 12)
+            response = await run_in_threadpool(query.execute)
+            if response.count is not None:
+                total_topics = response.count
+                print(f"📊 [COMPLETION] Total scenarios available from DB: {total_topics}")
+            else:
+                print("⚠️ [COMPLETION] Could not get count from Supabase, falling back to default.")
+                total_topics = 15
+        except Exception as e:
+            print(f"❌ [COMPLETION] Error getting scenario count from DB: {str(e)}")
+            total_topics = 15 # Fallback
         
         # Get user's progress for stage 2, exercise 3
         progress_result = await progress_tracker.get_user_topic_progress(
@@ -143,7 +221,7 @@ async def get_roleplay_scenarios(
     
     try:
         # Get all scenarios
-        scenarios = roleplay_agent.get_all_scenarios()
+        scenarios = await get_all_scenarios_from_db()
         print(f"📊 [ROLEPLAY] Found {len(scenarios)} scenarios")
         
         # Get user's progress for stage 2, exercise 3
@@ -204,7 +282,7 @@ async def get_scenario_by_id(scenario_id: int, current_user: Dict[str, Any] = De
     print(f"🔄 [ROLEPLAY] GET /roleplay-scenarios/{scenario_id} called")
     
     try:
-        scenario = roleplay_agent.get_scenario_by_id(scenario_id)
+        scenario = await get_scenario_by_id_from_db(scenario_id)
         if not scenario:
             raise HTTPException(status_code=404, detail="Scenario not found")
         
@@ -237,7 +315,7 @@ async def start_roleplay(
     
     try:
         # Get scenario
-        scenario = roleplay_agent.get_scenario_by_id(request.scenario_id)
+        scenario = await get_scenario_by_id_from_db(request.scenario_id)
         if not scenario:
             raise HTTPException(status_code=404, detail="Scenario not found")
         
@@ -368,7 +446,7 @@ async def get_roleplay_history(session_id: str, current_user: Dict[str, Any] = D
         # Get scenario info
         scenario_info = None
         if "scenario_id" in session_data:
-            scenario = roleplay_agent.get_scenario_by_id(session_data["scenario_id"])
+            scenario = await get_scenario_by_id_from_db(session_data["scenario_id"])
             if scenario:
                 scenario_info = {
                     "id": scenario["id"],
@@ -423,7 +501,7 @@ async def evaluate_roleplay_session(
             raise HTTPException(status_code=400, detail="No conversation history found")
         
         # Get scenario info
-        scenario = roleplay_agent.get_scenario_by_id(session_data["scenario_id"])
+        scenario = await get_scenario_by_id_from_db(session_data["scenario_id"])
         if not scenario:
             raise HTTPException(status_code=404, detail="Scenario not found")
         
@@ -453,7 +531,7 @@ async def evaluate_roleplay_session(
                     user_id=request.user_id,
                     stage_id=2,  # Stage 2
                     exercise_id=3,  # Exercise 3 (Roleplay Simulation)
-                    topic_id=scenario["id"],
+                    topic_id=scenario["db_id"],
                     score=float(evaluation.get("overall_score", 0)),
                     urdu_used=request.urdu_used,
                     time_spent_seconds=time_spent,

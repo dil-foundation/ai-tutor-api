@@ -3,35 +3,70 @@ from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 import json
 import os
+from fastapi.concurrency import run_in_threadpool
 from app.services.tts import synthesize_speech_exercises
 from app.services.stt import transcribe_audio_bytes_eng_only
 from app.services.feedback import evaluate_response_ex2_stage2
-from app.supabase_client import SupabaseProgressTracker
-from app.supabase_client import progress_tracker
+from app.supabase_client import supabase, progress_tracker
 from app.auth_middleware import get_current_user, require_student, require_admin_or_teacher_or_student
 import base64
 
 router = APIRouter(tags=["quick-answer"])
 
-# Load question data
-def load_questions():
+async def get_question_by_id_internal(question_id: int):
+    """Internal function to fetch and format a question from Supabase."""
+    print(f"🔍 [DB] Looking for question with topic_number (ID): {question_id} for Stage 2, Exercise 2")
     try:
-        with open("app/data/question_answer_chat_practice.json", "r", encoding="utf-8") as f:
-            return json.load(f)
+        # parent_id for Stage 2, Exercise 2 ('Question Answer Chat Practice') is 11.
+        query = supabase.table("ai_tutor_content_hierarchy").select("id, topic_number, title, title_urdu, topic_data, category, difficulty").eq("level", "topic").eq("parent_id", 11).eq("topic_number", question_id).single()
+        response = await run_in_threadpool(query.execute)
+        
+        if response.data:
+            db_question = response.data
+            topic_data = db_question.get("topic_data", {})
+            
+            formatted_question = {
+                "id": db_question.get("topic_number"),
+                "db_id": db_question.get("id"),
+                "question": db_question.get("title"),
+                "question_urdu": db_question.get("title_urdu"),
+                "expected_answers": topic_data.get("expected_answers", []),
+                "expected_answers_urdu": topic_data.get("expected_answers_urdu", []),
+                "keywords": topic_data.get("keywords", []),
+                "keywords_urdu": topic_data.get("keywords_urdu", []),
+                "category": db_question.get("category"),
+                "difficulty": db_question.get("difficulty"),
+                "tense": topic_data.get("tense"),
+                "sentence_structure": topic_data.get("sentence_structure")
+            }
+            print(f"✅ [DB] Found question: {formatted_question['question']}")
+            return formatted_question
+        else:
+            print(f"❌ [DB] Question with topic_number {question_id} not found for parent_id 11")
+            return None
     except Exception as e:
-        print(f"❌ [QUICK_ANSWER] Error loading questions: {e}")
-        return []
-
+        print(f"❌ [DB] Error fetching question from Supabase: {str(e)}")
+        return None
 
 async def check_exercise_completion(user_id: str) -> dict:
     """Check if user has completed the full Quick Answer exercise (Stage 2, Exercise 2)"""
     print(f"🔍 [COMPLETION] Checking exercise completion for user: {user_id}")
     
     try:
-        # Get total questions count
-        questions = load_questions()
-        total_topics = len(questions)
-        print(f"📊 [COMPLETION] Total questions available: {total_topics}")
+        # Get total questions count from Supabase
+        total_topics = 0
+        try:
+            query = supabase.table("ai_tutor_content_hierarchy").select("id", count="exact").eq("level", "topic").eq("parent_id", 11)
+            response = await run_in_threadpool(query.execute)
+            if response.count is not None:
+                total_topics = response.count
+                print(f"📊 [COMPLETION] Total questions available from DB: {total_topics}")
+            else:
+                print("⚠️ [COMPLETION] Could not get count from Supabase, falling back to default.")
+                total_topics = 15
+        except Exception as e:
+            print(f"❌ [COMPLETION] Error getting question count from DB: {str(e)}")
+            total_topics = 15 # Fallback
         
         # Get user's progress for stage 2, exercise 2
         progress_result = await progress_tracker.get_user_topic_progress(
@@ -141,19 +176,42 @@ class QuestionResponse(BaseModel):
 async def get_all_questions(current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
     """Get all quick answer questions"""
     try:
-        questions = load_questions()
-        print(f"✅ [QUICK_ANSWER] Loaded {len(questions)} questions")
-        return {"questions": questions}
+        print("🔄 [DB] Fetching all questions for Stage 2, Exercise 2 from Supabase")
+        query = supabase.table("ai_tutor_content_hierarchy").select("id, topic_number, title, title_urdu, topic_data, category, difficulty").eq("level", "topic").eq("parent_id", 11).order("topic_number", desc=False)
+        response = await run_in_threadpool(query.execute)
+
+        if response.data:
+            questions = []
+            for q in response.data:
+                topic_data = q.get("topic_data", {})
+                questions.append({
+                    "id": q.get("topic_number"),
+                    "db_id": q.get("id"),
+                    "question": q.get("title"),
+                    "question_urdu": q.get("title_urdu"),
+                    "expected_answers": topic_data.get("expected_answers", []),
+                    "expected_answers_urdu": topic_data.get("expected_answers_urdu", []),
+                    "keywords": topic_data.get("keywords", []),
+                    "keywords_urdu": topic_data.get("keywords_urdu", []),
+                    "category": q.get("category"),
+                    "difficulty": q.get("difficulty"),
+                    "tense": topic_data.get("tense"),
+                    "sentence_structure": topic_data.get("sentence_structure")
+                })
+            print(f"✅ [DB] Successfully loaded {len(questions)} questions from Supabase")
+            return {"questions": questions}
+        else:
+            print("❌ [DB] No questions found for Stage 2, Exercise 2")
+            return {"questions": []}
     except Exception as e:
         print(f"❌ [QUICK_ANSWER] Error getting questions: {e}")
-        raise HTTPException(status_code=500, detail="Failed to load questions")
+        raise HTTPException(status_code=500, detail="Failed to load questions from database")
 
 @router.get("/quick-answer-questions/{question_id}")
 async def get_question_by_id(question_id: int, current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
     """Get a specific question by ID"""
     try:
-        questions = load_questions()
-        question = next((q for q in questions if q["id"] == question_id), None)
+        question = await get_question_by_id_internal(question_id)
         
         if not question:
             print(f"❌ [QUICK_ANSWER] Question {question_id} not found")
@@ -171,8 +229,7 @@ async def get_question_by_id(question_id: int, current_user: Dict[str, Any] = De
 async def generate_question_audio(question_id: int, current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
     """Generate TTS audio for a specific question"""
     try:
-        questions = load_questions()
-        question = next((q for q in questions if q["id"] == question_id), None)
+        question = await get_question_by_id_internal(question_id)
         
         if not question:
             print(f"❌ [QUICK_ANSWER] Question {question_id} not found for TTS")
@@ -221,8 +278,7 @@ async def evaluate_quick_answer_audio(
     
     try:
         # Get the question data
-        questions = load_questions()
-        question = next((q for q in questions if q["id"] == request.question_id), None)
+        question = await get_question_by_id_internal(request.question_id)
         
         if not question:
             print(f"❌ [QUICK_ANSWER] Question {request.question_id} not found")
@@ -296,9 +352,6 @@ async def evaluate_quick_answer_audio(
         
         print(f"✅ [QUICK_ANSWER] Evaluation completed: {evaluation}")
         
-        # Initialize progress tracker
-        progress_tracker = SupabaseProgressTracker()
-        
         # Record progress
         try:
             print(f"🔄 [QUICK_ANSWER] Recording progress for user {request.user_id}")
@@ -306,7 +359,7 @@ async def evaluate_quick_answer_audio(
                 user_id=request.user_id,
                 stage_id=2,  # Stage 2
                 exercise_id=2,  # Exercise 2 (Quick Answer)
-                topic_id=request.question_id,
+                topic_id=question['db_id'], # Use the actual database ID
                 score=evaluation.get("score", 0),
                 urdu_used=request.urdu_used,
                 time_spent_seconds=request.time_spent_seconds,

@@ -6,15 +6,14 @@ import os
 import base64
 from io import BytesIO
 from typing import Dict, Any
+from fastapi.concurrency import run_in_threadpool
 from app.services.tts import synthesize_speech, synthesize_speech_exercises
 from app.services.stt import transcribe_audio_bytes_eng_only
 from app.services.feedback import evaluate_response_ex1_stage2
-from app.supabase_client import progress_tracker
+from app.supabase_client import supabase, progress_tracker
 from app.auth_middleware import get_current_user, require_student,require_admin_or_teacher_or_student
 router = APIRouter()
 
-DAILY_ROUTINE_FILE = os.path.join(os.path.dirname(__file__), '..', 'data', 'daily_routine_narration.json')
-ROUTINES_FILE = os.path.join(os.path.dirname(__file__), '..', 'data', 'daily_routine_narration.json') # Renamed to avoid conflict
 
 class AudioEvaluationRequest(BaseModel):
     audio_base64: str
@@ -24,36 +23,40 @@ class AudioEvaluationRequest(BaseModel):
     time_spent_seconds: int
     urdu_used: bool
 
-def get_phrase_by_id(phrase_id: int):
-    print(f"🔍 [PHRASE] Looking for phrase with ID: {phrase_id}")
+async def get_phrase_by_id(phrase_id: int):
+    """Fetch a daily routine topic from Supabase by its topic_number for Stage 2, Exercise 1."""
+    print(f"🔍 [DB] Looking for phrase with topic_number (ID): {phrase_id} for Stage 2, Exercise 1")
     try:
-        with open(DAILY_ROUTINE_FILE, 'r', encoding='utf-8') as f:
-            phrases = json.load(f)
-            print(f"📖 [PHRASE] Loaded {len(phrases)} phrases from file")
-            for phrase in phrases:
-                if phrase['id'] == phrase_id:
-                    print(f"✅ [PHRASE] Found phrase: {phrase['phrase']}")
-                    return phrase  # Return the full phrase object
-            print(f"❌ [PHRASE] Phrase with ID {phrase_id} not found")
+        # parent_id for Stage 2, Exercise 1 ('Daily Routine Narration') is 10.
+        query = supabase.table("ai_tutor_content_hierarchy").select("id, topic_number, title, topic_data, category, difficulty").eq("level", "topic").eq("parent_id", 10).eq("topic_number", phrase_id).single()
+        response = await run_in_threadpool(query.execute)
+        
+        if response.data:
+            db_phrase = response.data
+            topic_data = db_phrase.get("topic_data", {})
+            
+            formatted_phrase = {
+                "id": db_phrase.get("topic_number"),
+                "db_id": db_phrase.get("id"),
+                "title": db_phrase.get("title"),
+                "phrase": topic_data.get("phrase"),
+                "phrase_urdu": topic_data.get("phrase_urdu"),
+                "example": topic_data.get("example"),
+                "example_urdu": topic_data.get("example_urdu"),
+                "keywords": topic_data.get("keywords"),
+                "keywords_urdu": topic_data.get("keywords_urdu"),
+                "category": db_phrase.get("category"),
+                "difficulty": db_phrase.get("difficulty"),
+                "tense_focus": topic_data.get("tense_focus"),
+                "sentence_structure": topic_data.get("sentence_structure")
+            }
+            print(f"✅ [DB] Found phrase: {formatted_phrase['phrase']}")
+            return formatted_phrase
+        else:
+            print(f"❌ [DB] Phrase with topic_number {phrase_id} not found for parent_id 10")
             return None
     except Exception as e:
-        print(f"❌ [PHRASE] Error reading phrase file: {str(e)}")
-        return None
-
-def get_routine_by_id(routine_id: int):
-    print(f"🔍 [ROUTINE] Looking for routine with ID: {routine_id}")
-    try:
-        with open(ROUTINES_FILE, 'r', encoding='utf-8') as f:
-            routines = json.load(f)
-            print(f"📖 [ROUTINE] Loaded {len(routines)} routines from file")
-            for routine in routines:
-                if routine['id'] == routine_id:
-                    print(f"✅ [ROUTINE] Found routine: {routine['title']}")
-                    return routine  # Return the full routine object
-            print(f"❌ [ROUTINE] Routine with ID {routine_id} not found")
-            return None
-    except Exception as e:
-        print(f"❌ [ROUTINE] Error reading routines file: {str(e)}")
+        print(f"❌ [DB] Error fetching phrase from Supabase: {str(e)}")
         return None
 
 
@@ -62,15 +65,20 @@ async def check_exercise_completion(user_id: str) -> dict:
     print(f"🔍 [COMPLETION] Checking exercise completion for user: {user_id}")
     
     try:
-        # Get total routines count
+        # Get total routines count from Supabase
         total_routines = 0
         try:
-            with open(ROUTINES_FILE, 'r', encoding='utf-8') as f:
-                routines = json.load(f)
-                total_routines = len(routines)
-                print(f"📊 [COMPLETION] Total routines available: {total_routines}")
+            # parent_id for 'Daily Routine Narration' is 10
+            query = supabase.table("ai_tutor_content_hierarchy").select("id", count="exact").eq("level", "topic").eq("parent_id", 10)
+            response = await run_in_threadpool(query.execute)
+            if response.count is not None:
+                total_routines = response.count
+                print(f"📊 [COMPLETION] Total routines available from DB: {total_routines}")
+            else:
+                print("⚠️ [COMPLETION] Could not get count from Supabase, falling back to default.")
+                total_routines = 20
         except Exception as e:
-            print(f"❌ [COMPLETION] Error reading routines file: {str(e)}")
+            print(f"❌ [COMPLETION] Error getting routine count from DB: {str(e)}")
             total_routines = 20  # Default fallback based on data file
         
         # Get user's progress for Stage 2 Exercise 1
@@ -164,24 +172,49 @@ async def check_exercise_completion(user_id: str) -> dict:
 
 @router.get("/daily-routine-phrases")
 async def get_all_phrases(current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
-    """Get all available phrases for Daily Routine exercise"""
+    """Get all available phrases for Daily Routine exercise from Supabase"""
     print("🔄 [API] GET /daily-routine-phrases endpoint called")
     try:
-        print(f"📁 [API] Reading phrase file from: {DAILY_ROUTINE_FILE}")
-        with open(DAILY_ROUTINE_FILE, 'r', encoding='utf-8') as f:
-            phrases = json.load(f)
-        print(f"✅ [API] Successfully loaded {len(phrases)} phrases")
-        return {"phrases": phrases}
+        print("🔄 [DB] Fetching all phrases for Stage 2, Exercise 1 from Supabase")
+        # parent_id for 'Daily Routine Narration' is 10
+        query = supabase.table("ai_tutor_content_hierarchy").select("id, topic_number, title, topic_data, category, difficulty").eq("level", "topic").eq("parent_id", 10).order("topic_number", desc=False)
+        response = await run_in_threadpool(query.execute)
+
+        if response.data:
+            # Format data to be backward compatible with the old JSON structure.
+            phrases = []
+            for p in response.data:
+                topic_data = p.get("topic_data", {})
+                phrases.append({
+                    "id": p.get("topic_number"),
+                    "db_id": p.get("id"),
+                    "title": p.get("title"),
+                    "phrase": topic_data.get("phrase"),
+                    "phrase_urdu": topic_data.get("phrase_urdu"),
+                    "example": topic_data.get("example"),
+                    "example_urdu": topic_data.get("example_urdu"),
+                    "keywords": topic_data.get("keywords"),
+                    "keywords_urdu": topic_data.get("keywords_urdu"),
+                    "category": p.get("category"),
+                    "difficulty": p.get("difficulty"),
+                    "tense_focus": topic_data.get("tense_focus"),
+                    "sentence_structure": topic_data.get("sentence_structure")
+                })
+            print(f"✅ [DB] Successfully loaded {len(phrases)} phrases from Supabase")
+            return {"phrases": phrases}
+        else:
+            print("❌ [DB] No phrases found for Stage 2, Exercise 1")
+            return {"phrases": []}
     except Exception as e:
         print(f"❌ [API] Error in get_all_phrases: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to load phrases: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to load phrases from database: {str(e)}")
 
 @router.get("/daily-routine-phrases/{phrase_id}")
 async def get_phrase(phrase_id: int, current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
     """Get a specific phrase by ID"""
     print(f"🔄 [API] GET /daily-routine-phrases/{phrase_id} endpoint called")
     try:
-        phrase_data = get_phrase_by_id(phrase_id)
+        phrase_data = await get_phrase_by_id(phrase_id)
         if not phrase_data:
             print(f"❌ [API] Phrase {phrase_id} not found")
             raise HTTPException(status_code=404, detail="Phrase not found")
@@ -219,7 +252,7 @@ and returns the generated audio file as the response.
 async def daily_routine(phrase_id: int, current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
     print(f"🔄 [API] POST /daily-routine/{phrase_id} endpoint called")
     try:
-        phrase_data = get_phrase_by_id(phrase_id)
+        phrase_data = await get_phrase_by_id(phrase_id)
         if not phrase_data:
             print(f"❌ [API] Phrase {phrase_id} not found")
             raise HTTPException(status_code=404, detail="Phrase not found")
@@ -272,7 +305,7 @@ async def evaluate_daily_routine(
     
     try:
         # Get the expected phrase and keywords
-        phrase_data = get_phrase_by_id(request.phrase_id)
+        phrase_data = await get_phrase_by_id(request.phrase_id)
         if not phrase_data:
             print(f"❌ [API] Phrase {request.phrase_id} not found")
             raise HTTPException(status_code=404, detail="Phrase not found")
@@ -376,7 +409,7 @@ async def evaluate_daily_routine(
                         user_id=request.user_id,
                         stage_id=2,  # Stage 2
                         exercise_id=1,  # Exercise 1 (Daily Routine)
-                        topic_id=request.phrase_id,
+                        topic_id=phrase_data['db_id'], # Use the actual database ID
                         score=float(score),
                         urdu_used=request.urdu_used,
                         time_spent_seconds=time_spent,

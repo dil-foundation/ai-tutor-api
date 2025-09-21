@@ -6,15 +6,14 @@ import os
 import base64
 from io import BytesIO
 from typing import Dict, Any
+from fastapi.concurrency import run_in_threadpool
 from app.services.tts import synthesize_speech, synthesize_speech_exercises
 from app.services.stt import transcribe_audio_bytes_eng_only
 from app.services.feedback import evaluate_response_ex1_stage6
-from app.supabase_client import progress_tracker
+from app.supabase_client import supabase, progress_tracker
 from app.auth_middleware import get_current_user, require_student,require_admin_or_teacher_or_student
 
 router = APIRouter()
-
-SPONTANEOUS_SPEECH_FILE = os.path.join(os.path.dirname(__file__), '..', 'data', 'stage6_exercise1.json')
 
 class AudioEvaluationRequest(BaseModel):
     audio_base64: str
@@ -24,20 +23,38 @@ class AudioEvaluationRequest(BaseModel):
     time_spent_seconds: int
     urdu_used: bool
 
-def get_topic_by_id(topic_id: int):
-    print(f"🔍 [TOPIC] Looking for topic with ID: {topic_id}")
+async def get_topic_by_id_from_db(topic_id: int):
+    """Fetch a spontaneous speech topic from Supabase by its topic_number for Stage 6, Exercise 1."""
+    print(f"🔍 [DB] Looking for topic with topic_number (ID): {topic_id} for Stage 6, Exercise 1")
     try:
-        with open(SPONTANEOUS_SPEECH_FILE, 'r', encoding='utf-8') as f:
-            topics = json.load(f)
-            print(f"📖 [TOPIC] Loaded {len(topics)} topics from file")
-            for topic in topics:
-                if topic['id'] == topic_id:
-                    print(f"✅ [TOPIC] Found topic: {topic['topic']}")
-                    return topic  # Return the full topic object
-            print(f"❌ [TOPIC] Topic with ID {topic_id} not found")
+        # parent_id for Stage 6, Exercise 1 ('Advanced Spontaneous Speaking') is 22.
+        query = supabase.table("ai_tutor_content_hierarchy").select("id, topic_number, title, topic_data, category, difficulty").eq("level", "topic").eq("parent_id", 22).eq("topic_number", topic_id).single()
+        response = await run_in_threadpool(query.execute)
+        
+        if response.data:
+            db_item = response.data
+            topic_data = db_item.get("topic_data", {})
+            
+            formatted_item = {
+                "id": db_item.get("topic_number"),
+                "db_id": db_item.get("id"),
+                "topic": db_item.get("title"),
+                "category": db_item.get("category"),
+                "difficulty": db_item.get("difficulty"),
+                "topic_type": topic_data.get("topic_type"),
+                "expected_structure": topic_data.get("expected_structure"),
+                "expected_keywords": topic_data.get("expected_keywords", []),
+                "vocabulary_focus": topic_data.get("vocabulary_focus", []),
+                "model_response": topic_data.get("model_response"),
+                "evaluation_criteria": topic_data.get("evaluation_criteria", {})
+            }
+            print(f"✅ [DB] Found topic: {formatted_item['topic']}")
+            return formatted_item
+        else:
+            print(f"❌ [DB] Topic with topic_number {topic_id} not found for parent_id 22")
             return None
     except Exception as e:
-        print(f"❌ [TOPIC] Error reading topic file: {str(e)}")
+        print(f"❌ [DB] Error fetching topic from Supabase: {str(e)}")
         return None
 
 
@@ -46,16 +63,21 @@ async def check_exercise_completion(user_id: str) -> dict:
     print(f"🔍 [COMPLETION] Checking exercise completion for user: {user_id}")
     
     try:
-        # Get total topics count
-        topics = []
+        # Get total topics count from Supabase
+        total_topics = 0
         try:
-            with open(SPONTANEOUS_SPEECH_FILE, 'r', encoding='utf-8') as f:
-                topics = json.load(f)
+            # parent_id for 'Advanced Spontaneous Speaking' is 22
+            query = supabase.table("ai_tutor_content_hierarchy").select("id", count="exact").eq("level", "topic").eq("parent_id", 22)
+            response = await run_in_threadpool(query.execute)
+            if response.count is not None:
+                total_topics = response.count
+                print(f"📊 [COMPLETION] Total topics available from DB: {total_topics}")
+            else:
+                print("⚠️ [COMPLETION] Could not get count from Supabase, falling back to default.")
+                total_topics = 10 # Default fallback
         except Exception as e:
-            print(f"❌ [COMPLETION] Error reading topics file: {str(e)}")
-        
-        total_topics = len(topics)
-        print(f"📊 [COMPLETION] Total topics available: {total_topics}")
+            print(f"❌ [COMPLETION] Error getting topic count from DB: {str(e)}")
+            total_topics = 10 # Default fallback
         
         # Get user's progress for stage 6, exercise 1
         progress_result = await progress_tracker.get_user_topic_progress(
@@ -139,37 +161,41 @@ async def get_all_topics(current_user: Dict[str, Any] = Depends(require_admin_or
     """Get all available topics for Spontaneous Speech exercise"""
     print("🔄 [API] GET /spontaneous-speech-topics endpoint called")
     try:
-        print(f"📁 [API] Reading topic file from: {SPONTANEOUS_SPEECH_FILE}")
-        with open(SPONTANEOUS_SPEECH_FILE, 'r', encoding='utf-8') as f:
-            topics = json.load(f)
-        print(f"✅ [API] Successfully loaded {len(topics)} topics")
-        return {"topics": topics}
+        print("🔄 [DB] Fetching all topics for Stage 6, Exercise 1 from Supabase")
+        # parent_id for 'Advanced Spontaneous Speaking' is 22
+        query = supabase.table("ai_tutor_content_hierarchy").select("id, topic_number, title, category, difficulty").eq("level", "topic").eq("parent_id", 22).order("topic_number", desc=False)
+        response = await run_in_threadpool(query.execute)
+
+        if response.data:
+            topics = []
+            for item in response.data:
+                topics.append({
+                    "id": item.get("topic_number"),
+                    "db_id": item.get("id"),
+                    "topic": item.get("title"),
+                    "category": item.get("category"),
+                    "difficulty": item.get("difficulty"),
+                })
+            print(f"✅ [DB] Successfully loaded {len(topics)} topics from Supabase")
+            return {"topics": topics}
+        else:
+            print("❌ [DB] No topics found for Stage 6, Exercise 1")
+            return {"topics": []}
     except Exception as e:
         print(f"❌ [API] Error in get_all_topics: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to load topics: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to load topics from database: {str(e)}")
 
 @router.get("/spontaneous-speech-topics/{topic_id}")
 async def get_topic(topic_id: int, current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
     """Get a specific topic by ID"""
     print(f"🔄 [API] GET /spontaneous-speech-topics/{topic_id} endpoint called")
     try:
-        topic_data = get_topic_by_id(topic_id)
+        topic_data = await get_topic_by_id_from_db(topic_id)
         if not topic_data:
             print(f"❌ [API] Topic {topic_id} not found")
             raise HTTPException(status_code=404, detail="Topic not found")
         print(f"✅ [API] Returning topic: {topic_data['topic']}")
-        return {
-            "id": topic_data['id'],
-            "topic": topic_data['topic'],
-            "category": topic_data['category'],
-            "difficulty": topic_data['difficulty'],
-            "topic_type": topic_data['topic_type'],
-            "expected_structure": topic_data['expected_structure'],
-            "expected_keywords": topic_data['expected_keywords'],
-            "vocabulary_focus": topic_data['vocabulary_focus'],
-            "model_response": topic_data['model_response'],
-            "evaluation_criteria": topic_data['evaluation_criteria']
-        }
+        return topic_data
     except HTTPException:
         raise
     except Exception as e:
@@ -189,7 +215,7 @@ and returns the generated audio file as the response.
 async def spontaneous_speech(topic_id: int, current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
     print(f"🔄 [API] POST /spontaneous-speech/{topic_id} endpoint called")
     try:
-        topic_data = get_topic_by_id(topic_id)
+        topic_data = await get_topic_by_id_from_db(topic_id)
         if not topic_data:
             print(f"❌ [API] Topic {topic_id} not found")
             raise HTTPException(status_code=404, detail="Topic not found")
@@ -241,7 +267,7 @@ async def evaluate_spontaneous_speech(
     
     try:
         # Get the expected topic and keywords
-        topic_data = get_topic_by_id(request.topic_id)
+        topic_data = await get_topic_by_id_from_db(request.topic_id)
         if not topic_data:
             print(f"❌ [API] Topic {request.topic_id} not found")
             raise HTTPException(status_code=404, detail="Topic not found")
@@ -346,7 +372,7 @@ async def evaluate_spontaneous_speech(
                         user_id=request.user_id,
                         stage_id=6,  # Stage 6
                         exercise_id=1,  # Exercise 1 (Spontaneous Speech)
-                        topic_id=request.topic_id,
+                        topic_id=topic_data['db_id'],
                         score=float(score),
                         urdu_used=request.urdu_used,
                         time_spent_seconds=time_spent,

@@ -4,26 +4,57 @@ from typing import List, Optional, Dict, Any
 import json
 import base64
 import logging
+from fastapi.concurrency import run_in_threadpool
 from app.services.tts import synthesize_speech_exercises
 from app.services.feedback import evaluate_response_ex3_stage4
-from app.supabase_client import SupabaseProgressTracker
+from app.supabase_client import supabase, progress_tracker
 from app.services.stt import transcribe_audio_bytes_eng_only
 from app.auth_middleware import get_current_user, require_student, require_admin_or_teacher_or_student
 import os
 
 router = APIRouter(tags=["Stage 4 - Exercise 3 (News Summary)"])
 
-# Initialize progress tracker
-progress_tracker = SupabaseProgressTracker()
-
-# Load news summary data
-def load_news_summary_data():
+async def get_news_item_by_id_from_db(news_id: int):
+    """Fetch a news summary item from Supabase by its topic_number for Stage 4, Exercise 3."""
+    print(f"🔍 [DB] Looking for news item with topic_number (ID): {news_id} for Stage 4, Exercise 3")
     try:
-        with open("app/data/stage4_exercise3.json", "r", encoding="utf-8") as f:
-            return json.load(f)
+        # parent_id for Stage 4, Exercise 3 ('Leadership Communication') is 18.
+        query = supabase.table("ai_tutor_content_hierarchy").select("id, topic_number, title, title_urdu, topic_data, category, difficulty").eq("level", "topic").eq("parent_id", 18).eq("topic_number", news_id).single()
+        response = await run_in_threadpool(query.execute)
+        
+        if response.data:
+            db_item = response.data
+            topic_data = db_item.get("topic_data", {})
+            
+            formatted_item = {
+                "id": db_item.get("topic_number"),
+                "db_id": db_item.get("id"),
+                "title": db_item.get("title"),
+                "title_urdu": db_item.get("title_urdu"),
+                "summary_text": topic_data.get("summary_text"),
+                "summary_text_urdu": topic_data.get("summary_text_urdu"),
+                "category": db_item.get("category"),
+                "difficulty": db_item.get("difficulty"),
+                "listening_duration": topic_data.get("listening_duration"),
+                "summary_time": topic_data.get("summary_time"),
+                "expected_structure": topic_data.get("expected_structure"),
+                "expected_keywords": topic_data.get("expected_keywords", []),
+                "expected_keywords_urdu": topic_data.get("expected_keywords_urdu", []),
+                "vocabulary_focus": topic_data.get("vocabulary_focus", []),
+                "vocabulary_focus_urdu": topic_data.get("vocabulary_focus_urdu", []),
+                "model_summary": topic_data.get("model_summary"),
+                "model_summary_urdu": topic_data.get("model_summary_urdu"),
+                "evaluation_criteria": topic_data.get("evaluation_criteria", {}),
+                "learning_objectives": topic_data.get("learning_objectives", [])
+            }
+            print(f"✅ [DB] Found news item: {formatted_item['title']}")
+            return formatted_item
+        else:
+            print(f"❌ [DB] News item with topic_number {news_id} not found for parent_id 18")
+            return None
     except Exception as e:
-        logging.error(f"Error loading news summary data: {e}")
-        return []
+        print(f"❌ [DB] Error fetching news item from Supabase: {str(e)}")
+        return None
 
 
 async def check_exercise_completion(user_id: str) -> dict:
@@ -31,10 +62,21 @@ async def check_exercise_completion(user_id: str) -> dict:
     print(f"🔍 [COMPLETION] Checking exercise completion for user: {user_id}")
     
     try:
-        # Get total news items count
-        news_items = load_news_summary_data()
-        total_topics = len(news_items)
-        print(f"📊 [COMPLETION] Total news items available: {total_topics}")
+        # Get total news items count from Supabase
+        total_topics = 0
+        try:
+            # parent_id for 'Leadership Communication' (News Summary) is 18
+            query = supabase.table("ai_tutor_content_hierarchy").select("id", count="exact").eq("level", "topic").eq("parent_id", 18)
+            response = await run_in_threadpool(query.execute)
+            if response.count is not None:
+                total_topics = response.count
+                print(f"📊 [COMPLETION] Total news items available from DB: {total_topics}")
+            else:
+                print("⚠️ [COMPLETION] Could not get count from Supabase, falling back to default.")
+                total_topics = 10
+        except Exception as e:
+            print(f"❌ [COMPLETION] Error getting news item count from DB: {str(e)}")
+            total_topics = 10 # Default fallback
         
         # Get user's progress for stage 4, exercise 3
         progress_result = await progress_tracker.get_user_topic_progress(
@@ -135,13 +177,45 @@ class AudioEvaluationRequest(BaseModel):
     tags=["Stage 4 - Exercise 3 (News Summary)"]
 )
 async def get_news_summary_items(current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
-    """Get all news summary items"""
+    """Get all news summary items from Supabase"""
     try:
-        news_items = load_news_summary_data()
-        return {"news_items": news_items}
+        print("🔄 [DB] Fetching all news items for Stage 4, Exercise 3 from Supabase")
+        query = supabase.table("ai_tutor_content_hierarchy").select("id, topic_number, title, title_urdu, topic_data, category, difficulty").eq("level", "topic").eq("parent_id", 18).order("topic_number", desc=False)
+        response = await run_in_threadpool(query.execute)
+
+        if response.data:
+            news_items = []
+            for item in response.data:
+                topic_data = item.get("topic_data", {})
+                news_items.append({
+                    "id": item.get("topic_number"),
+                    "db_id": item.get("id"),
+                    "title": item.get("title"),
+                    "title_urdu": item.get("title_urdu"),
+                    "summary_text": topic_data.get("summary_text"),
+                    "summary_text_urdu": topic_data.get("summary_text_urdu"),
+                    "category": item.get("category"),
+                    "difficulty": item.get("difficulty"),
+                    "listening_duration": topic_data.get("listening_duration"),
+                    "summary_time": topic_data.get("summary_time"),
+                    "expected_structure": topic_data.get("expected_structure"),
+                    "expected_keywords": topic_data.get("expected_keywords", []),
+                    "expected_keywords_urdu": topic_data.get("expected_keywords_urdu", []),
+                    "vocabulary_focus": topic_data.get("vocabulary_focus", []),
+                    "vocabulary_focus_urdu": topic_data.get("vocabulary_focus_urdu", []),
+                    "model_summary": topic_data.get("model_summary"),
+                    "model_summary_urdu": topic_data.get("model_summary_urdu"),
+                    "evaluation_criteria": topic_data.get("evaluation_criteria", {}),
+                    "learning_objectives": topic_data.get("learning_objectives", [])
+                })
+            print(f"✅ [DB] Successfully loaded {len(news_items)} news items from Supabase")
+            return {"news_items": news_items}
+        else:
+            print("❌ [DB] No news items found for Stage 4, Exercise 3")
+            return {"news_items": []}
     except Exception as e:
         logging.error(f"Error fetching news summary items: {e}")
-        raise HTTPException(status_code=500, detail="Failed to load news summary items")
+        raise HTTPException(status_code=500, detail="Failed to load news summary items from database")
 
 @router.get(
     "/news-summary-items/{news_id}",
@@ -152,8 +226,7 @@ async def get_news_summary_items(current_user: Dict[str, Any] = Depends(require_
 async def get_news_summary_item(news_id: int, current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
     """Get a specific news summary item by ID"""
     try:
-        news_items = load_news_summary_data()
-        news_item = next((item for item in news_items if item["id"] == news_id), None)
+        news_item = await get_news_item_by_id_from_db(news_id)
         
         if not news_item:
             raise HTTPException(status_code=404, detail="News summary item not found")
@@ -178,8 +251,7 @@ async def generate_news_summary_audio(
 ):
     """Generate audio for a specific news summary item"""
     try:
-        news_items = load_news_summary_data()
-        news_item = next((item for item in news_items if item["id"] == news_id), None)
+        news_item = await get_news_item_by_id_from_db(news_id)
         
         if not news_item:
             raise HTTPException(status_code=404, detail="News summary item not found")
@@ -234,8 +306,7 @@ async def evaluate_news_summary(
             raise HTTPException(status_code=403, detail="You can only access your own data")
         
         # Load news item data
-        news_items = load_news_summary_data()
-        news_item = next((item for item in news_items if item["id"] == request.news_id), None)
+        news_item = await get_news_item_by_id_from_db(request.news_id)
         
         if not news_item:
             raise HTTPException(status_code=404, detail="News summary item not found")
@@ -289,7 +360,7 @@ async def evaluate_news_summary(
                 user_id=request.user_id,
                 stage_id=4,
                 exercise_id=3,
-                topic_id=request.news_id,
+                topic_id=news_item['db_id'], # Use the actual database ID
                 score=evaluation.get("score", 0),
                 urdu_used=request.urdu_used,
                 time_spent_seconds=adjusted_time_spent,
@@ -303,8 +374,11 @@ async def evaluate_news_summary(
         
         # Check for content unlocks
         try:
-            unlocked_content = await progress_tracker.check_content_unlocks(request.user_id)
-            evaluation["unlocked_content"] = unlocked_content
+            unlocked_content_result = await progress_tracker.check_and_unlock_content(request.user_id)
+            if unlocked_content_result["success"]:
+                evaluation["unlocked_content"] = unlocked_content_result.get("unlocked_content", [])
+            else:
+                evaluation["unlocked_content"] = []
         except Exception as e:
             print(f"⚠️ [API] Content unlock check failed: {e}")
             evaluation["unlocked_content"] = []
