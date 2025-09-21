@@ -54,9 +54,11 @@ print("=" * 80)
 # Setup Google credentials before importing modules that might need them
 def setup_google_credentials():
     """Setup Google credentials from environment variable or file"""
+    print("🔧 [SETUP] Setting up Google credentials...")
     credentials_json = os.getenv('GOOGLE_APPLICATION_CREDENTIALS_JSON')
     
     if credentials_json:
+        print("🔧 [SETUP] Found GOOGLE_APPLICATION_CREDENTIALS_JSON environment variable")
         # Create credentials file from environment variable
         credentials_dir = Path('/app/credentials')
         credentials_dir.mkdir(exist_ok=True)
@@ -67,21 +69,43 @@ def setup_google_credentials():
         
         # Set environment variable for Google client libraries
         os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = str(credentials_file)
-        print("✅ Google credentials loaded from environment variable")
+        print(f"✅ [SETUP] Google credentials loaded from environment variable and saved to {credentials_file}")
+        print(f"✅ [SETUP] GOOGLE_APPLICATION_CREDENTIALS set to: {os.environ.get('GOOGLE_APPLICATION_CREDENTIALS')}")
         return True
     else:
+        print("⚠️ [SETUP] GOOGLE_APPLICATION_CREDENTIALS_JSON not found in environment")
         # Check if file exists (for local development)
         credentials_file = '/app/credentials/google-credentials.json'
         if os.path.exists(credentials_file):
             os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = credentials_file
-            print("✅ Google credentials loaded from file")
+            print(f"✅ [SETUP] Google credentials loaded from existing file: {credentials_file}")
             return True
         else:
-            print("⚠️ Google credentials not found")
+            print("⚠️ [SETUP] No Google credentials found - some features may not work")
             return False
 
 # Setup credentials before imports
 setup_google_credentials()
+
+# Initialize external services
+print("🔧 [STARTUP] Initializing external services...")
+logger.info("🔧 [STARTUP] Initializing external services...")
+
+# Import Redis and Supabase clients (they will initialize themselves)
+try:
+    from app.redis_client import is_redis_available
+    from app.supabase_client import is_supabase_available
+    
+    print(f"🔧 [STARTUP] Redis available: {is_redis_available()}")
+    print(f"🔧 [STARTUP] Supabase available: {is_supabase_available()}")
+    logger.info(f"🔧 [STARTUP] Redis available: {is_redis_available()}")
+    logger.info(f"🔧 [STARTUP] Supabase available: {is_supabase_available()}")
+except Exception as e:
+    print(f"⚠️ [STARTUP] Error checking external services: {e}")
+    logger.warning(f"⚠️ [STARTUP] Error checking external services: {e}")
+
+print("📦 [STARTUP] Loading application modules...")
+logger.info("📦 [STARTUP] Loading application modules...")
 
 # Import all route modules
 from app.routes import (
@@ -129,6 +153,8 @@ import io
 class TextRequest(BaseModel):
     text: str
 
+print("🚀 [STARTUP] Creating FastAPI application...")
+logger.info("🚀 [STARTUP] Creating FastAPI application...")
 
 app = FastAPI(
     title="AI English Tutor",
@@ -137,6 +163,12 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc"
 )
+
+print("✅ [STARTUP] FastAPI application created successfully")
+logger.info("✅ [STARTUP] FastAPI application created successfully")
+
+print("🔧 [STARTUP] Configuring CORS middleware...")
+logger.info("🔧 [STARTUP] Configuring CORS middleware...")
 
 origins = [
     "*",
@@ -149,6 +181,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+print("✅ [STARTUP] CORS middleware configured")
+logger.info("✅ [STARTUP] CORS middleware configured")
 
 # Configure logging to suppress WebSocket debug logs
 logging.getLogger("websockets").setLevel(logging.WARNING)
@@ -239,16 +274,23 @@ async def shutdown_event():
     print("✅ [SHUTDOWN] Application shutdown complete")
 
 # Include all API routers with proper organization
-print("🚀 [MAIN] Initializing AI English Tutor API...")
+print("🚀 [STARTUP] Registering API routes...")
+logger.info("🚀 [STARTUP] Registering API routes...")
 
 # User management and authentication
+print("📝 [ROUTES] Registering user management and authentication routes...")
+logger.info("📝 [ROUTES] Registering user management and authentication routes...")
 app.include_router(user.router, prefix="/user", tags=["User Management"])
 app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
 
 # Translation services
+print("🌐 [ROUTES] Registering translation services...")
+logger.info("🌐 [ROUTES] Registering translation services...")
 app.include_router(translator.router, prefix="/api/translate", tags=["Translation"])
 
 # Learning exercise routes
+print("🎓 [ROUTES] Registering learning exercise routes...")
+logger.info("🎓 [ROUTES] Registering learning exercise routes...")
 app.include_router(repeat_after_me.router, prefix="/api", tags=["Stage 1 - Exercise 1 (Repeat After Me)"])
 app.include_router(quick_response.router, prefix="/api", tags=["Stage 1 - Exercise 2 (Quick Response)"])
 app.include_router(listen_and_reply.router, prefix="/api", tags=["Stage 1 - Exercise 3 (Listen and Reply)"])
@@ -291,7 +333,10 @@ app.include_router(teacher_dashboard.router, tags=["Teacher Dashboard"])
 # Messaging system routes (NEW - Real-time Messaging)
 app.include_router(messaging.router, prefix="/api", tags=["Messaging System"])
 
-print("✅ [MAIN] All routers included successfully")
+print("✅ [STARTUP] All API routes registered successfully")
+logger.info("✅ [STARTUP] All API routes registered successfully")
+print("🎉 [STARTUP] Application initialization complete!")
+logger.info("🎉 [STARTUP] Application initialization complete!")
 
 @app.post("/tts")
 async def tts_generate_audio(data: TextRequest):

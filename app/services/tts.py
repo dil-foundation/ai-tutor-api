@@ -1,4 +1,12 @@
-from google.cloud import texttospeech
+# Import Google Cloud TTS conditionally to avoid credential issues during startup
+try:
+    from google.cloud import texttospeech
+    GOOGLE_TTS_AVAILABLE = True
+except Exception as e:
+    print(f"⚠️ Google Cloud TTS not available: {e}")
+    GOOGLE_TTS_AVAILABLE = False
+    texttospeech = None
+
 from io import BytesIO
 import httpx
 from fastapi.responses import StreamingResponse

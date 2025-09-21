@@ -13,18 +13,68 @@ load_dotenv(override=True)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Supabase configuration
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
+# Global variables
+supabase: Optional[Client] = None
+SUPABASE_AVAILABLE = False
 
-print("SUPABASE_URL: ",SUPABASE_URL)
+def initialize_supabase():
+    """Initialize Supabase connection with proper error handling"""
+    global supabase, SUPABASE_AVAILABLE
+    
+    try:
+        print("🔧 [SUPABASE] Initializing Supabase connection...")
+        logger.info("🔧 [SUPABASE] Initializing Supabase connection...")
+        
+        # Supabase configuration
+        SUPABASE_URL = os.getenv("SUPABASE_URL")
+        SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
+        
+        print(f"🔧 [SUPABASE] URL: {SUPABASE_URL}")
+        logger.info(f"🔧 [SUPABASE] URL: {SUPABASE_URL}")
+        
+        if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
+            print("❌ [SUPABASE] Missing Supabase environment variables")
+            logger.error("❌ [SUPABASE] Missing Supabase environment variables")
+            SUPABASE_AVAILABLE = False
+            return False
+        
+        # Create Supabase client
+        supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+        
+        # Test connection with a simple query
+        try:
+            # Try to access a table to verify connection
+            test_response = supabase.from_("ai_tutor_settings").select("count", count="exact").limit(0).execute()
+            print("✅ [SUPABASE] Successfully connected to Supabase")
+            logger.info("✅ [SUPABASE] Successfully connected to Supabase")
+            SUPABASE_AVAILABLE = True
+            return True
+        except Exception as test_error:
+            print(f"⚠️ [SUPABASE] Connection created but test query failed: {test_error}")
+            logger.warning(f"⚠️ [SUPABASE] Connection created but test query failed: {test_error}")
+            # Still consider it available since client was created
+            SUPABASE_AVAILABLE = True
+            return True
+            
+    except Exception as e:
+        print(f"❌ [SUPABASE] Failed to initialize Supabase: {e}")
+        logger.error(f"❌ [SUPABASE] Failed to initialize Supabase: {e}")
+        SUPABASE_AVAILABLE = False
+        return False
 
-if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
-    logger.error("Missing Supabase environment variables")
-    raise ValueError("SUPABASE_URL and SUPABASE_SERVICE_KEY must be set")
+def get_supabase_client():
+    """Get Supabase client with availability check"""
+    if not SUPABASE_AVAILABLE:
+        logger.warning("⚠️ [SUPABASE] Supabase not available")
+        return None
+    return supabase
 
-# Create Supabase client
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+def is_supabase_available():
+    """Check if Supabase is available"""
+    return SUPABASE_AVAILABLE
+
+# Initialize Supabase connection (non-blocking)
+initialize_supabase()
 
 class SupabaseProgressTracker:
     """Professional progress tracking service for AI Tutor app"""

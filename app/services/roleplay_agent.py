@@ -3,7 +3,7 @@ import uuid
 from typing import Dict, List, Optional, Tuple
 from openai import OpenAI
 from app.config import OPENAI_API_KEY
-from app.redis_client import redis_client
+from app.redis_client import get_redis_client, is_redis_available
 import base64
 from app.services.tts import synthesize_speech_exercises
 
@@ -55,7 +55,11 @@ class RoleplayAgent:
         }
         
         # Store in Redis
-        redis_client.setex(session_id, 3600, json.dumps(initial_state))  # 1 hour expiry
+        redis_client = get_redis_client()
+        if redis_client:
+            redis_client.setex(session_id, 3600, json.dumps(initial_state))  # 1 hour expiry
+        else:
+            print("⚠️ [ROLEPLAY] Redis not available, session state not persisted")
         
         print(f"✅ [ROLEPLAY] Created session {session_id} for scenario {scenario['id']}")
         return session_id, scenario["initial_prompt"]
@@ -64,6 +68,11 @@ class RoleplayAgent:
         """Update session with user input and return AI response"""
         try:
             # Get session data from Redis
+            redis_client = get_redis_client()
+            if not redis_client:
+                print("⚠️ [ROLEPLAY] Redis not available, cannot retrieve session")
+                return "I'm sorry, but I can't continue our conversation right now. Please start a new session.", "error", None
+            
             session_data_json = redis_client.get(session_id)
             if not session_data_json:
                 return "", "error", "Session not found"
@@ -94,7 +103,11 @@ class RoleplayAgent:
             conversation_status = self._check_conversation_end(session_data, ai_response)
             
             # Update session in Redis
-            redis_client.setex(session_id, 3600, json.dumps(session_data))
+            redis_client = get_redis_client()
+            if redis_client:
+                redis_client.setex(session_id, 3600, json.dumps(session_data))
+            else:
+                print("⚠️ [ROLEPLAY] Redis not available, session state not persisted")
             
             print(f"✅ [ROLEPLAY] Updated session {session_id}, status: {conversation_status}")
             return ai_response, conversation_status, None
@@ -185,6 +198,11 @@ Respond as the {scenario['ai_character']}:
     def get_session_history(self, session_id: str) -> Optional[List[Dict]]:
         """Get conversation history for a session"""
         try:
+            redis_client = get_redis_client()
+            if not redis_client:
+                print("⚠️ [ROLEPLAY] Redis not available, cannot retrieve session history")
+                return None
+            
             session_data_json = redis_client.get(session_id)
             if not session_data_json:
                 return None
@@ -199,9 +217,14 @@ Respond as the {scenario['ai_character']}:
     def delete_session(self, session_id: str) -> bool:
         """Delete a session from Redis"""
         try:
-            redis_client.delete(session_id)
-            print(f"✅ [ROLEPLAY] Deleted session {session_id}")
-            return True
+            redis_client = get_redis_client()
+            if redis_client:
+                redis_client.delete(session_id)
+                print(f"✅ [ROLEPLAY] Deleted session {session_id}")
+                return True
+            else:
+                print("⚠️ [ROLEPLAY] Redis not available, cannot delete session")
+                return False
         except Exception as e:
             print(f"❌ [ROLEPLAY] Error deleting session: {str(e)}")
             return False

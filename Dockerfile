@@ -11,10 +11,10 @@ RUN apt-get update && apt-get install -y \
     && apt-get clean
 
 # Copy the requirements file
-COPY requirements.txt .
+COPY requirements_optimized.txt .
 
 # Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements_optimized.txt
 
 # Copy the application code
 COPY app/ app/
@@ -30,10 +30,10 @@ RUN mkdir -p /app/credentials
 # This will be set dynamically in the application code
 
 # Set OpenTelemetry environment variables for containerized environment
-ENV OTEL_SERVICE_NAME=ai-tutor-backend
-ENV OTEL_TRACES_EXPORTER=otlp
-ENV OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
-ENV OTEL_EXPORTER_OTLP_PROTOCOL=grpc
+# ENV OTEL_SERVICE_NAME=ai-tutor-backend
+# ENV OTEL_TRACES_EXPORTER=otlp
+# ENV OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
+# ENV OTEL_EXPORTER_OTLP_PROTOCOL=grpc
 
 # Expose the FastAPI default port
 EXPOSE 8000
