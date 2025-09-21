@@ -35,6 +35,34 @@ class SupabaseProgressTracker:
         print(f"🔧 [SUPABASE] Connected to: {SUPABASE_URL}")
         logger.info("Supabase Progress Tracker initialized")
     
+    async def get_all_stages(self) -> List[Dict]:
+        """Fetches all stages from the content hierarchy."""
+        try:
+            print("🔄 [CONTENT] Fetching all stages...")
+            result = self.client.rpc('get_all_stages_with_counts').execute()
+            if result.data:
+                print(f"✅ [CONTENT] Found {len(result.data)} stages.")
+                return result.data
+            return []
+        except Exception as e:
+            print(f"❌ [CONTENT] Error fetching stages: {str(e)}")
+            logger.error(f"Error fetching stages: {str(e)}")
+            return []
+
+    async def get_exercises_for_stage(self, stage_number: int) -> List[Dict]:
+        """Fetches all exercises for a given stage from the content hierarchy."""
+        try:
+            print(f"🔄 [CONTENT] Fetching exercises for stage {stage_number}...")
+            result = self.client.rpc('get_exercises_for_stage_with_counts', {'stage_num': stage_number}).execute()
+            if result.data:
+                print(f"✅ [CONTENT] Found {len(result.data)} exercises for stage {stage_number}.")
+                return result.data
+            return []
+        except Exception as e:
+            print(f"❌ [CONTENT] Error fetching exercises for stage {stage_number}: {str(e)}")
+            logger.error(f"Error fetching exercises for stage {stage_number}: {str(e)}")
+            return []
+    
     async def _calculate_streak(self, user_id: str, current_date: date) -> Tuple[int, int]:
         """
         Calculate current streak and longest streak for a user
@@ -235,7 +263,16 @@ class SupabaseProgressTracker:
         print(f"🔄 [INIT] Starting progress initialization for user: {user_id}")
         print(f"🚀 [INIT] Assigned Start Stage: {assigned_start_stage}")
         try:
-            # Step 1: Prepare all the data needed for initialization
+            # Step 1: Fetch dynamic curriculum structure
+            print("🔄 [INIT] Fetching dynamic curriculum structure...")
+            all_stages = await self.get_all_stages()
+            if not all_stages:
+                raise ValueError("Could not fetch curriculum stages from the database.")
+            
+            total_stages_count = len(all_stages)
+            print(f"📚 [INIT] Found {total_stages_count} stages in the curriculum.")
+
+            # Step 2: Prepare all the data needed for initialization
             current_date = date.today()
             current_timestamp = datetime.now().isoformat()
             
@@ -246,11 +283,19 @@ class SupabaseProgressTracker:
             unlocked_stages = list(range(1, start_stage + 1))
             
             unlocked_exercises_map = {}
-            for stage_id in completed_stages:
-                unlocked_exercises_map[str(stage_id)] = [1, 2, 3]
-            unlocked_exercises_map[str(start_stage)] = [1]
+            total_exercises_completed = 0
+            for stage_num in completed_stages:
+                exercises = await self.get_exercises_for_stage(stage_num)
+                unlocked_exercises_map[str(stage_num)] = [e['exercise_number'] for e in exercises]
+                total_exercises_completed += len(exercises)
+            
+            start_stage_exercises = await self.get_exercises_for_stage(start_stage)
+            if start_stage_exercises:
+                unlocked_exercises_map[str(start_stage)] = [start_stage_exercises[0]['exercise_number']]
+            else:
+                unlocked_exercises_map[str(start_stage)] = []
 
-            # Step 2: Upsert the user progress summary
+            # Step 3: Upsert the user progress summary
             progress_summary_payload = {
                 "user_id": user_id,
                 "current_stage": start_stage,
@@ -258,8 +303,8 @@ class SupabaseProgressTracker:
                 "topic_id": 1,
                 "unlocked_stages": unlocked_stages,
                 "unlocked_exercises": unlocked_exercises_map,
-                "overall_progress_percentage": (len(completed_stages) / 6) * 100,
-                "total_exercises_completed": len(completed_stages) * 3,
+                "overall_progress_percentage": (len(completed_stages) / total_stages_count) * 100 if total_stages_count > 0 else 0,
+                "total_exercises_completed": total_exercises_completed,
                 "english_proficiency_text": english_proficiency_text,
                 "assigned_start_stage": assigned_start_stage,
                 "last_activity_date": current_date.isoformat(),
@@ -274,7 +319,7 @@ class SupabaseProgressTracker:
             summary_result = self.client.table('ai_tutor_user_progress_summary').upsert(progress_summary_payload).execute()
             print(f"✅ [INIT] Progress summary upserted successfully.")
 
-            # Step 3: Create missing stage progress records
+            # Step 4: Create missing stage progress records
             print("🔍 [INIT] Checking for existing stage progress records...")
             existing_stages_res = self.client.table('ai_tutor_user_stage_progress').select('stage_id').eq('user_id', user_id).execute()
             existing_stage_ids = {s['stage_id'] for s in existing_stages_res.data}
@@ -282,10 +327,11 @@ class SupabaseProgressTracker:
             stage_progress_to_create = []
             for stage_id in completed_stages:
                 if stage_id not in existing_stage_ids:
+                    exercises_in_stage = await self.get_exercises_for_stage(stage_id)
                     stage_progress_to_create.append({
                         "user_id": user_id, "stage_id": stage_id, "started_at": current_timestamp,
                         "completed_at": current_timestamp, "completed": True,
-                        "progress_percentage": 100.0, "exercises_completed": 3
+                        "progress_percentage": 100.0, "exercises_completed": len(exercises_in_stage)
                     })
             
             if start_stage not in existing_stage_ids:
@@ -298,7 +344,7 @@ class SupabaseProgressTracker:
             else:
                 print("✅ [INIT] No new stage progress records needed.")
 
-            # Step 4: Create missing learning unlock records
+            # Step 5: Create missing learning unlock records
             print("🔍 [INIT] Checking for existing learning unlock records...")
             existing_unlocks_res = self.client.table('ai_tutor_learning_unlocks').select('stage_id, exercise_id').eq('user_id', user_id).execute()
             existing_unlocks = {(u['stage_id'], u['exercise_id']) for u in existing_unlocks_res.data}
@@ -312,14 +358,24 @@ class SupabaseProgressTracker:
                     unlocks_to_create.append({"user_id": user_id, "stage_id": stage_id, "exercise_id": None, "is_unlocked": True, "unlock_criteria_met": True, "unlocked_at": current_timestamp, "unlocked_by_criteria": "Initial assignment"})
                 
                 # Exercise unlock records
-                exercises_to_unlock = [1, 2, 3] if stage_id in completed_stages else [1]
+                exercises_to_unlock = []
+                if stage_id in completed_stages:
+                    exercises = await self.get_exercises_for_stage(stage_id)
+                    exercises_to_unlock = [e['exercise_number'] for e in exercises]
+                elif stage_id == start_stage: # Only unlock first exercise for the starting stage
+                    exercises = await self.get_exercises_for_stage(stage_id)
+                    if exercises:
+                        exercises_to_unlock = [exercises[0]['exercise_number']]
+
                 for ex_id in exercises_to_unlock:
                     if (stage_id, ex_id) not in existing_unlocks:
                         unlocks_to_create.append({"user_id": user_id, "stage_id": stage_id, "exercise_id": ex_id, "is_unlocked": True, "unlock_criteria_met": True, "unlocked_at": current_timestamp, "unlocked_by_criteria": "Initial assignment"})
                 
                 # Create locked records for the starting stage's other exercises
                 if stage_id == start_stage:
-                    for ex_id in [2, 3]:
+                    all_exercises_in_stage = await self.get_exercises_for_stage(stage_id)
+                    locked_exercises = [e['exercise_number'] for e in all_exercises_in_stage if e['exercise_number'] not in exercises_to_unlock]
+                    for ex_id in locked_exercises:
                         if (stage_id, ex_id) not in existing_unlocks:
                              unlocks_to_create.append({"user_id": user_id, "stage_id": stage_id, "exercise_id": ex_id, "is_unlocked": False, "unlock_criteria_met": False})
 
@@ -807,92 +863,112 @@ class SupabaseProgressTracker:
             
             # Get current exercise progress - use completed_at IS NOT NULL instead of completed column
             print(f"🔍 [UNLOCK] Fetching completed exercises...")
-            current_exercise = self.client.table('ai_tutor_user_exercise_progress').select('*').eq('user_id', user_id).not_.is_('completed_at', 'null').execute()
-            print(f"📊 [UNLOCK] Found {len(current_exercise.data)} completed exercises")
+            completed_exercises_res = self.client.table('ai_tutor_user_exercise_progress').select('*').eq('user_id', user_id).not_.is_('completed_at', 'null').execute()
+            print(f"📊 [UNLOCK] Found {len(completed_exercises_res.data)} completed exercises")
             
             unlocked_content = []
             current_timestamp = datetime.now().isoformat()
             
-            for exercise in current_exercise.data:
+            # Group completed exercises by stage for efficient processing
+            completed_by_stage = {}
+            for exercise in completed_exercises_res.data:
                 stage_id = exercise['stage_id']
-                exercise_id = exercise['exercise_id']
-                print(f"🔍 [UNLOCK] Processing completed exercise: stage {stage_id}, exercise {exercise_id}")
+                if stage_id not in completed_by_stage:
+                    completed_by_stage[stage_id] = []
+                completed_by_stage[stage_id].append(exercise['exercise_id'])
+            
+            all_stages_list = await self.get_all_stages()
+            if not all_stages_list:
+                print("⚠️ [UNLOCK] Could not fetch stage list for unlocking logic.")
+                return {"success": False, "error": "Could not fetch stages."}
+
+            max_stage_num = max(s['stage_number'] for s in all_stages_list)
+
+            for stage_id, completed_ids in completed_by_stage.items():
+                print(f"🔍 [UNLOCK] Processing stage {stage_id} with completed exercises: {completed_ids}")
                 
-                # Check if next exercise should be unlocked
-                if exercise_id < 3:  # Not the last exercise in stage
-                    next_exercise_id = exercise_id + 1
-                    print(f"🔍 [UNLOCK] Checking if exercise {next_exercise_id} should be unlocked...")
-                    
-                    # Check if next exercise is already unlocked
-                    existing_unlock = self.client.table('ai_tutor_learning_unlocks').select('*').eq('user_id', user_id).eq('stage_id', stage_id).eq('exercise_id', next_exercise_id).execute()
-                    
-                    if not existing_unlock.data or not existing_unlock.data[0]['is_unlocked']:
-                        print(f"🔓 [UNLOCK] Unlocking exercise {next_exercise_id} in stage {stage_id}")
-                        # Since initialization creates these rows, we should always UPDATE.
-                        unlock_data = {
-                            "is_unlocked": True,
-                            "unlock_criteria_met": True,
-                            "unlocked_at": current_timestamp,
-                            "unlocked_by_criteria": f"Completed exercise {exercise_id} in stage {stage_id}"
-                        }
-                        
-                        unlock_result = self.client.table('ai_tutor_learning_unlocks').update(unlock_data).match({
-                            'user_id': user_id, 
-                            'stage_id': stage_id, 
-                            'exercise_id': next_exercise_id
-                        }).execute()
+                all_exercises_in_stage = await self.get_exercises_for_stage(stage_id)
+                if not all_exercises_in_stage:
+                    continue
 
-                        print(f"✅ [UNLOCK] Exercise {next_exercise_id} unlocked successfully")
-                        unlocked_content.append(f"Stage {stage_id}, Exercise {next_exercise_id}")
-                    else:
-                        print(f"ℹ️ [UNLOCK] Exercise {next_exercise_id} already unlocked")
+                all_exercise_nums = sorted([e['exercise_number'] for e in all_exercises_in_stage])
                 
-                # Check if next stage should be unlocked (if all exercises in current stage are completed)
-                if exercise_id == 3:  # Last exercise in stage
-                    print(f"🔍 [UNLOCK] Checking if stage {stage_id + 1} should be unlocked...")
-                    all_exercises_completed = self.client.table('ai_tutor_user_exercise_progress').select('exercise_id').eq('user_id', user_id).eq('stage_id', stage_id).not_.is_('completed_at', 'null').execute()
-                    
-                    if len(all_exercises_completed.data) == 3:  # All exercises completed
-                        next_stage_id = stage_id + 1
+                # Unlock next exercises within the stage
+                for ex_id in completed_ids:
+                    if ex_id in all_exercise_nums and all_exercise_nums.index(ex_id) < len(all_exercise_nums) - 1:
+                        next_exercise_id = all_exercise_nums[all_exercise_nums.index(ex_id) + 1]
                         
-                        if next_stage_id <= 6:  # Valid stage
-                            print(f"🔓 [UNLOCK] Unlocking stage {next_stage_id}")
-
-                            # Explicitly check if the stage unlock record exists
-                            existing_stage_unlock = self.client.table('ai_tutor_learning_unlocks').select('id').is_('exercise_id', 'null').eq('user_id', user_id).eq('stage_id', next_stage_id).execute()
-
-                            stage_unlock_payload = {
-                                "is_unlocked": True,
-                                "unlock_criteria_met": True,
-                                "unlocked_at": current_timestamp,
-                                "unlocked_by_criteria": f"Completed all exercises in stage {stage_id}"
+                        existing_unlock = self.client.table('ai_tutor_learning_unlocks').select('is_unlocked').eq('user_id', user_id).eq('stage_id', stage_id).eq('exercise_id', next_exercise_id).execute()
+                        
+                        if not existing_unlock.data or not existing_unlock.data[0]['is_unlocked']:
+                            print(f"🔓 [UNLOCK] Unlocking exercise {next_exercise_id} in stage {stage_id}")
+                            unlock_data = {
+                                "is_unlocked": True, "unlock_criteria_met": True, "unlocked_at": current_timestamp,
+                                "unlocked_by_criteria": f"Completed exercise {ex_id} in stage {stage_id}"
                             }
-                            
-                            if existing_stage_unlock.data:
-                                # Row exists, so UPDATE it
-                                print(f"🔓 [UNLOCK] Updating existing record to unlock stage {next_stage_id}")
-                                self.client.table('ai_tutor_learning_unlocks').update(stage_unlock_payload).eq('user_id', user_id).eq('stage_id', next_stage_id).is_('exercise_id', 'null').execute()
-                            else:
-                                # Row does not exist, so INSERT it
-                                print(f"🔓 [UNLOCK] Inserting new record to unlock stage {next_stage_id}")
-                                stage_insert_payload = stage_unlock_payload.copy()
-                                stage_insert_payload['user_id'] = user_id
-                                stage_insert_payload['stage_id'] = next_stage_id
-                                self.client.table('ai_tutor_learning_unlocks').insert(stage_insert_payload).execute()
-                            
-                            unlocked_content.append(f"Stage {next_stage_id}")
-                        else:
-                            print(f"ℹ️ [UNLOCK] Stage {next_stage_id} is beyond valid range (max 6)")
-                    else:
-                        print(f"ℹ️ [UNLOCK] Not all exercises completed in stage {stage_id} ({len(all_exercises_completed.data)}/3)")
+                            self.client.table('ai_tutor_learning_unlocks').update(unlock_data).match({'user_id': user_id, 'stage_id': stage_id, 'exercise_id': next_exercise_id}).execute()
+                            unlocked_content.append(f"Stage {stage_id}, Exercise {next_exercise_id}")
+
+                # Unlock next stage if all exercises in the current one are completed
+                if set(completed_ids) == set(all_exercise_nums):
+                    next_stage_id = stage_id + 1
+                    if next_stage_id <= max_stage_num:
+                        print(f"🔓 [UNLOCK] Unlocking stage {next_stage_id}")
+                        
+                        # Unlock the stage itself
+                        self.client.table('ai_tutor_learning_unlocks').upsert({
+                            "user_id": user_id, "stage_id": next_stage_id, "exercise_id": None, "is_unlocked": True,
+                            "unlock_criteria_met": True, "unlocked_at": current_timestamp,
+                            "unlocked_by_criteria": f"Completed all exercises in stage {stage_id}"
+                        }).execute()
+                        unlocked_content.append(f"Stage {next_stage_id}")
+
+                        # Unlock the first exercise of the new stage
+                        next_stage_exercises = await self.get_exercises_for_stage(next_stage_id)
+                        if next_stage_exercises:
+                            first_exercise_id = next_stage_exercises[0]['exercise_number']
+                            self.client.table('ai_tutor_learning_unlocks').upsert({
+                                "user_id": user_id, "stage_id": next_stage_id, "exercise_id": first_exercise_id, "is_unlocked": True,
+                                "unlock_criteria_met": True, "unlocked_at": current_timestamp,
+                                "unlocked_by_criteria": f"Unlocked stage {next_stage_id}"
+                            }).execute()
+                            unlocked_content.append(f"Stage {next_stage_id}, Exercise {first_exercise_id}")
             
             print(f"📊 [UNLOCK] Total unlocked content: {unlocked_content}")
-            return {"success": True, "unlocked_content": unlocked_content}
+            return {"success": True, "unlocked_content": list(set(unlocked_content))}
             
         except Exception as e:
             print(f"❌ [UNLOCK] Error checking content unlocks for {user_id}: {str(e)}")
             logger.error(f"Error checking content unlocks for {user_id}: {str(e)}")
             return {"success": False, "error": str(e)}
+
+    async def get_all_stages_from_db(self) -> List[Dict]:
+        """Fetches all stages from the content hierarchy for caching."""
+        try:
+            print("🔄 [DB CACHE] Fetching all stages for cache...")
+            result = self.client.rpc('get_all_stages_with_counts').execute()
+            if result.data:
+                print(f"✅ [DB CACHE] Found {len(result.data)} stages.")
+                return result.data
+            return []
+        except Exception as e:
+            print(f"❌ [DB CACHE] Error fetching stages for cache: {str(e)}")
+            logger.error(f"Error fetching stages for cache: {str(e)}")
+            return []
+
+    async def get_all_exercises_from_db(self) -> List[Dict]:
+        """Fetches all exercises from the content hierarchy for caching."""
+        try:
+            print("🔄 [DB CACHE] Fetching all exercises for cache...")
+            result = self.client.rpc('get_all_exercises_with_details').execute()
+            if result.data:
+                print(f"✅ [DB CACHE] Found {len(result.data)} exercises.")
+                return result.data
+            return []
+        except Exception as e:
+            print(f"❌ [DB CACHE] Error fetching exercises for cache: {str(e)}")
+            logger.error(f"Error fetching exercises for cache: {str(e)}")
+            return []
 
 # Global instance
 progress_tracker = SupabaseProgressTracker() 

@@ -183,6 +183,40 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- Function to get all exercises with details (including stage number)
+CREATE OR REPLACE FUNCTION get_all_exercises_with_details()
+RETURNS TABLE (
+    exercise_id INTEGER,
+    stage_number INTEGER,
+    exercise_number INTEGER,
+    title TEXT,
+    title_urdu TEXT,
+    description TEXT,
+    exercise_type TEXT,
+    exercise_order INTEGER,
+    topic_count BIGINT
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        e.id,
+        s.stage_number,
+        e.exercise_number,
+        e.title,
+        e.title_urdu,
+        e.description,
+        e.exercise_type,
+        e.exercise_order,
+        COUNT(t.id) as topic_count
+    FROM public.ai_tutor_content_hierarchy e
+    JOIN public.ai_tutor_content_hierarchy s ON e.parent_id = s.id AND s.level = 'stage'
+    LEFT JOIN public.ai_tutor_content_hierarchy t ON t.parent_id = e.id AND t.level = 'topic'
+    WHERE e.level = 'exercise'
+    GROUP BY e.id, s.stage_number, e.exercise_number, e.title, e.title_urdu, e.description, e.exercise_type, e.exercise_order
+    ORDER BY s.stage_number, e.exercise_order;
+END;
+$$ LANGUAGE plpgsql;
+
 -- Function to get exercises for a specific stage with topic counts
 CREATE OR REPLACE FUNCTION get_exercises_for_stage_with_counts(stage_num INTEGER)
 RETURNS TABLE (

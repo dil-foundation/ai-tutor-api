@@ -360,67 +360,19 @@ async def _process_progress_data_for_frontend(summary: dict, stages: list, exerc
                 'last_activity_date': date.today().isoformat()
             }
         
-        # Stage definitions with exercise names and topic counts
-        stage_definitions = {
-            1: {
-                "name": "Stage 1 – A1 Beginner",
-                "subtitle": "Foundation Building",
-                "exercises": [
-                    {"name": "Repeat After Me", "topics": 10},
-                    {"name": "Quick Response Prompts", "topics": 8}, 
-                    {"name": "Listen and Reply", "topics": 12}
-                ]
-            },
-            2: {
-                "name": "Stage 2 – A2 Elementary",
-                "subtitle": "Daily Conversations",
-                "exercises": [
-                    {"name": "Daily Routine Narration", "topics": 15},
-                    {"name": "Question & Answer Chat", "topics": 12},
-                    {"name": "Roleplay Simulation – Food Order", "topics": 10}
-                ]
-            },
-            3: {
-                "name": "Stage 3 – B1 Intermediate",
-                "subtitle": "Storytelling & Dialogue",
-                "exercises": [
-                    {"name": "Storytelling Practice", "topics": 18},
-                    {"name": "Group Dialogue", "topics": 15},
-                    {"name": "Problem-Solving", "topics": 12}
-                ]
-            },
-            4: {
-                "name": "Stage 4 – B2 Upper Intermediate",
-                "subtitle": "Advanced Communication",
-                "exercises": [
-                    {"name": "Abstract Topic Monologue", "topics": 20},
-                    {"name": "Mock Interview Practice", "topics": 25},
-                    {"name": "News Summary Challenge", "topics": 15}
-                ]
-            },
-            5: {
-                "name": "Stage 5 – C1 Advanced",
-                "subtitle": "Critical Thinking & Presentations",
-                "exercises": [
-                    {"name": "Critical Thinking Dialogues", "topics": 30},
-                    {"name": "Academic Presentations", "topics": 25},
-                    {"name": "In-Depth Interview", "topics": 20}
-                ]
-            },
-            6: {
-                "name": "Stage 6 – C2 Mastery",
-                "subtitle": "Mastery & Spontaneity",
-                "exercises": [
-                    {"name": "Spontaneous Speech", "topics": 35},
-                    {"name": "Sensitive Scenario Roleplay", "topics": 30},
-                    {"name": "Critical Opinion Builder", "topics": 25}
-                ]
-            }
-        }
+        # Dynamically fetch stage definitions from the database
+        print("🔄 [PROCESS] Fetching dynamic stage definitions from database...")
+        all_stages_db = await progress_tracker.get_all_stages()
+        if not all_stages_db:
+            raise ValueError("Could not fetch stage definitions from the database.")
         
         # Process current stage info
         current_stage_id = summary.get('current_stage', 1)
-        current_stage_info = stage_definitions.get(current_stage_id, stage_definitions[1])
+        current_stage_db_info = next((s for s in all_stages_db if s.get('stage_number') == current_stage_id), all_stages_db[0])
+        current_stage_info = {
+            "name": current_stage_db_info.get('title', 'Unknown Stage'),
+            "subtitle": current_stage_db_info.get('description', '')
+        }
         
         # Calculate stage progress using professional logic
         processed_stages = []
@@ -429,26 +381,28 @@ async def _process_progress_data_for_frontend(summary: dict, stages: list, exerc
         total_learning_units = 0
         total_completed_units = 0
         
-        print(f"🔄 [PROCESS] Calculating progress for {len(stage_definitions)} stages")
+        print(f"🔄 [PROCESS] Calculating progress for {len(all_stages_db)} stages")
         
-        for stage_id in range(1, 7):
-            stage_info = stage_definitions[stage_id]
+        for stage_data in all_stages_db:
+            stage_id = stage_data['stage_number']
             stage_progress = next((s for s in stages if s.get('stage_id') == stage_id), None)
             
-            # Get exercises for this stage
+            # Get exercises for this stage dynamically
+            exercises_in_stage_db = await progress_tracker.get_exercises_for_stage(stage_id)
+            
             stage_exercises = []
             stage_completed_exercises = 0
             stage_total_topics = 0
             stage_completed_topics = 0
             
-            print(f"📊 [PROCESS] Processing Stage {stage_id}: {stage_info['name']}")
+            print(f"📊 [PROCESS] Processing Stage {stage_id}: {stage_data.get('title')}")
             
-            for exercise_id in range(1, 4):
+            for exercise_info_db in exercises_in_stage_db:
+                exercise_id = exercise_info_db['exercise_number']
                 exercise_data = next((e for e in exercises if e.get('stage_id') == stage_id and e.get('exercise_id') == exercise_id), None)
-                exercise_info = stage_info['exercises'][exercise_id - 1]
                 
-                exercise_name = exercise_info['name']
-                exercise_topics = exercise_info['topics']
+                exercise_name = exercise_info_db['title']
+                exercise_topics = exercise_info_db['topic_count']
                 exercise_status = "locked"
                 exercise_progress = 0
                 exercise_attempts = 0
@@ -460,7 +414,6 @@ async def _process_progress_data_for_frontend(summary: dict, stages: list, exerc
                     exercise_attempts = exercise_data.get('attempts', 0)
                     current_topic_id = exercise_data.get('current_topic_id', 1)
                     
-                    # Calculate exercise progress based on topics completed
                     if exercise_data.get('completed_at'):
                         exercise_status = "completed"
                         exercise_completed_topics = exercise_topics
@@ -469,18 +422,15 @@ async def _process_progress_data_for_frontend(summary: dict, stages: list, exerc
                         total_completed_exercises += 1
                     elif exercise_attempts > 0:
                         exercise_status = "in_progress"
-                        # Calculate progress based on topics completed
-                        # FIXED: Use current_topic_id to estimate completed topics (more accurate than previous logic)
                         exercise_completed_topics = min(current_topic_id - 1, exercise_topics)
-                        exercise_progress = (exercise_completed_topics / exercise_topics) * 100
+                        exercise_progress = (exercise_completed_topics / exercise_topics) * 100 if exercise_topics > 0 else 0
                     
                     stage_completed_topics += exercise_completed_topics
                     
-                    # Check if exercise is unlocked based on unlocks data
                     exercise_unlock = next((u for u in unlocks if u.get('stage_id') == stage_id and u.get('exercise_id') == exercise_id), None)
                     if exercise_unlock and exercise_unlock.get('is_unlocked'):
                         if exercise_status == "locked":
-                            exercise_status = "in_progress"  # If unlocked but no attempts, show as in_progress
+                            exercise_status = "in_progress"
                 
                 stage_exercises.append({
                     "name": exercise_name,
@@ -491,18 +441,14 @@ async def _process_progress_data_for_frontend(summary: dict, stages: list, exerc
                     "completed_topics": exercise_completed_topics
                 })
             
-            # Calculate stage progress using professional logic
-            # Stage progress = (Completed topics in stage / Total topics in stage) * 100
             stage_progress_percentage = (stage_completed_topics / stage_total_topics) * 100 if stage_total_topics > 0 else 0
-            stage_completed = stage_completed_exercises == 3
+            stage_completed = stage_completed_exercises == len(exercises_in_stage_db) if exercises_in_stage_db else False
             
             if stage_completed:
                 total_completed_stages += 1
             
-            # Check if stage should be unlocked (if any exercise is unlocked or in progress)
             stage_unlocked = any(e['status'] != 'locked' for e in stage_exercises)
             
-            # Add to total learning units for overall progress calculation
             total_learning_units += stage_total_topics
             total_completed_units += stage_completed_topics
             
@@ -510,12 +456,12 @@ async def _process_progress_data_for_frontend(summary: dict, stages: list, exerc
             print(f"   - Total topics: {stage_total_topics}")
             print(f"   - Completed topics: {stage_completed_topics}")
             print(f"   - Progress: {stage_progress_percentage:.1f}%")
-            print(f"   - Completed exercises: {stage_completed_exercises}/3")
+            print(f"   - Completed exercises: {stage_completed_exercises}/{len(exercises_in_stage_db)}")
             
             processed_stages.append({
                 "stage_id": stage_id,
-                "name": stage_info['name'],
-                "subtitle": stage_info['subtitle'],
+                "name": stage_data.get('title'),
+                "subtitle": stage_data.get('description'),
                 "completed": stage_completed,
                 "progress": stage_progress_percentage,
                 "exercises": stage_exercises,
@@ -527,7 +473,6 @@ async def _process_progress_data_for_frontend(summary: dict, stages: list, exerc
             })
         
         # Calculate overall progress using professional logic
-        # Overall progress = (Total completed learning units / Total learning units) * 100
         overall_progress = (total_completed_units / total_learning_units) * 100 if total_learning_units > 0 else 0
         
         # Get current stage progress
