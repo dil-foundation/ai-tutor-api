@@ -200,7 +200,7 @@ class SupabaseProgressTracker:
     async def _calculate_session_metrics(self, user_id: str) -> Dict[str, float]:
         """
         Calculate session duration metrics
-        Returns: average_session_duration, weekly_hours, monthly_hours
+        Returns: total_time_spent_minutes, average_session_duration, weekly_hours, monthly_hours
         """
         try:
             print(f"🔄 [SESSION] Calculating session metrics for user: {user_id}")
@@ -213,6 +213,7 @@ class SupabaseProgressTracker:
             
             if not daily_analytics.data:
                 return {
+                    'total_time_spent_minutes': 0,
                     'average_session_duration_minutes': 0.0,
                     'weekly_learning_hours': 0.0,
                     'monthly_learning_hours': 0.0
@@ -233,11 +234,13 @@ class SupabaseProgressTracker:
             monthly_hours = total_time_minutes / 60.0
             
             print(f"📊 [SESSION] Metrics calculated:")
+            print(f"   - Total time (minutes): {total_time_minutes}")
             print(f"   - Average session: {average_session_duration:.2f} minutes")
             print(f"   - Weekly hours: {weekly_hours:.2f}")
             print(f"   - Monthly hours: {monthly_hours:.2f}")
-            
+                
             return {
+                'total_time_spent_minutes': total_time_minutes,
                 'average_session_duration_minutes': round(average_session_duration, 2),
                 'weekly_learning_hours': round(weekly_hours, 2),
                 'monthly_learning_hours': round(monthly_hours, 2)
@@ -251,6 +254,28 @@ class SupabaseProgressTracker:
                 'weekly_learning_hours': 0.0,
                 'monthly_learning_hours': 0.0
             }
+
+    async def _calculate_total_learning_time(self, user_id: str) -> int:
+        """Calculates the user's all-time total learning time from daily analytics."""
+        try:
+            print(f"🔄 [SESSION] Calculating ALL-TIME learning time for user: {user_id}")
+            # Get all daily analytics records for the user
+            analytics_result = self.client.table('ai_tutor_daily_learning_analytics').select(
+                'total_time_minutes'
+            ).eq('user_id', user_id).execute()
+            
+            if not analytics_result.data:
+                return 0
+                
+            # Sum up the total time spent
+            total_time = sum(record.get('total_time_minutes', 0) for record in analytics_result.data)
+            print(f"📊 [SESSION] All-time learning time: {total_time} minutes")
+            return total_time
+            
+        except Exception as e:
+            print(f"❌ [SESSION] Error calculating all-time learning time: {str(e)}")
+            logger.error(f"Error calculating all-time learning time for {user_id}: {str(e)}")
+            return 0
     
     async def initialize_user_progress(self, user_id: str, assigned_start_stage: int = 1, english_proficiency_text: str = None) -> dict:
         """
@@ -721,8 +746,28 @@ class SupabaseProgressTracker:
             
             # Get progress summary
             print(f"🔍 [GET] Fetching progress summary...")
-            summary = self.client.table('ai_tutor_user_progress_summary').select('*').eq('user_id', user_id).execute()
-            print(f"📊 [GET] Progress summary: {summary.data[0] if summary.data else 'None'}")
+            summary_res = self.client.table('ai_tutor_user_progress_summary').select('*').eq('user_id', user_id).execute()
+            summary = summary_res.data[0] if summary_res.data else {}
+            print(f"📊 [GET] Initial progress summary from DB: {summary}")
+
+            # Always calculate fresh statistics to ensure data is up-to-date
+            print(f"🔄 [GET] Recalculating latest statistics for user {user_id}...")
+            current_date = date.today()
+            
+            # Calculate all-time total learning time from the source of truth
+            total_time = await self._calculate_total_learning_time(user_id)
+            summary['total_time_spent_minutes'] = total_time
+
+            # Calculate streak
+            current_streak, longest_streak = await self._calculate_streak(user_id, current_date)
+            summary['streak_days'] = current_streak
+            summary['longest_streak'] = max(summary.get('longest_streak', 0), longest_streak)
+            
+            # Calculate session metrics (30-day window)
+            session_metrics = await self._calculate_session_metrics(user_id)
+            summary.update(session_metrics)
+            
+            print(f"📊 [GET] Final updated summary with fresh stats: {summary}")
             
             # Get stage progress
             print(f"🔍 [GET] Fetching stage progress...")
@@ -740,7 +785,7 @@ class SupabaseProgressTracker:
             print(f"📊 [GET] Learning unlocks: {len(unlocks.data)} unlocks")
             
             result_data = {
-                "summary": summary.data[0] if summary.data else None,
+                "summary": summary,
                 "stages": stages.data,
                 "exercises": exercises.data,
                 "unlocks": unlocks.data
