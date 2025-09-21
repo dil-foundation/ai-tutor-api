@@ -16,6 +16,9 @@ Version: 1.0.0
 """
 
 import logging
+import os
+import json
+from pathlib import Path
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -54,6 +57,39 @@ from app.routes import (
 )
 from .services.settings_manager import get_ai_settings
 from .services.safety_manager import get_ai_safety_settings
+
+
+def setup_google_credentials():
+    """Setup Google credentials from environment variable or file"""
+    credentials_json = os.getenv('GOOGLE_APPLICATION_CREDENTIALS_JSON')
+    
+    if credentials_json:
+        # Create credentials file from environment variable
+        credentials_dir = Path('/app/credentials')
+        credentials_dir.mkdir(exist_ok=True)
+        
+        credentials_file = credentials_dir / 'google-credentials.json'
+        with open(credentials_file, 'w') as f:
+            f.write(credentials_json)
+        
+        # Set environment variable for Google client libraries
+        os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = str(credentials_file)
+        print("✅ Google credentials loaded from environment variable")
+        return True
+    else:
+        # Check if file exists (for local development)
+        credentials_file = '/app/credentials/google-credentials.json'
+        if os.path.exists(credentials_file):
+            os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = credentials_file
+            print("✅ Google credentials loaded from file")
+            return True
+        else:
+            print("⚠️ No Google credentials found - some features may not work")
+            return False
+
+
+# Setup Google credentials before creating the FastAPI app
+setup_google_credentials()
 
 
 from fastapi import FastAPI

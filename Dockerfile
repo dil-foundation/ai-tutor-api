@@ -19,8 +19,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the application code
 COPY app/ app/
 
-# Set environment variable to locate Google credentials
-ENV GOOGLE_APPLICATION_CREDENTIALS=/app/credentials/google-credentials.json
+# Create credentials directory (for backward compatibility)
+RUN mkdir -p /app/credentials
+
+# Remove the hardcoded GOOGLE_APPLICATION_CREDENTIALS environment variable
+# This will be set dynamically in the application code
 
 # Set OpenTelemetry environment variables for containerized environment
 ENV OTEL_SERVICE_NAME=ai-tutor-backend
