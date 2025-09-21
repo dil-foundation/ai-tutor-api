@@ -11,10 +11,10 @@ RUN apt-get update && apt-get install -y \
     && apt-get clean
 
 # Copy the requirements file
-COPY requirements.txt .
+COPY requirements_optimized.txt .
 
 # Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements_optimized.txt
 
 # Copy the application code
 COPY app/ app/
