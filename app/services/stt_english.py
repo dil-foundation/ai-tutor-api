@@ -1,23 +1,28 @@
 # app/services/stt_english.py
 
-from google.cloud import speech
+# Import Google Cloud Speech conditionally to avoid credential issues during startup
 try:
-    from pydub import AudioSegment
-except ImportError:
-    # Python 3.13 compatibility issue - audioop module removed
-    AudioSegment = None
+    from google.cloud import speech
+    GOOGLE_SPEECH_AVAILABLE = True
+except Exception as e:
+    print(f"⚠️ Google Cloud Speech not available: {e}")
+    GOOGLE_SPEECH_AVAILABLE = False
+    speech = None
+
+from pydub import AudioSegment
 import io
+from fastapi import HTTPException
 
 def transcribe_english_audio(audio_bytes: bytes) -> str:
     """
     Transcribes English audio bytes using Google Cloud STT.
     Supports MP3, M4A, WAV, etc.
     """
+    if not GOOGLE_SPEECH_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Google Cloud Speech service is not available")
 
     # Let pydub auto-detect the format
     try:
-        if AudioSegment is None:
-            raise ValueError("Audio processing not available due to Python 3.13 compatibility issues")
         audio_segment = AudioSegment.from_file(io.BytesIO(audio_bytes))
     except Exception as e:
         raise ValueError(f"Unsupported audio format or corrupted file: {e}")

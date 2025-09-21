@@ -13,18 +13,68 @@ load_dotenv(override=True)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Supabase configuration
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
+# Global variables
+supabase: Optional[Client] = None
+SUPABASE_AVAILABLE = False
 
-print("SUPABASE_URL: ",SUPABASE_URL)
+def initialize_supabase():
+    """Initialize Supabase connection with proper error handling"""
+    global supabase, SUPABASE_AVAILABLE
+    
+    try:
+        print("🔧 [SUPABASE] Initializing Supabase connection...")
+        logger.info("🔧 [SUPABASE] Initializing Supabase connection...")
+        
+        # Supabase configuration
+        SUPABASE_URL = os.getenv("SUPABASE_URL")
+        SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
+        
+        print(f"🔧 [SUPABASE] URL: {SUPABASE_URL}")
+        logger.info(f"🔧 [SUPABASE] URL: {SUPABASE_URL}")
+        
+        if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
+            print("❌ [SUPABASE] Missing Supabase environment variables")
+            logger.error("❌ [SUPABASE] Missing Supabase environment variables")
+            SUPABASE_AVAILABLE = False
+            return False
+        
+        # Create Supabase client
+        supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+        
+        # Test connection with a simple query
+        try:
+            # Try to access a table to verify connection
+            test_response = supabase.from_("ai_tutor_settings").select("count", count="exact").limit(0).execute()
+            print("✅ [SUPABASE] Successfully connected to Supabase")
+            logger.info("✅ [SUPABASE] Successfully connected to Supabase")
+            SUPABASE_AVAILABLE = True
+            return True
+        except Exception as test_error:
+            print(f"⚠️ [SUPABASE] Connection created but test query failed: {test_error}")
+            logger.warning(f"⚠️ [SUPABASE] Connection created but test query failed: {test_error}")
+            # Still consider it available since client was created
+            SUPABASE_AVAILABLE = True
+            return True
+            
+    except Exception as e:
+        print(f"❌ [SUPABASE] Failed to initialize Supabase: {e}")
+        logger.error(f"❌ [SUPABASE] Failed to initialize Supabase: {e}")
+        SUPABASE_AVAILABLE = False
+        return False
 
-if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
-    logger.error("Missing Supabase environment variables")
-    raise ValueError("SUPABASE_URL and SUPABASE_SERVICE_KEY must be set")
+def get_supabase_client():
+    """Get Supabase client with availability check"""
+    if not SUPABASE_AVAILABLE:
+        logger.warning("⚠️ [SUPABASE] Supabase not available")
+        return None
+    return supabase
 
-# Create Supabase client
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+def is_supabase_available():
+    """Check if Supabase is available"""
+    return SUPABASE_AVAILABLE
+
+# Initialize Supabase connection (non-blocking)
+initialize_supabase()
 
 class SupabaseProgressTracker:
     """Professional progress tracking service for AI Tutor app"""
@@ -32,7 +82,8 @@ class SupabaseProgressTracker:
     def __init__(self):
         self.client = supabase
         print("🔧 [SUPABASE] Progress Tracker initialized")
-        print(f"🔧 [SUPABASE] Connected to: {SUPABASE_URL}")
+        supabase_url = os.getenv("SUPABASE_URL", "Not configured")
+        print(f"🔧 [SUPABASE] Connected to: {supabase_url}")
         logger.info("Supabase Progress Tracker initialized")
     
     async def _calculate_streak(self, user_id: str, current_date: date) -> Tuple[int, int]:
@@ -224,93 +275,119 @@ class SupabaseProgressTracker:
                 'monthly_learning_hours': 0.0
             }
     
-    async def initialize_user_progress(self, user_id: str) -> dict:
-        """Initialize user progress when they first start using the app"""
+    async def initialize_user_progress(self, user_id: str, assigned_start_stage: int = 1, english_proficiency_text: str = None) -> dict:
+        """
+        Initializes or updates a user's progress. This function is idempotent and can safely be
+        called for new users or users with a default progress record.
+        
+        If an `assigned_start_stage` is provided, the user starts from that stage, 
+        and all previous stages are marked as completed. Stage 0 is treated as Stage 1 for progress.
+        """
         print(f"🔄 [INIT] Starting progress initialization for user: {user_id}")
+        print(f"🚀 [INIT] Assigned Start Stage: {assigned_start_stage}")
         try:
-            print(f"🔍 [INIT] Checking if user progress already exists...")
-            
-            # Check if user progress already exists
-            existing = self.client.table('ai_tutor_user_progress_summary').select('*').eq('user_id', user_id).execute()
-            print(f"📊 [INIT] Existing progress check result: {len(existing.data)} records found")
-            
-            if existing.data:
-                print(f"✅ [INIT] User progress already exists for: {user_id}")
-                print(f"📋 [INIT] Existing data: {existing.data[0]}")
-                logger.info(f"User progress already exists for: {user_id}")
-                return {"success": True, "message": "User progress already initialized", "data": existing.data[0]}
-            
-            print(f"🆕 [INIT] No existing progress found, creating new user progress...")
-            
-            # Initialize user progress summary
+            # Step 1: Prepare all the data needed for initialization
             current_date = date.today()
-            
-            progress_summary = {
-                "user_id": user_id,
-                "current_stage": 1,
-                "current_exercise": 1,
-                "topic_id": 1,
-                "urdu_enabled": True,
-                "unlocked_stages": [1],
-                "unlocked_exercises": {"1": [1]},
-                "overall_progress_percentage": 0.00,
-                "total_time_spent_minutes": 0,
-                "total_exercises_completed": 0,
-                "streak_days": 0,
-                "longest_streak": 0,
-                "average_session_duration_minutes": 0.00,
-                "weekly_learning_hours": 0.00,
-                "monthly_learning_hours": 0.00,
-                "first_activity_date": current_date.isoformat(),
-                "last_activity_date": current_date.isoformat()
-            }
-            
-            print(f"📝 [INIT] Creating progress summary: {progress_summary}")
-            result = self.client.table('ai_tutor_user_progress_summary').insert(progress_summary).execute()
-            print(f"✅ [INIT] Progress summary created: {result.data[0] if result.data else 'No data'}")
-            
-            # Initialize stage progress for stage 1
             current_timestamp = datetime.now().isoformat()
             
-            stage_progress = {
+            # Treat stage 0 as stage 1 for progress setup, but store original assignment
+            start_stage = assigned_start_stage if assigned_start_stage > 0 else 1
+            
+            completed_stages = list(range(1, start_stage))
+            unlocked_stages = list(range(1, start_stage + 1))
+            
+            unlocked_exercises_map = {}
+            for stage_id in completed_stages:
+                unlocked_exercises_map[str(stage_id)] = [1, 2, 3]
+            unlocked_exercises_map[str(start_stage)] = [1]
+
+            # Step 2: Upsert the user progress summary
+            progress_summary_payload = {
                 "user_id": user_id,
-                "stage_id": 1,
-                "started_at": current_timestamp
+                "current_stage": start_stage,
+                "current_exercise": 1,
+                "topic_id": 1,
+                "unlocked_stages": unlocked_stages,
+                "unlocked_exercises": unlocked_exercises_map,
+                "overall_progress_percentage": (len(completed_stages) / 6) * 100,
+                "total_exercises_completed": len(completed_stages) * 3,
+                "english_proficiency_text": english_proficiency_text,
+                "assigned_start_stage": assigned_start_stage,
+                "last_activity_date": current_date.isoformat(),
+                "updated_at": current_timestamp,
+                "urdu_enabled": True, "total_time_spent_minutes": 0, "streak_days": 0,
+                "longest_streak": 0, "average_session_duration_minutes": 0.00,
+                "weekly_learning_hours": 0.00, "monthly_learning_hours": 0.00,
+                "first_activity_date": current_date.isoformat(),
             }
+
+            print(f"📝 [INIT] Upserting progress summary...")
+            summary_result = self.client.table('ai_tutor_user_progress_summary').upsert(progress_summary_payload).execute()
+            print(f"✅ [INIT] Progress summary upserted successfully.")
+
+            # Step 3: Create missing stage progress records
+            print("🔍 [INIT] Checking for existing stage progress records...")
+            existing_stages_res = self.client.table('ai_tutor_user_stage_progress').select('stage_id').eq('user_id', user_id).execute()
+            existing_stage_ids = {s['stage_id'] for s in existing_stages_res.data}
             
-            print(f"📝 [INIT] Creating stage progress: {stage_progress}")
-            stage_result = self.client.table('ai_tutor_user_stage_progress').insert(stage_progress).execute()
-            print(f"✅ [INIT] Stage progress created: {stage_result.data[0] if stage_result.data else 'No data'}")
+            stage_progress_to_create = []
+            for stage_id in completed_stages:
+                if stage_id not in existing_stage_ids:
+                    stage_progress_to_create.append({
+                        "user_id": user_id, "stage_id": stage_id, "started_at": current_timestamp,
+                        "completed_at": current_timestamp, "completed": True,
+                        "progress_percentage": 100.0, "exercises_completed": 3
+                    })
             
-            # Initialize exercise progress for stage 1 exercises
-            exercise_progress_data = [
-                {"user_id": user_id, "stage_id": 1, "exercise_id": 1, "started_at": current_timestamp},
-                {"user_id": user_id, "stage_id": 1, "exercise_id": 2, "started_at": current_timestamp},
-                {"user_id": user_id, "stage_id": 1, "exercise_id": 3, "started_at": current_timestamp}
-            ]
+            if start_stage not in existing_stage_ids:
+                stage_progress_to_create.append({"user_id": user_id, "stage_id": start_stage, "started_at": current_timestamp})
             
-            print(f"📝 [INIT] Creating exercise progress for {len(exercise_progress_data)} exercises")
-            exercise_result = self.client.table('ai_tutor_user_exercise_progress').insert(exercise_progress_data).execute()
-            print(f"✅ [INIT] Exercise progress created: {len(exercise_result.data) if exercise_result.data else 0} records")
+            if stage_progress_to_create:
+                print(f"📝 [INIT] Creating {len(stage_progress_to_create)} new stage progress records...")
+                self.client.table('ai_tutor_user_stage_progress').insert(stage_progress_to_create).execute()
+                print("✅ [INIT] Stage progress records created.")
+            else:
+                print("✅ [INIT] No new stage progress records needed.")
+
+            # Step 4: Create missing learning unlock records
+            print("🔍 [INIT] Checking for existing learning unlock records...")
+            existing_unlocks_res = self.client.table('ai_tutor_learning_unlocks').select('stage_id, exercise_id').eq('user_id', user_id).execute()
+            existing_unlocks = {(u['stage_id'], u['exercise_id']) for u in existing_unlocks_res.data}
+
+            unlocks_to_create = []
             
-            # Initialize learning unlocks
-            unlock_data = [
-                {"user_id": user_id, "stage_id": 1, "exercise_id": None, "is_unlocked": True, "unlock_criteria_met": True},
-                {"user_id": user_id, "stage_id": 1, "exercise_id": 1, "is_unlocked": True, "unlock_criteria_met": True},
-                {"user_id": user_id, "stage_id": 1, "exercise_id": 2, "is_unlocked": False, "unlock_criteria_met": False},
-                {"user_id": user_id, "stage_id": 1, "exercise_id": 3, "is_unlocked": False, "unlock_criteria_met": False}
-            ]
-            
-            print(f"📝 [INIT] Creating learning unlocks: {len(unlock_data)} unlock records")
-            unlock_result = self.client.table('ai_tutor_learning_unlocks').insert(unlock_data).execute()
-            print(f"✅ [INIT] Learning unlocks created: {len(unlock_result.data) if unlock_result.data else 0} records")
-            
+            # Unlocks for all stages up to the starting one
+            for stage_id in unlocked_stages:
+                # Stage unlock record
+                if (stage_id, None) not in existing_unlocks:
+                    unlocks_to_create.append({"user_id": user_id, "stage_id": stage_id, "exercise_id": None, "is_unlocked": True, "unlock_criteria_met": True, "unlocked_at": current_timestamp, "unlocked_by_criteria": "Initial assignment"})
+                
+                # Exercise unlock records
+                exercises_to_unlock = [1, 2, 3] if stage_id in completed_stages else [1]
+                for ex_id in exercises_to_unlock:
+                    if (stage_id, ex_id) not in existing_unlocks:
+                        unlocks_to_create.append({"user_id": user_id, "stage_id": stage_id, "exercise_id": ex_id, "is_unlocked": True, "unlock_criteria_met": True, "unlocked_at": current_timestamp, "unlocked_by_criteria": "Initial assignment"})
+                
+                # Create locked records for the starting stage's other exercises
+                if stage_id == start_stage:
+                    for ex_id in [2, 3]:
+                        if (stage_id, ex_id) not in existing_unlocks:
+                             unlocks_to_create.append({"user_id": user_id, "stage_id": stage_id, "exercise_id": ex_id, "is_unlocked": False, "unlock_criteria_met": False})
+
+            if unlocks_to_create:
+                print(f"📝 [INIT] Creating {len(unlocks_to_create)} new learning unlock records...")
+                self.client.table('ai_tutor_learning_unlocks').insert(unlocks_to_create).execute()
+                print("✅ [INIT] Learning unlock records created.")
+            else:
+                print("✅ [INIT] No new learning unlock records needed.")
+
             print(f"🎉 [INIT] Successfully initialized progress for user: {user_id}")
-            logger.info(f"Successfully initialized progress for user: {user_id}")
-            return {"success": True, "message": "User progress initialized successfully", "data": result.data[0] if result.data else None}
+            return {"success": True, "message": "User progress initialized successfully", "data": summary_result.data[0] if summary_result.data else None}
             
         except Exception as e:
+            import traceback
             print(f"❌ [INIT] Error initializing user progress for {user_id}: {str(e)}")
+            print(f"Traceback: {traceback.format_exc()}")
             logger.error(f"Error initializing user progress for {user_id}: {str(e)}")
             return {"success": False, "error": str(e)}
     
@@ -868,19 +945,26 @@ class SupabaseProgressTracker:
             logger.error(f"Error checking content unlocks for {user_id}: {str(e)}")
             return {"success": False, "error": str(e)}
 
-# Global instance - lazy initialization
-_progress_tracker_instance = None
+# Global instance - initialized safely to avoid module-level initialization issues
+progress_tracker = None
 
 def get_progress_tracker():
-    """Get the global progress tracker instance (lazy initialization)"""
-    global _progress_tracker_instance
-    if _progress_tracker_instance is None:
-        _progress_tracker_instance = SupabaseProgressTracker()
-    return _progress_tracker_instance
+    """Get the global progress tracker instance, creating it if necessary"""
+    global progress_tracker
+    if progress_tracker is None:
+        try:
+            progress_tracker = SupabaseProgressTracker()
+        except Exception as e:
+            print(f"⚠️ [SUPABASE] Failed to initialize progress tracker: {e}")
+            logger.warning(f"Failed to initialize progress tracker: {e}")
+            # Create a dummy tracker that won't break the application
+            progress_tracker = None
+    return progress_tracker
 
-# For backward compatibility, create a property-like access
-class ProgressTrackerProxy:
-    def __getattr__(self, name):
-        return getattr(get_progress_tracker(), name)
-
-progress_tracker = ProgressTrackerProxy() 
+# Try to initialize the progress tracker, but don't fail if it doesn't work
+try:
+    progress_tracker = SupabaseProgressTracker()
+except Exception as e:
+    print(f"⚠️ [SUPABASE] Failed to initialize progress tracker at module level: {e}")
+    logger.warning(f"Failed to initialize progress tracker at module level: {e}")
+    progress_tracker = None 

@@ -43,8 +43,12 @@ jobs:
 
       - name: Build, tag and push
         run: |
-          # Set image tag from input or use default
-          TAG="${{ github.event.inputs.image_tag || 'latest' }}"
+          # Set image tag
+          if [ -n "${{ github.event.inputs.image_tag }}" ]; then
+            TAG="${{ github.event.inputs.image_tag }}"
+          else
+            TAG="latest"
+          fi
           
           # Build
           docker build -t ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:$TAG .

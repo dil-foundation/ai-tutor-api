@@ -10,29 +10,33 @@ RUN apt-get update && apt-get install -y \
     ffmpeg \
     && apt-get clean
 
-# Upgrade pip first
-RUN pip install --upgrade pip
-
 # Copy the requirements file
-COPY requirements.txt .
+COPY requirements_optimized.txt .
 
-# Install Python dependencies with timeout and retry configurations
-RUN pip install --no-cache-dir --timeout=1000 --retries=5 -r requirements.txt
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements_optimized.txt
 
 # Copy the application code
 COPY app/ app/
 
-# Set environment variable to locate Google credentials
-ENV GOOGLE_APPLICATION_CREDENTIALS=/app/credentials/google-credentials.json
+# Copy startup script
+COPY startup.sh /app/startup.sh
+RUN chmod +x /app/startup.sh
+
+# Create credentials directory (for backward compatibility)
+RUN mkdir -p /app/credentials
+
+# Remove the hardcoded GOOGLE_APPLICATION_CREDENTIALS environment variable
+# This will be set dynamically in the application code
 
 # Set OpenTelemetry environment variables for containerized environment
-ENV OTEL_SERVICE_NAME=ai-tutor-backend
-ENV OTEL_TRACES_EXPORTER=otlp
-ENV OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
-ENV OTEL_EXPORTER_OTLP_PROTOCOL=grpc
+# ENV OTEL_SERVICE_NAME=ai-tutor-backend
+# ENV OTEL_TRACES_EXPORTER=otlp
+# ENV OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
+# ENV OTEL_EXPORTER_OTLP_PROTOCOL=grpc
 
 # Expose the FastAPI default port
 EXPOSE 8000
 
-# Start the FastAPI app
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips=*"]
+# Start the FastAPI app using startup script
+CMD ["/app/startup.sh"]

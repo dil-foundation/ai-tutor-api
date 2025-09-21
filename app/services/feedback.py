@@ -5,6 +5,12 @@ import re
 import asyncio
 from app.services.settings_manager import get_ai_settings
 from app.schemas.settings import AISettings
+from app.services.safety_manager import get_ai_safety_settings
+from app.schemas.safety import AISafetyEthicsSettings
+from typing import Optional
+
+# Global variable to hold the event loop passed from the main thread
+main_thread_loop = None
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 
@@ -37,8 +43,29 @@ def _build_system_prompt_from_settings(base_prompt: str, settings: AISettings) -
 
     return "\n".join(prompt_parts)
 
+def _apply_safety_guidelines(prompt: str, safety_settings: AISafetyEthicsSettings) -> str:
+    """
+    Applies a layer of safety and ethics rules to an existing system prompt.
+    This ensures all AI responses adhere to the configured safety standards.
+    """
+    prompt_parts = [prompt]
+    prompt_parts.append("\n--- AI Safety & Ethics Mandates (Strictly Enforced) ---")
+    if safety_settings.harmful_content_prevention:
+        prompt_parts.append("- You must strictly avoid generating harmful, unethical, racist, sexist, toxic, dangerous, or illegal content.")
+    if safety_settings.toxicity_detection:
+        prompt_parts.append("- You must not use or promote toxic language or behavior.")
+    if safety_settings.bias_detection:
+        prompt_parts.append("- You must remain neutral and avoid any form of political, social, or personal bias.")
+    if safety_settings.gender_bias_monitoring:
+        prompt_parts.append("- Your language must be free of gender bias.")
+    if safety_settings.cultural_bias_detection:
+        prompt_parts.append("- Be culturally sensitive and avoid stereotypes.")
+    if safety_settings.inclusive_language:
+        prompt_parts.append("- You must use inclusive and respectful language at all times.")
+    
+    return "\n".join(prompt_parts)
 
-def analyze_english_input_eng_only(user_text: str, conversation_stage: str, current_topic: str = None) -> dict:
+def analyze_english_input_eng_only(user_text: str, conversation_stage: str, topic: Optional[str] = None, loop: Optional[asyncio.AbstractEventLoop] = None) -> dict:
     """
     Enhanced multi-stage conversational AI for English learning with consistent Urdu correction
     and specialized logic flows for different learning areas.
@@ -49,7 +76,11 @@ def analyze_english_input_eng_only(user_text: str, conversation_stage: str, curr
     - Fallback to normal NLP conversation outside learning areas
     - Professional error handling and edge case management
     """
-    print(f"🔍 [ENGLISH_ONLY] Analyzing input for stage: {conversation_stage} with topic: {current_topic}")
+    global main_thread_loop
+    if loop:
+        main_thread_loop = loop
+
+    print(f"🔍 [ENGLISH_ONLY] Analyzing input for stage: {conversation_stage} with topic: {topic}")
     print(f"📝 User input: '{user_text}'")
 
     # Enhanced base prompt with consistent Urdu correction
@@ -66,7 +97,7 @@ If the user speaks in Urdu, Hindi, or any non-English language:
 **User's spoken text:** "{user_text}"
 
 **Current Conversation Stage:** {conversation_stage}
-**Current Topic:** {current_topic if current_topic else 'None'}
+**Current Topic:** {topic if topic else 'None'}
 
 **Response Format Requirements:**
 - Always respond in a warm, encouraging tone
@@ -84,15 +115,15 @@ If the user speaks in Urdu, Hindi, or any non-English language:
         elif conversation_stage == "option_selection":
             return _handle_option_selection_stage(user_text, base_prompt)
         elif conversation_stage == "vocabulary_learning":
-            return _handle_vocabulary_learning_stage(user_text, base_prompt, current_topic)
+            return _handle_vocabulary_learning_stage(user_text, base_prompt, topic)
         elif conversation_stage == "sentence_practice":
-            return _handle_sentence_practice_stage(user_text, base_prompt, current_topic)
+            return _handle_sentence_practice_stage(user_text, base_prompt, topic)
         elif conversation_stage == "topic_discussion_prompt":
             return _handle_topic_discussion_prompt_stage(user_text, base_prompt)
         elif conversation_stage == "topic_discussion":
-            return _handle_topic_discussion_stage(user_text, base_prompt, current_topic)
+            return _handle_topic_discussion_stage(user_text, base_prompt, topic)
         elif conversation_stage == "grammar_focus":
-            return _handle_grammar_focus_stage(user_text, base_prompt, current_topic)
+            return _handle_grammar_focus_stage(user_text, base_prompt, topic)
         else:
             # Fallback to normal NLP conversation for unknown stages
             return _handle_fallback_conversation(user_text, base_prompt, conversation_stage)
@@ -430,24 +461,36 @@ def _execute_ai_analysis(prompt: str, stage_name: str) -> dict:
     try:
         print(f"🤖 [ENGLISH_ONLY] Executing AI analysis for stage: {stage_name}")
 
-        # --- Professional Integration of AI Tutor Settings ---
-        # 1. Fetch the latest AI settings. Caching is handled by the settings manager.
-        settings = asyncio.run(get_ai_settings())
+        if not main_thread_loop:
+            raise RuntimeError("Event loop not available in thread.")
 
-        # 2. Build the final, dynamic system prompt by augmenting the base prompt with settings.
-        final_prompt = _build_system_prompt_from_settings(prompt, settings)
+        # --- Professional Integration of AI Tutor Settings & Safety ---
+        # 1. Fetch both AI behavior and safety settings concurrently for efficiency.
         
-        # 3. Calculate max_tokens from settings. 1 word is roughly 1.5 tokens.
-        # We'll also cap it at a reasonable maximum to prevent excessive responses.
-        max_tokens_limit = min(int(settings.max_response_length * 1.5), 2048)
-        print(f"⚙️ [SETTINGS] Applying max_response_length: {settings.max_response_length} words (~{max_tokens_limit} tokens)")
+        # Schedule the coroutines on the main event loop from the current thread
+        future_settings = asyncio.run_coroutine_threadsafe(get_ai_settings(), main_thread_loop)
+        future_safety_settings = asyncio.run_coroutine_threadsafe(get_ai_safety_settings(), main_thread_loop)
+
+        # Wait for the results
+        settings = future_settings.result()
+        safety_settings = future_safety_settings.result()
+        
+        # 2. Build the behavioral prompt using the original, unchanged flow.
+        behavioral_prompt = _build_system_prompt_from_settings(prompt, settings)
+        
+        # 3. Layer the mandatory safety guidelines on top of the behavioral prompt.
+        final_prompt = _apply_safety_guidelines(behavioral_prompt, safety_settings)
+        
+        # 4. Calculate max_tokens from settings. 1 word is roughly 1.5 tokens.
+        max_tokens = int(settings.max_response_length * 1.5)
+        print(f"⚙️ [SETTINGS] Applying max_response_length: {settings.max_response_length} words (~{max_tokens} tokens)")
         
         response = client.chat.completions.create(
             model="gpt-4o",
             messages=[{"role": "user", "content": final_prompt}],
             response_format={"type": "json_object"},
             temperature=0.7,
-            max_tokens=max_tokens_limit,  # Apply dynamic token limit
+            max_tokens=max_tokens,  # Apply dynamic token limit
             timeout=30  # 30 second timeout
         )
         

@@ -5,21 +5,15 @@ load_dotenv()
 
 # API Keys
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-GOOGLE_APPLICATION_CREDENTIALS = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = GOOGLE_APPLICATION_CREDENTIALS
+
+# Google credentials will be set up by main.py setup_google_credentials() function
+# Don't set GOOGLE_APPLICATION_CREDENTIALS here - it will be handled by main.py
 
 ELEVEN_API_KEY = os.getenv("ELEVEN_API_KEY")
 ELEVEN_VOICE_ID = os.getenv("ELEVEN_VOICE_ID", "mActWQg9kibLro6Z2ouY") 
 
 # General Config
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
-
-# Database Config - used by database.py for SQLAlchemy
-DB_USER = os.getenv("DB_USER")
-DB_PASSWORD = os.getenv("DB_PASSWORD")
-DB_HOST = os.getenv("DB_HOST")
-DB_NAME = os.getenv("DB_NAME")
-
 
 # Wordpress API Credentials
 WP_SITE_URL = os.getenv("WP_SITE_URL")
