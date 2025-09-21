@@ -3,7 +3,11 @@ import json
 import base64
 import os
 import io
-from pydub import AudioSegment
+try:
+    from pydub import AudioSegment
+except ImportError:
+    # Python 3.13 compatibility issue - audioop module removed
+    AudioSegment = None
 
 import websockets
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect

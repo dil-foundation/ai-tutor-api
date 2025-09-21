@@ -1,4 +1,8 @@
-from pydub import AudioSegment
+try:
+    from pydub import AudioSegment
+except ImportError:
+    # Python 3.13 compatibility issue - audioop module removed
+    AudioSegment = None
 import io
 
 def validate_and_convert_audio(audio_bytes: bytes) -> bytes:
@@ -13,6 +17,8 @@ def validate_and_convert_audio(audio_bytes: bytes) -> bytes:
         ValueError: If the audio format is invalid or cannot be processed.
     """
     try:
+        if AudioSegment is None:
+            raise ValueError("Audio processing not available due to Python 3.13 compatibility issues")
         audio = AudioSegment.from_file(io.BytesIO(audio_bytes))
         
         # Convert to 16kHz sample rate

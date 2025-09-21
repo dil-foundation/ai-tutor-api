@@ -1,6 +1,14 @@
 from elevenlabs import ElevenLabs
-from google.cloud import speech
 from pydub import AudioSegment
+
+# Import Google Cloud Speech conditionally to avoid credential issues during startup
+try:
+    from google.cloud import speech
+    GOOGLE_SPEECH_AVAILABLE = True
+except Exception as e:
+    print(f"⚠️ Google Cloud Speech not available: {e}")
+    GOOGLE_SPEECH_AVAILABLE = False
+    speech = None
 import base64
 import io
 from fastapi import HTTPException
@@ -139,6 +147,9 @@ def is_english_input(transcription_result: dict) -> bool:
 
 
 def transcribe_audio_bytes(audio_bytes: bytes, language_code: str = "ur-PK") -> str:
+    if not GOOGLE_SPEECH_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Google Cloud Speech service is not available")
+    
     try:
         # Allow pydub to auto-detect format
         audio_segment = AudioSegment.from_file(io.BytesIO(audio_bytes))

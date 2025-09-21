@@ -1,10 +1,39 @@
-import whisper
 import tempfile
 import os
 
-model = whisper.load_model("base")
+# Lazy loading - don't import whisper at module level
+_whisper = None
+_model = None
+
+def get_whisper_module():
+    """Get the whisper module with lazy loading"""
+    global _whisper
+    if _whisper is None:
+        try:
+            import whisper
+            _whisper = whisper
+        except ImportError:
+            _whisper = False  # Use False to indicate import failed
+    return _whisper if _whisper is not False else None
+
+def get_whisper_model():
+    """Get the Whisper model with lazy loading"""
+    global _model
+    if _model is None:
+        whisper = get_whisper_module()
+        if whisper is not None:
+            try:
+                _model = whisper.load_model("base")
+            except Exception as e:
+                print(f"Failed to load Whisper model: {e}")
+                _model = None
+    return _model
 
 def transcribe_with_whisper(audio_bytes: bytes) -> str:
+    model = get_whisper_model()
+    if model is None:
+        raise ValueError("Whisper model not available")
+    
     # Save audio bytes to a temporary .wav file
     with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as f:
         f.write(audio_bytes)

@@ -16,8 +16,96 @@ Version: 1.0.0
 """
 
 import logging
+import os
+import json
+import sys
+from pathlib import Path
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
+
+# Configure comprehensive logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+        logging.StreamHandler(sys.stderr)
+    ]
+)
+
+# Create logger for this module
+logger = logging.getLogger(__name__)
+
+# Print startup banner to ensure logs are visible
+print("=" * 80)
+print("🚀 AI ENGLISH TUTOR BACKEND STARTING UP")
+print("=" * 80)
+print(f"Python version: {sys.version}")
+print(f"Working directory: {os.getcwd()}")
+print(f"Environment variables loaded:")
+for key in ['OPENAI_API_KEY', 'SUPABASE_URL', 'REDIS_HOST', 'ELEVEN_API_KEY']:
+    value = os.getenv(key)
+    if value:
+        print(f"  ✅ {key}: {'*' * min(len(value), 10)}...")
+    else:
+        print(f"  ❌ {key}: NOT SET")
+print("=" * 80)
+
+# Setup Google credentials before importing modules that might need them
+def setup_google_credentials():
+    """Setup Google credentials from environment variable or file"""
+    print("🔧 [SETUP] Setting up Google credentials...")
+    credentials_json = os.getenv('GOOGLE_APPLICATION_CREDENTIALS_JSON')
+    
+    if credentials_json:
+        print("🔧 [SETUP] Found GOOGLE_APPLICATION_CREDENTIALS_JSON environment variable")
+        # Create credentials file from environment variable
+        credentials_dir = Path('/app/credentials')
+        credentials_dir.mkdir(exist_ok=True)
+        
+        credentials_file = credentials_dir / 'google-credentials.json'
+        with open(credentials_file, 'w') as f:
+            f.write(credentials_json)
+        
+        # Set environment variable for Google client libraries
+        os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = str(credentials_file)
+        print(f"✅ [SETUP] Google credentials loaded from environment variable and saved to {credentials_file}")
+        print(f"✅ [SETUP] GOOGLE_APPLICATION_CREDENTIALS set to: {os.environ.get('GOOGLE_APPLICATION_CREDENTIALS')}")
+        return True
+    else:
+        print("⚠️ [SETUP] GOOGLE_APPLICATION_CREDENTIALS_JSON not found in environment")
+        # Check if file exists (for local development)
+        credentials_file = '/app/credentials/google-credentials.json'
+        if os.path.exists(credentials_file):
+            os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = credentials_file
+            print(f"✅ [SETUP] Google credentials loaded from existing file: {credentials_file}")
+            return True
+        else:
+            print("⚠️ [SETUP] No Google credentials found - some features may not work")
+            return False
+
+# Setup credentials before imports
+setup_google_credentials()
+
+# Initialize external services
+print("🔧 [STARTUP] Initializing external services...")
+logger.info("🔧 [STARTUP] Initializing external services...")
+
+# Import Redis and Supabase clients (they will initialize themselves)
+try:
+    from app.redis_client import is_redis_available
+    from app.supabase_client import is_supabase_available
+    
+    print(f"🔧 [STARTUP] Redis available: {is_redis_available()}")
+    print(f"🔧 [STARTUP] Supabase available: {is_supabase_available()}")
+    logger.info(f"🔧 [STARTUP] Redis available: {is_redis_available()}")
+    logger.info(f"🔧 [STARTUP] Supabase available: {is_supabase_available()}")
+except Exception as e:
+    print(f"⚠️ [STARTUP] Error checking external services: {e}")
+    logger.warning(f"⚠️ [STARTUP] Error checking external services: {e}")
+
+print("📦 [STARTUP] Loading application modules...")
+logger.info("📦 [STARTUP] Loading application modules...")
 
 # Import all route modules
 from app.routes import (
@@ -65,6 +153,8 @@ import io
 class TextRequest(BaseModel):
     text: str
 
+print("🚀 [STARTUP] Creating FastAPI application...")
+logger.info("🚀 [STARTUP] Creating FastAPI application...")
 
 app = FastAPI(
     title="AI English Tutor",
@@ -73,6 +163,12 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc"
 )
+
+print("✅ [STARTUP] FastAPI application created successfully")
+logger.info("✅ [STARTUP] FastAPI application created successfully")
+
+print("🔧 [STARTUP] Configuring CORS middleware...")
+logger.info("🔧 [STARTUP] Configuring CORS middleware...")
 
 origins = [
     "*",
@@ -85,6 +181,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+print("✅ [STARTUP] CORS middleware configured")
+logger.info("✅ [STARTUP] CORS middleware configured")
 
 # Configure logging to suppress WebSocket debug logs
 logging.getLogger("websockets").setLevel(logging.WARNING)
@@ -101,22 +200,72 @@ logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
 async def startup_event():
     """Application startup event"""
     print("🚀 [STARTUP] AI English Tutor Backend starting...")
+    logger.info("🚀 [STARTUP] AI English Tutor Backend starting...")
+    
+    # Log all environment variables for debugging
+    print("🔍 [STARTUP] Environment Variables Check:")
+    logger.info("🔍 [STARTUP] Environment Variables Check:")
+    
+    env_vars = [
+        'OPENAI_API_KEY', 'SUPABASE_URL', 'SUPABASE_SERVICE_KEY',
+        'ELEVEN_API_KEY', 'ELEVEN_VOICE_ID', 'REDIS_HOST', 'REDIS_PORT',
+        'WP_SITE_URL', 'WP_API_USERNAME', 'WP_API_APPLICATION_PASSWORD',
+        'GOOGLE_APPLICATION_CREDENTIALS_JSON', 'ENVIRONMENT'
+    ]
+    
+    for var in env_vars:
+        value = os.getenv(var)
+        if value:
+            masked_value = f"{'*' * min(len(value), 10)}..." if len(value) > 10 else "***"
+            print(f"  ✅ {var}: {masked_value}")
+            logger.info(f"  ✅ {var}: {masked_value}")
+        else:
+            print(f"  ❌ {var}: NOT SET")
+            logger.warning(f"  ❌ {var}: NOT SET")
 
-    # Proactively fetch and cache AI settings on startup
-    print("⚙️ [STARTUP] Initializing AI Tutor settings...")
-    await get_ai_settings()
+    # Try to initialize settings but don't fail startup if it fails
+    try:
+        print("⚙️ [STARTUP] Initializing AI Tutor settings...")
+        logger.info("⚙️ [STARTUP] Initializing AI Tutor settings...")
+        await get_ai_settings()
+        print("✅ [STARTUP] AI Tutor settings initialized successfully")
+        logger.info("✅ [STARTUP] AI Tutor settings initialized successfully")
+    except Exception as e:
+        print(f"⚠️ [STARTUP] Failed to initialize AI Tutor settings: {str(e)}")
+        logger.error(f"⚠️ [STARTUP] Failed to initialize AI Tutor settings: {str(e)}")
+        print("⚠️ [STARTUP] Continuing with default settings...")
+        logger.warning("⚠️ [STARTUP] Continuing with default settings...")
 
-    # Proactively fetch and cache AI Safety & Ethics settings on startup
-    print("🛡️ [STARTUP] Initializing AI Safety & Ethics settings...")
-    await get_ai_safety_settings()
+    try:
+        print("🛡️ [STARTUP] Initializing AI Safety & Ethics settings...")
+        logger.info("🛡️ [STARTUP] Initializing AI Safety & Ethics settings...")
+        await get_ai_safety_settings()
+        print("✅ [STARTUP] AI Safety & Ethics settings initialized successfully")
+        logger.info("✅ [STARTUP] AI Safety & Ethics settings initialized successfully")
+    except Exception as e:
+        print(f"⚠️ [STARTUP] Failed to initialize AI Safety & Ethics settings: {str(e)}")
+        logger.error(f"⚠️ [STARTUP] Failed to initialize AI Safety & Ethics settings: {str(e)}")
+        print("⚠️ [STARTUP] Continuing with default settings...")
+        logger.warning("⚠️ [STARTUP] Continuing with default settings...")
     
     print("📊 [STARTUP] Features enabled:")
-    print("   - Progress Tracking System")
-    print("   - Learning Exercises")
-    print("   - Real-time Conversation")
-    print("   - Translation Services")
-    print("   - English-Only AI Tutor")
+    logger.info("📊 [STARTUP] Features enabled:")
+    features = [
+        "Progress Tracking System",
+        "Learning Exercises", 
+        "Real-time Conversation",
+        "Translation Services",
+        "English-Only AI Tutor"
+    ]
+    
+    for feature in features:
+        print(f"   - {feature}")
+        logger.info(f"   - {feature}")
+    
     print("✅ [STARTUP] Application started successfully")
+    logger.info("✅ [STARTUP] Application started successfully")
+    print("🌐 [STARTUP] Server is ready to accept connections on port 8000")
+    logger.info("🌐 [STARTUP] Server is ready to accept connections on port 8000")
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -125,16 +274,23 @@ async def shutdown_event():
     print("✅ [SHUTDOWN] Application shutdown complete")
 
 # Include all API routers with proper organization
-print("🚀 [MAIN] Initializing AI English Tutor API...")
+print("🚀 [STARTUP] Registering API routes...")
+logger.info("🚀 [STARTUP] Registering API routes...")
 
 # User management and authentication
+print("📝 [ROUTES] Registering user management and authentication routes...")
+logger.info("📝 [ROUTES] Registering user management and authentication routes...")
 app.include_router(user.router, prefix="/user", tags=["User Management"])
 app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
 
 # Translation services
+print("🌐 [ROUTES] Registering translation services...")
+logger.info("🌐 [ROUTES] Registering translation services...")
 app.include_router(translator.router, prefix="/api/translate", tags=["Translation"])
 
 # Learning exercise routes
+print("🎓 [ROUTES] Registering learning exercise routes...")
+logger.info("🎓 [ROUTES] Registering learning exercise routes...")
 app.include_router(repeat_after_me.router, prefix="/api", tags=["Stage 1 - Exercise 1 (Repeat After Me)"])
 app.include_router(quick_response.router, prefix="/api", tags=["Stage 1 - Exercise 2 (Quick Response)"])
 app.include_router(listen_and_reply.router, prefix="/api", tags=["Stage 1 - Exercise 3 (Listen and Reply)"])
@@ -177,7 +333,10 @@ app.include_router(teacher_dashboard.router, tags=["Teacher Dashboard"])
 # Messaging system routes (NEW - Real-time Messaging)
 app.include_router(messaging.router, prefix="/api", tags=["Messaging System"])
 
-print("✅ [MAIN] All routers included successfully")
+print("✅ [STARTUP] All API routes registered successfully")
+logger.info("✅ [STARTUP] All API routes registered successfully")
+print("🎉 [STARTUP] Application initialization complete!")
+logger.info("🎉 [STARTUP] Application initialization complete!")
 
 @app.post("/tts")
 async def tts_generate_audio(data: TextRequest):
@@ -201,19 +360,18 @@ async def health_check():
 
 @app.get("/health")
 async def root_health_check():
-    """Root health check endpoint"""
-    return {
-        "status": "healthy", 
-        "service": "ai_tutor_backend",
-        "version": "1.0.0",
-        "features": [
-            "progress_tracking",
-            "learning_exercises", 
-            "real_time_conversation",
-            "translation_services",
-            "english_only_tutor"
-        ]
-    }
+    """Root health check endpoint - simplified for ALB health checks"""
+    return {"status": "ok"}
+
+@app.get("/healthz")
+async def kubernetes_health_check():
+    """Kubernetes-style health check endpoint"""
+    return {"status": "ok"}
+
+@app.get("/")
+async def root():
+    """Root endpoint that can also serve as health check"""
+    return {"message": "AI Tutor Backend is running", "status": "ok"}
 
 
 @app.get("/api/status")
