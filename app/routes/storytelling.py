@@ -6,16 +6,14 @@ import os
 import base64
 from io import BytesIO
 from typing import Dict, Any
+from fastapi.concurrency import run_in_threadpool
 from app.services.tts import synthesize_speech, synthesize_speech_exercises
 from app.services.stt import transcribe_audio_bytes_eng_only
 from app.services.feedback import evaluate_response_ex1_stage3
-from app.supabase_client import progress_tracker
+from app.supabase_client import supabase, progress_tracker
 from app.auth_middleware import get_current_user, require_student, require_admin_or_teacher_or_student
 
 router = APIRouter()
-
-STORYTELLING_FILE = os.path.join(os.path.dirname(__file__), '..', 'data', 'stage3_exercise1.json')
-STORIES_FILE = os.path.join(os.path.dirname(__file__), '..', 'data', 'stage3_exercise1.json')
 
 class AudioEvaluationRequest(BaseModel):
     audio_base64: str
@@ -25,51 +23,60 @@ class AudioEvaluationRequest(BaseModel):
     time_spent_seconds: int
     urdu_used: bool
 
-def get_prompt_by_id(prompt_id: int):
-    print(f"🔍 [PROMPT] Looking for prompt with ID: {prompt_id}")
+async def get_prompt_by_id_from_db(prompt_id: int):
+    """Fetch a storytelling prompt from Supabase by its topic_number for Stage 3, Exercise 1."""
+    print(f"🔍 [DB] Looking for prompt with topic_number (ID): {prompt_id} for Stage 3, Exercise 1")
     try:
-        with open(STORYTELLING_FILE, 'r', encoding='utf-8') as f:
-            prompts = json.load(f)
-            print(f"📖 [PROMPT] Loaded {len(prompts)} prompts from file")
-            for prompt in prompts:
-                if prompt['id'] == prompt_id:
-                    print(f"✅ [PROMPT] Found prompt: {prompt['prompt']}")
-                    return prompt  # Return the full prompt object
-            print(f"❌ [PROMPT] Prompt with ID {prompt_id} not found")
+        # parent_id for Stage 3, Exercise 1 ('Storytelling Narration') is 13.
+        query = supabase.table("ai_tutor_content_hierarchy").select("id, topic_number, title, title_urdu, topic_data, category, difficulty").eq("level", "topic").eq("parent_id", 13).eq("topic_number", prompt_id).single()
+        response = await run_in_threadpool(query.execute)
+        
+        if response.data:
+            db_prompt = response.data
+            topic_data = db_prompt.get("topic_data", {})
+            
+            formatted_prompt = {
+                "id": db_prompt.get("topic_number"),
+                "db_id": db_prompt.get("id"),
+                "prompt": db_prompt.get("title"),
+                "prompt_urdu": db_prompt.get("title_urdu"),
+                "category": db_prompt.get("category"),
+                "difficulty": db_prompt.get("difficulty"),
+                "tense_focus": topic_data.get("tense_focus"),
+                "expected_structure": topic_data.get("expected_structure"),
+                "example_keywords": topic_data.get("example_keywords", []),
+                "example_keywords_urdu": topic_data.get("example_keywords_urdu", []),
+                "model_answer": topic_data.get("model_answer"),
+                "model_answer_urdu": topic_data.get("model_answer_urdu"),
+                "evaluation_criteria": topic_data.get("evaluation_criteria"),
+                "learning_objectives": topic_data.get("learning_objectives", [])
+            }
+            print(f"✅ [DB] Found prompt: {formatted_prompt['prompt']}")
+            return formatted_prompt
+        else:
+            print(f"❌ [DB] Prompt with topic_number {prompt_id} not found for parent_id 13")
             return None
     except Exception as e:
-        print(f"❌ [PROMPT] Error reading prompt file: {str(e)}")
+        print(f"❌ [DB] Error fetching prompt from Supabase: {str(e)}")
         return None
-
-def get_story_by_id(story_id: int):
-    print(f"🔍 [STORY] Looking for story with ID: {story_id}")
-    try:
-        with open(STORIES_FILE, 'r', encoding='utf-8') as f:
-            stories = json.load(f)
-            print(f"📖 [STORY] Loaded {len(stories)} stories from file")
-            for story in stories:
-                if story['id'] == story_id:
-                    print(f"✅ [STORY] Found story: {story['title']}")
-                    return story  # Return the full story object
-            print(f"❌ [STORY] Story with ID {story_id} not found")
-            return None
-    except Exception as e:
-        print(f"❌ [STORY] Error reading stories file: {str(e)}")
-        return None
-
 
 async def check_exercise_completion(user_id: str) -> dict:
     """Check if user has completed the full Storytelling exercise (Stage 3, Exercise 1)"""
     print(f"🔍 [COMPLETION] Checking exercise completion for user: {user_id}")
     
     try:
-        # Get total stories count
+        # Get total stories count from Supabase
         total_stories = 0
         try:
-            with open(STORIES_FILE, 'r', encoding='utf-8') as f:
-                stories = json.load(f)
-                total_stories = len(stories)
-                print(f"📊 [COMPLETION] Total stories available: {total_stories}")
+            # parent_id for 'Storytelling Narration' is 13
+            query = supabase.table("ai_tutor_content_hierarchy").select("id", count="exact").eq("level", "topic").eq("parent_id", 13)
+            response = await run_in_threadpool(query.execute)
+            if response.count is not None:
+                total_stories = response.count
+                print(f"📊 [COMPLETION] Total stories available from DB: {total_stories}")
+            else:
+                print("⚠️ [COMPLETION] Could not get count from Supabase, falling back to default.")
+                total_stories = 10
         except Exception as e:
             print(f"❌ [COMPLETION] Error reading stories file: {str(e)}")
             total_stories = 10  # Default fallback based on data file
@@ -165,24 +172,48 @@ async def check_exercise_completion(user_id: str) -> dict:
 
 @router.get("/storytelling-prompts")
 async def get_all_prompts(current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
-    """Get all available prompts for Storytelling exercise"""
+    """Get all available prompts for Storytelling exercise from Supabase"""
     print("🔄 [API] GET /storytelling-prompts endpoint called")
     try:
-        print(f"📁 [API] Reading prompt file from: {STORYTELLING_FILE}")
-        with open(STORYTELLING_FILE, 'r', encoding='utf-8') as f:
-            prompts = json.load(f)
-        print(f"✅ [API] Successfully loaded {len(prompts)} prompts")
-        return {"prompts": prompts}
+        print("🔄 [DB] Fetching all prompts for Stage 3, Exercise 1 from Supabase")
+        query = supabase.table("ai_tutor_content_hierarchy").select("id, topic_number, title, title_urdu, topic_data, category, difficulty").eq("level", "topic").eq("parent_id", 13).order("topic_number", desc=False)
+        response = await run_in_threadpool(query.execute)
+
+        if response.data:
+            prompts = []
+            for p in response.data:
+                topic_data = p.get("topic_data", {})
+                prompts.append({
+                    "id": p.get("topic_number"),
+                    "db_id": p.get("id"),
+                    "prompt": p.get("title"),
+                    "prompt_urdu": p.get("title_urdu"),
+                    "category": p.get("category"),
+                    "difficulty": p.get("difficulty"),
+                    "tense_focus": topic_data.get("tense_focus"),
+                    "expected_structure": topic_data.get("expected_structure"),
+                    "example_keywords": topic_data.get("example_keywords", []),
+                    "example_keywords_urdu": topic_data.get("example_keywords_urdu", []),
+                    "model_answer": topic_data.get("model_answer"),
+                    "model_answer_urdu": topic_data.get("model_answer_urdu"),
+                    "evaluation_criteria": topic_data.get("evaluation_criteria"),
+                    "learning_objectives": topic_data.get("learning_objectives", [])
+                })
+            print(f"✅ [DB] Successfully loaded {len(prompts)} prompts from Supabase")
+            return {"prompts": prompts}
+        else:
+            print("❌ [DB] No prompts found for Stage 3, Exercise 1")
+            return {"prompts": []}
     except Exception as e:
         print(f"❌ [API] Error in get_all_prompts: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to load prompts: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to load prompts from database: {str(e)}")
 
 @router.get("/storytelling-prompts/{prompt_id}")
 async def get_prompt(prompt_id: int, current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
     """Get a specific prompt by ID"""
     print(f"🔄 [API] GET /storytelling-prompts/{prompt_id} endpoint called")
     try:
-        prompt_data = get_prompt_by_id(prompt_id)
+        prompt_data = await get_prompt_by_id_from_db(prompt_id)
         if not prompt_data:
             print(f"❌ [API] Prompt {prompt_id} not found")
             raise HTTPException(status_code=404, detail="Prompt not found")
@@ -221,7 +252,7 @@ and returns the generated audio file as the response.
 async def storytelling(prompt_id: int, current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
     print(f"🔄 [API] POST /storytelling/{prompt_id} endpoint called")
     try:
-        prompt_data = get_prompt_by_id(prompt_id)
+        prompt_data = await get_prompt_by_id_from_db(prompt_id)
         if not prompt_data:
             print(f"❌ [API] Prompt {prompt_id} not found")
             raise HTTPException(status_code=404, detail="Prompt not found")
@@ -273,7 +304,7 @@ async def evaluate_storytelling(
     
     try:
         # Get the expected prompt and keywords
-        prompt_data = get_prompt_by_id(request.prompt_id)
+        prompt_data = await get_prompt_by_id_from_db(request.prompt_id)
         if not prompt_data:
             print(f"❌ [API] Prompt {request.prompt_id} not found")
             raise HTTPException(status_code=404, detail="Prompt not found")
@@ -378,7 +409,7 @@ async def evaluate_storytelling(
                         user_id=request.user_id,
                         stage_id=3,  # Stage 3
                         exercise_id=1,  # Exercise 1 (Storytelling)
-                        topic_id=request.prompt_id,
+                        topic_id=prompt_data['db_id'], # Use the actual database ID
                         score=float(score),
                         urdu_used=request.urdu_used,
                         time_spent_seconds=time_spent,

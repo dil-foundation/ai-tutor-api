@@ -6,14 +6,14 @@ import os
 import base64
 from io import BytesIO
 from typing import Dict, Any
+from fastapi.concurrency import run_in_threadpool
 from app.services.tts import synthesize_speech, synthesize_speech_exercises
 from app.services.stt import transcribe_audio_bytes_eng_only
 from app.services.feedback import evaluate_response_ex3_stage1
-from app.supabase_client import progress_tracker
+from app.supabase_client import supabase, progress_tracker
 from app.auth_middleware import get_current_user, require_student,require_admin_or_teacher_or_student
 router = APIRouter()
 
-DIALOGUE_FILE = os.path.join(os.path.dirname(__file__), '..', 'data', 'functional_dialogue.json')
 
 class AudioEvaluationRequest(BaseModel):
     audio_base64: str
@@ -23,20 +23,36 @@ class AudioEvaluationRequest(BaseModel):
     time_spent_seconds: int
     urdu_used: bool
 
-def get_dialogue_by_id(dialogue_id: int):
-    print(f"🔍 [DIALOGUE] Looking for dialogue with ID: {dialogue_id}")
+async def get_dialogue_by_id(dialogue_id: int):
+    """Fetch a dialogue from Supabase by its topic_number for Stage 1, Exercise 3."""
+    print(f"🔍 [DB] Looking for dialogue with topic_number (ID): {dialogue_id} for Stage 1, Exercise 3")
     try:
-        with open(DIALOGUE_FILE, 'r', encoding='utf-8') as f:
-            dialogues = json.load(f)
-            print(f"📖 [DIALOGUE] Loaded {len(dialogues)} dialogues from file")
-            for dialogue in dialogues:
-                if dialogue['id'] == dialogue_id:
-                    print(f"✅ [DIALOGUE] Found dialogue: {dialogue['ai_prompt']}")
-                    return dialogue  # Return the full dialogue object
-            print(f"❌ [DIALOGUE] Dialogue with ID {dialogue_id} not found")
+        # parent_id for Stage 1, Exercise 3 ('Functional Dialogue') is 9.
+        query = supabase.table("ai_tutor_content_hierarchy").select("id, topic_number, title, title_urdu, topic_data, category, difficulty").eq("level", "topic").eq("parent_id", 9).eq("topic_number", dialogue_id).single()
+        response = await run_in_threadpool(query.execute)
+        
+        if response.data:
+            db_dialogue = response.data
+            topic_data = db_dialogue.get("topic_data", {})
+            
+            formatted_dialogue = {
+                "id": db_dialogue.get("topic_number"),
+                "db_id": db_dialogue.get("id"),
+                "ai_prompt": db_dialogue.get("title"),
+                "ai_prompt_urdu": db_dialogue.get("title_urdu"),
+                "expected_keywords": topic_data.get("expected_keywords"),
+                "expected_keywords_urdu": topic_data.get("expected_keywords_urdu"),
+                "category": db_dialogue.get("category"),
+                "difficulty": db_dialogue.get("difficulty"),
+                "context": topic_data.get("context")
+            }
+            print(f"✅ [DB] Found dialogue: {formatted_dialogue['ai_prompt']}")
+            return formatted_dialogue
+        else:
+            print(f"❌ [DB] Dialogue with topic_number {dialogue_id} not found for parent_id 9")
             return None
     except Exception as e:
-        print(f"❌ [DIALOGUE] Error reading dialogue file: {str(e)}")
+        print(f"❌ [DB] Error fetching dialogue from Supabase: {str(e)}")
         return None
 
 
@@ -45,15 +61,20 @@ async def check_exercise_completion(user_id: str) -> dict:
     print(f"🔍 [COMPLETION] Checking exercise completion for user: {user_id}")
     
     try:
-        # Get total dialogues count
+        # Get total dialogues count from Supabase
         total_dialogues = 0
         try:
-            with open(DIALOGUE_FILE, 'r', encoding='utf-8') as f:
-                dialogues = json.load(f)
-                total_dialogues = len(dialogues)
-                print(f"📊 [COMPLETION] Total dialogues available: {total_dialogues}")
+            # parent_id for 'Functional Dialogue' is 9
+            query = supabase.table("ai_tutor_content_hierarchy").select("id", count="exact").eq("level", "topic").eq("parent_id", 9)
+            response = await run_in_threadpool(query.execute)
+            if response.count is not None:
+                total_dialogues = response.count
+                print(f"📊 [COMPLETION] Total dialogues available from DB: {total_dialogues}")
+            else:
+                print("⚠️ [COMPLETION] Could not get count from Supabase, falling back to default.")
+                total_dialogues = 20
         except Exception as e:
-            print(f"❌ [COMPLETION] Error reading dialogues file: {str(e)}")
+            print(f"❌ [COMPLETION] Error getting dialogue count from DB: {str(e)}")
             total_dialogues = 20  # Default fallback based on data file
         
         # Get user's progress for Stage 1 Exercise 3
@@ -147,24 +168,45 @@ async def check_exercise_completion(user_id: str) -> dict:
 
 @router.get("/dialogues")
 async def get_all_dialogues(current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
-    """Get all available dialogues for Listen and Reply exercise"""
+    """Get all available dialogues for Listen and Reply exercise from Supabase"""
     print("🔄 [API] GET /dialogues endpoint called")
     try:
-        print(f"📁 [API] Reading dialogue file from: {DIALOGUE_FILE}")
-        with open(DIALOGUE_FILE, 'r', encoding='utf-8') as f:
-            dialogues = json.load(f)
-        print(f"✅ [API] Successfully loaded {len(dialogues)} dialogues")
-        return {"dialogues": dialogues}
+        print("🔄 [DB] Fetching all dialogues for Stage 1, Exercise 3 from Supabase")
+        # parent_id for 'Functional Dialogue' is 9
+        query = supabase.table("ai_tutor_content_hierarchy").select("id, topic_number, title, title_urdu, topic_data, category, difficulty").eq("level", "topic").eq("parent_id", 9).order("topic_number", desc=False)
+        response = await run_in_threadpool(query.execute)
+
+        if response.data:
+            # Format data to be backward compatible with the old JSON structure.
+            dialogues = []
+            for d in response.data:
+                topic_data = d.get("topic_data", {})
+                dialogues.append({
+                    "id": d.get("topic_number"),
+                    "db_id": d.get("id"),
+                    "ai_prompt": d.get("title"),
+                    "ai_prompt_urdu": d.get("title_urdu"),
+                    "expected_keywords": topic_data.get("expected_keywords"),
+                    "expected_keywords_urdu": topic_data.get("expected_keywords_urdu"),
+                    "category": d.get("category"),
+                    "difficulty": d.get("difficulty"),
+                    "context": topic_data.get("context")
+                })
+            print(f"✅ [DB] Successfully loaded {len(dialogues)} dialogues from Supabase")
+            return {"dialogues": dialogues}
+        else:
+            print("❌ [DB] No dialogues found for Stage 1, Exercise 3")
+            return {"dialogues": []}
     except Exception as e:
         print(f"❌ [API] Error in get_all_dialogues: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to load dialogues: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to load dialogues from database: {str(e)}")
 
 @router.get("/dialogues/{dialogue_id}")
 async def get_dialogue(dialogue_id: int, current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
     """Get a specific dialogue by ID"""
     print(f"🔄 [API] GET /dialogues/{dialogue_id} endpoint called")
     try:
-        dialogue_data = get_dialogue_by_id(dialogue_id)
+        dialogue_data = await get_dialogue_by_id(dialogue_id)
         if not dialogue_data:
             print(f"❌ [API] Dialogue {dialogue_id} not found")
             raise HTTPException(status_code=404, detail="Dialogue not found")
@@ -199,7 +241,7 @@ and returns the generated audio file as the response.
 async def listen_and_reply(dialogue_id: int, current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
     print(f"🔄 [API] POST /listen-and-reply/{dialogue_id} endpoint called")
     try:
-        dialogue_data = get_dialogue_by_id(dialogue_id)
+        dialogue_data = await get_dialogue_by_id(dialogue_id)
         if not dialogue_data:
             print(f"❌ [API] Dialogue {dialogue_id} not found")
             raise HTTPException(status_code=404, detail="Dialogue not found")
@@ -252,7 +294,7 @@ async def evaluate_listen_reply(
     
     try:
         # Get the expected dialogue data
-        dialogue_data = get_dialogue_by_id(request.dialogue_id)
+        dialogue_data = await get_dialogue_by_id(request.dialogue_id)
         if not dialogue_data:
             print(f"❌ [API] Dialogue {request.dialogue_id} not found")
             raise HTTPException(status_code=404, detail="Dialogue not found")
@@ -345,7 +387,7 @@ async def evaluate_listen_reply(
                         user_id=request.user_id,
                         stage_id=1,  # Stage 1
                         exercise_id=3,  # Exercise 3 (Listen and Reply)
-                        topic_id=request.dialogue_id,
+                        topic_id=dialogue_data['id'], # Use the actual database ID
                         score=float(score),
                         urdu_used=request.urdu_used,
                         time_spent_seconds=time_spent,

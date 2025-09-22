@@ -3,10 +3,11 @@ from pydantic import BaseModel
 import json
 import base64
 from typing import List, Optional, Dict, Any
+from fastapi.concurrency import run_in_threadpool
 from app.services.feedback import evaluate_response_ex3_stage3
 from app.services.stt import transcribe_audio_bytes_eng_only
 from app.services.tts import synthesize_speech_exercises
-from app.supabase_client import progress_tracker
+from app.supabase_client import supabase, progress_tracker
 from app.auth_middleware import get_current_user, require_student, require_admin_or_teacher_or_student
 import os
 
@@ -22,22 +23,43 @@ class AudioEvaluationRequest(BaseModel):
     urdu_used: bool
 
 # Load scenarios data
-def load_scenarios():
-    """Load problem-solving scenarios from JSON file"""
+async def get_scenario_by_id_from_db(scenario_id: int):
+    """Fetch a problem-solving scenario from Supabase by its topic_number for Stage 3, Exercise 3."""
+    print(f"🔍 [DB] Looking for scenario with topic_number (ID): {scenario_id} for Stage 3, Exercise 3")
     try:
-        with open("app/data/stage3_exercise3.json", "r", encoding="utf-8") as f:
-            return json.load(f)
+        # parent_id for Stage 3, Exercise 3 ('Problem Solving Conversations') is 15.
+        query = supabase.table("ai_tutor_content_hierarchy").select("id, topic_number, title, title_urdu, description, description_urdu, topic_data, category, difficulty").eq("level", "topic").eq("parent_id", 15).eq("topic_number", scenario_id).single()
+        response = await run_in_threadpool(query.execute)
+        
+        if response.data:
+            db_scenario = response.data
+            topic_data = db_scenario.get("topic_data", {})
+            
+            formatted_scenario = {
+                "id": db_scenario.get("topic_number"),
+                "db_id": db_scenario.get("id"),
+                "title": db_scenario.get("title"),
+                "title_urdu": db_scenario.get("title_urdu"),
+                "problem_description": db_scenario.get("description"),
+                "problem_description_urdu": db_scenario.get("description_urdu"),
+                "difficulty": db_scenario.get("difficulty"),
+                "category": db_scenario.get("category"),
+                "context": topic_data.get("context"),
+                "context_urdu": topic_data.get("context_urdu"),
+                "polite_phrases": topic_data.get("polite_phrases", []),
+                "expected_keywords": topic_data.get("expected_keywords", []),
+                "sample_responses": topic_data.get("sample_responses", []),
+                "evaluation_criteria": topic_data.get("evaluation_criteria", {}),
+                "learning_objectives": topic_data.get("learning_objectives", [])
+            }
+            print(f"✅ [DB] Found scenario: {formatted_scenario['title']}")
+            return formatted_scenario
+        else:
+            print(f"❌ [DB] Scenario with topic_number {scenario_id} not found for parent_id 15")
+            return None
     except Exception as e:
-        print(f"❌ [DATA] Error loading scenarios: {str(e)}")
-        return []
-
-def get_scenario_by_id(scenario_id: int):
-    """Get a specific scenario by ID"""
-    scenarios = load_scenarios()
-    for scenario in scenarios:
-        if scenario["id"] == scenario_id:
-            return scenario
-    return None
+        print(f"❌ [DB] Error fetching scenario from Supabase: {str(e)}")
+        return None
 
 
 async def check_exercise_completion(user_id: str) -> dict:
@@ -45,10 +67,21 @@ async def check_exercise_completion(user_id: str) -> dict:
     print(f"🔍 [COMPLETION] Checking exercise completion for user: {user_id}")
     
     try:
-        # Get total scenarios count
-        scenarios = load_scenarios()
-        total_topics = len(scenarios)
-        print(f"📊 [COMPLETION] Total scenarios available: {total_topics}")
+        # Get total scenarios count from Supabase
+        total_topics = 0
+        try:
+            # parent_id for 'Problem Solving Conversations' is 15
+            query = supabase.table("ai_tutor_content_hierarchy").select("id", count="exact").eq("level", "topic").eq("parent_id", 15)
+            response = await run_in_threadpool(query.execute)
+            if response.count is not None:
+                total_topics = response.count
+                print(f"📊 [COMPLETION] Total scenarios available from DB: {total_topics}")
+            else:
+                print("⚠️ [COMPLETION] Could not get count from Supabase, falling back to default.")
+                total_topics = 5
+        except Exception as e:
+            print(f"❌ [COMPLETION] Error getting scenario count from DB: {str(e)}")
+            total_topics = 5 # Default fallback
         
         # Get user's progress for stage 3, exercise 3
         progress_result = await progress_tracker.get_user_topic_progress(
@@ -141,20 +174,46 @@ async def check_exercise_completion(user_id: str) -> dict:
     tags=["Stage 3 - Exercise 3 (Problem-Solving)"]
 )
 async def get_problem_solving_scenarios(current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
-    """Get all problem-solving scenarios"""
+    """Get all problem-solving scenarios from Supabase"""
     print("🔄 [API] GET /problem-solving-scenarios endpoint called")
     
     try:
-        scenarios = load_scenarios()
-        print(f"✅ [API] Retrieved {len(scenarios)} scenarios")
+        print("🔄 [DB] Fetching all scenarios for Stage 3, Exercise 3 from Supabase")
+        query = supabase.table("ai_tutor_content_hierarchy").select("id, topic_number, title, title_urdu, description, description_urdu, topic_data, category, difficulty").eq("level", "topic").eq("parent_id", 15).order("topic_number", desc=False)
+        response = await run_in_threadpool(query.execute)
         
-        return {
-            "scenarios": scenarios,
-            "total_count": len(scenarios)
-        }
+        if response.data:
+            scenarios = []
+            for s in response.data:
+                topic_data = s.get("topic_data", {})
+                scenarios.append({
+                    "id": s.get("topic_number"),
+                    "db_id": s.get("id"),
+                    "title": s.get("title"),
+                    "title_urdu": s.get("title_urdu"),
+                    "problem_description": s.get("description"),
+                    "problem_description_urdu": s.get("description_urdu"),
+                    "difficulty": s.get("difficulty"),
+                    "category": s.get("category"),
+                    "context": topic_data.get("context"),
+                    "context_urdu": topic_data.get("context_urdu"),
+                    "polite_phrases": topic_data.get("polite_phrases", []),
+                    "expected_keywords": topic_data.get("expected_keywords", []),
+                    "sample_responses": topic_data.get("sample_responses", []),
+                    "evaluation_criteria": topic_data.get("evaluation_criteria", {}),
+                    "learning_objectives": topic_data.get("learning_objectives", [])
+                })
+            print(f"✅ [DB] Successfully loaded {len(scenarios)} scenarios from Supabase")
+            return {
+                "scenarios": scenarios,
+                "total_count": len(scenarios)
+            }
+        else:
+            print("❌ [DB] No scenarios found for Stage 3, Exercise 3")
+            return {"scenarios": [], "total_count": 0}
     except Exception as e:
         print(f"❌ [API] Error retrieving scenarios: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to load scenarios: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to load scenarios from database: {str(e)}")
 
 @router.get(
     "/problem-solving-scenarios/{scenario_id}",
@@ -167,7 +226,7 @@ async def get_problem_solving_scenario(scenario_id: int, current_user: Dict[str,
     print(f"🔄 [API] GET /problem-solving-scenarios/{scenario_id} endpoint called")
     
     try:
-        scenario = get_scenario_by_id(scenario_id)
+        scenario = await get_scenario_by_id_from_db(scenario_id)
         if not scenario:
             print(f"❌ [API] Scenario {scenario_id} not found")
             raise HTTPException(status_code=404, detail="Scenario not found")
@@ -194,7 +253,7 @@ async def generate_problem_solving_audio(
     print(f"🔄 [API] POST /problem-solving/{scenario_id} endpoint called")
     
     try:
-        scenario = get_scenario_by_id(scenario_id)
+        scenario = await get_scenario_by_id_from_db(scenario_id)
         if not scenario:
             print(f"❌ [API] Scenario {scenario_id} not found")
             raise HTTPException(status_code=404, detail="Scenario not found")
@@ -259,7 +318,7 @@ async def evaluate_problem_solving(
     
     try:
         # Get scenario data
-        scenario_data = get_scenario_by_id(request.scenario_id)
+        scenario_data = await get_scenario_by_id_from_db(request.scenario_id)
         if not scenario_data:
             print(f"❌ [API] Scenario {request.scenario_id} not found")
             raise HTTPException(status_code=404, detail="Scenario not found")
@@ -364,7 +423,7 @@ async def evaluate_problem_solving(
                         user_id=request.user_id,
                         stage_id=3,  # Stage 3
                         exercise_id=3,  # Exercise 3 (Problem-Solving)
-                        topic_id=request.scenario_id,
+                        topic_id=scenario_data['id'], # Use the actual database ID
                         score=float(score),
                         urdu_used=request.urdu_used,
                         time_spent_seconds=time_spent,
@@ -549,7 +608,8 @@ async def get_problem_solving_current_topic(
             return {
                 "success": True,
                 "current_topic_id": current_topic_result.get("current_topic_id", 1),
-                "total_topics": current_topic_result.get("total_topics", 5)
+                "total_topics": current_topic_result.get("total_topics", 5),
+                "is_completed": current_topic_result.get("is_completed", False)
             }
         else:
             print(f"❌ [API] Failed to retrieve current topic: {current_topic_result.get('error')}")

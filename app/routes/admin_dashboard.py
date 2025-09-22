@@ -6,6 +6,7 @@ from datetime import date, datetime, timedelta
 from app.supabase_client import supabase, progress_tracker
 from app.auth_middleware import get_current_user, require_admin_or_teacher
 import json
+from app.cache import get_all_stages_from_cache, get_exercise_by_ids, get_stage_by_id
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin", tags=["Admin Dashboard"])
@@ -533,55 +534,24 @@ async def _get_most_accessed_lessons(limit: int = 5, time_range: str = "all_time
             reverse=True
         )[:limit]
         
-        # Map to lesson names and stages
-        lesson_mapping = {
-            # Stage 1
-            (1, 1): {"name": "Basic Conversation Starters", "stage": "Stage 1", "icon": "chatbubble"},
-            (1, 2): {"name": "Daily Routine Vocabulary", "stage": "Stage 1", "icon": "time"},
-            (1, 3): {"name": "Quick Response Practice", "stage": "Stage 1", "icon": "flash"},
-            
-            # Stage 2
-            (2, 1): {"name": "Roleplay Simulation", "stage": "Stage 2", "icon": "people"},
-            (2, 2): {"name": "Storytelling", "stage": "Stage 2", "icon": "book"},
-            (2, 3): {"name": "Group Dialogue", "stage": "Stage 2", "icon": "chatbubbles"},
-            
-            # Stage 3
-            (3, 1): {"name": "Problem Solving", "stage": "Stage 3", "icon": "bulb"},
-            (3, 2): {"name": "Critical Thinking Dialogues", "stage": "Stage 3", "icon": "brain"},
-            (3, 3): {"name": "Academic Presentations", "stage": "Stage 3", "icon": "school"},
-            
-            # Stage 4
-            (4, 1): {"name": "Abstract Topic Discussion", "stage": "Stage 4", "icon": "globe"},
-            (4, 2): {"name": "Mock Interview", "stage": "Stage 4", "icon": "briefcase"},
-            (4, 3): {"name": "News Summary", "stage": "Stage 4", "icon": "newspaper"},
-            
-            # Stage 5
-            (5, 1): {"name": "In-depth Interview", "stage": "Stage 5", "icon": "person"},
-            (5, 2): {"name": "Academic Presentation", "stage": "Stage 5", "icon": "presentation"},
-            (5, 3): {"name": "Critical Opinion Builder", "stage": "Stage 5", "icon": "analytics"},
-            
-            # Stage 6
-            (6, 1): {"name": "Spontaneous Speech", "stage": "Stage 6", "icon": "mic"},
-            (6, 2): {"name": "Sensitive Scenario", "stage": "Stage 6", "icon": "shield"},
-            (6, 3): {"name": "Advanced Roleplay", "stage": "Stage 6", "icon": "theater"}
-        }
-        
+        # Map to lesson names and stages DYNAMICALLY from cache
         formatted_lessons = []
         for lesson in sorted_lessons:
             stage_id = lesson['stage_id']
             exercise_id = lesson['exercise_id']
             
-            lesson_info = lesson_mapping.get((stage_id, exercise_id), {
-                "name": f"Stage {stage_id} Exercise {exercise_id}",
-                "stage": f"Stage {stage_id}",
-                "icon": "document"
-            })
+            exercise_info = get_exercise_by_ids(stage_id, exercise_id)
+            stage_info = get_stage_by_id(stage_id)
+            
+            lesson_name = exercise_info.get('title', f"Exercise {exercise_id}")
+            stage_name = stage_info.get('title', f"Stage {stage_id}")
+            icon = "document" # Default icon, can be extended in DB if needed
             
             formatted_lessons.append({
-                "lesson_name": lesson_info["name"],
-                "stage": lesson_info["stage"],
+                "lesson_name": lesson_name,
+                "stage": stage_name,
                 "accesses": lesson['accesses'],
-                "icon": lesson_info["icon"]
+                "icon": icon
             })
         
         print(f"✅ [ADMIN] Most accessed lessons calculated successfully")
@@ -610,15 +580,9 @@ async def _get_practice_stage_performance(time_range: str = "all_time") -> List[
         
         start_date, end_date = _get_date_range(time_range)
         
-        # Define all possible stages (1-6) with their names
-        all_stages = {
-            1: "Basic Conversation Starters",
-            2: "Daily Routine Vocabulary", 
-            3: "Quick Response Practice",
-            4: "Roleplay Simulation",
-            5: "Storytelling",
-            6: "Group Dialogue"
-        }
+        # Define all possible stages (1-6) with their names - DYNAMICALLY
+        all_stages_db = get_all_stages_from_cache()
+        all_stages = {s['stage_number']: s['title'] for s in all_stages_db}
         
         # Initialize stage data for all stages
         stage_data = {}
@@ -1043,23 +1007,14 @@ def _get_stage_color(stage_id: int) -> str:
     return colors.get(stage_id, "#6B7280")
 
 def _get_content_title(stage_id: int, exercise_id: int, topic_id: int) -> str:
-    """Get human-readable content title"""
-    stage_names = {
-        1: "Basic Conversation Starters",
-        2: "Daily Routine Vocabulary", 
-        3: "Quick Response Practice",
-        4: "Roleplay Simulation",
-        5: "Storytelling",
-        6: "Group Dialogue"
-    }
+    """Get human-readable content title DYNAMICALLY from cache"""
+    stage = get_stage_by_id(stage_id)
+    exercise = get_exercise_by_ids(stage_id, exercise_id)
     
-    exercise_names = {
-        1: "Exercise 1",
-        2: "Exercise 2", 
-        3: "Exercise 3"
-    }
-    
-    return f"{stage_names.get(stage_id, f'Stage {stage_id}')} - {exercise_names.get(exercise_id, f'Exercise {exercise_id}')}"
+    stage_name = stage.get('title', f"Stage {stage_id}")
+    exercise_name = exercise.get('title', f"Exercise {exercise_id}")
+
+    return f"{stage_name} - {exercise_name}"
 
 def _get_content_type(stage_id: int, exercise_id: int) -> str:
     """Get content type"""
@@ -1069,19 +1024,33 @@ def _get_content_type(stage_id: int, exercise_id: int) -> str:
         return "Learn"
 
 def _get_content_icon(stage_id: int, exercise_id: int) -> str:
-    """Get icon for content"""
-    icons = {
-        (1, 1): "chatbubble",
-        (1, 2): "time", 
-        (1, 3): "flash",
-        (2, 1): "people",
-        (2, 2): "book",
-        (2, 3): "group",
-        (3, 1): "lightbulb",
-        (3, 2): "brain",
-        (3, 3): "presentation"
+    """Get icon for content DYNAMICALLY"""
+    # This can be extended to fetch icons from the database if they are added
+    exercise = get_exercise_by_ids(stage_id, exercise_id)
+    exercise_type = exercise.get('exercise_type', 'default')
+
+    icon_mapping = {
+        'pronunciation': "chatbubble",
+        'response': "flash",
+        'dialogue': "chatbubbles",
+        'narration': "book",
+        'conversation': "people",
+        'roleplay': "people",
+        'storytelling': "book",
+        'discussion': "chatbubbles",
+        'problem_solving': "bulb",
+        'presentation': "school",
+        'negotiation': "briefcase",
+        'leadership': "person",
+        'debate': "analytics",
+        'academic': "school",
+        'interview': "briefcase",
+        'spontaneous': "mic",
+        'diplomatic': "shield",
+        'academic_debate': "analytics",
+        'default': "document"
     }
-    return icons.get((stage_id, exercise_id), "document")
+    return icon_mapping.get(exercise_type, "document")
 
 def _get_mock_time_patterns() -> List[Dict[str, Any]]:
     """Get mock time patterns for demonstration"""

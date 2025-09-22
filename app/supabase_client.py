@@ -35,6 +35,34 @@ class SupabaseProgressTracker:
         print(f"🔧 [SUPABASE] Connected to: {SUPABASE_URL}")
         logger.info("Supabase Progress Tracker initialized")
     
+    async def get_all_stages(self) -> List[Dict]:
+        """Fetches all stages from the content hierarchy."""
+        try:
+            print("🔄 [CONTENT] Fetching all stages...")
+            result = self.client.rpc('get_all_stages_with_counts').execute()
+            if result.data:
+                print(f"✅ [CONTENT] Found {len(result.data)} stages.")
+                return result.data
+            return []
+        except Exception as e:
+            print(f"❌ [CONTENT] Error fetching stages: {str(e)}")
+            logger.error(f"Error fetching stages: {str(e)}")
+            return []
+
+    async def get_exercises_for_stage(self, stage_number: int) -> List[Dict]:
+        """Fetches all exercises for a given stage from the content hierarchy."""
+        try:
+            print(f"🔄 [CONTENT] Fetching exercises for stage {stage_number}...")
+            result = self.client.rpc('get_exercises_for_stage_with_counts', {'stage_num': stage_number}).execute()
+            if result.data:
+                print(f"✅ [CONTENT] Found {len(result.data)} exercises for stage {stage_number}.")
+                return result.data
+            return []
+        except Exception as e:
+            print(f"❌ [CONTENT] Error fetching exercises for stage {stage_number}: {str(e)}")
+            logger.error(f"Error fetching exercises for stage {stage_number}: {str(e)}")
+            return []
+    
     async def _calculate_streak(self, user_id: str, current_date: date) -> Tuple[int, int]:
         """
         Calculate current streak and longest streak for a user
@@ -172,7 +200,7 @@ class SupabaseProgressTracker:
     async def _calculate_session_metrics(self, user_id: str) -> Dict[str, float]:
         """
         Calculate session duration metrics
-        Returns: average_session_duration, weekly_hours, monthly_hours
+        Returns: total_time_spent_minutes, average_session_duration, weekly_hours, monthly_hours
         """
         try:
             print(f"🔄 [SESSION] Calculating session metrics for user: {user_id}")
@@ -185,6 +213,7 @@ class SupabaseProgressTracker:
             
             if not daily_analytics.data:
                 return {
+                    'total_time_spent_minutes': 0,
                     'average_session_duration_minutes': 0.0,
                     'weekly_learning_hours': 0.0,
                     'monthly_learning_hours': 0.0
@@ -205,11 +234,13 @@ class SupabaseProgressTracker:
             monthly_hours = total_time_minutes / 60.0
             
             print(f"📊 [SESSION] Metrics calculated:")
+            print(f"   - Total time (minutes): {total_time_minutes}")
             print(f"   - Average session: {average_session_duration:.2f} minutes")
             print(f"   - Weekly hours: {weekly_hours:.2f}")
             print(f"   - Monthly hours: {monthly_hours:.2f}")
-            
+                
             return {
+                'total_time_spent_minutes': total_time_minutes,
                 'average_session_duration_minutes': round(average_session_duration, 2),
                 'weekly_learning_hours': round(weekly_hours, 2),
                 'monthly_learning_hours': round(monthly_hours, 2)
@@ -223,6 +254,28 @@ class SupabaseProgressTracker:
                 'weekly_learning_hours': 0.0,
                 'monthly_learning_hours': 0.0
             }
+
+    async def _calculate_total_learning_time(self, user_id: str) -> int:
+        """Calculates the user's all-time total learning time from daily analytics."""
+        try:
+            print(f"🔄 [SESSION] Calculating ALL-TIME learning time for user: {user_id}")
+            # Get all daily analytics records for the user
+            analytics_result = self.client.table('ai_tutor_daily_learning_analytics').select(
+                'total_time_minutes'
+            ).eq('user_id', user_id).execute()
+            
+            if not analytics_result.data:
+                return 0
+                
+            # Sum up the total time spent
+            total_time = sum(record.get('total_time_minutes', 0) for record in analytics_result.data)
+            print(f"📊 [SESSION] All-time learning time: {total_time} minutes")
+            return total_time
+            
+        except Exception as e:
+            print(f"❌ [SESSION] Error calculating all-time learning time: {str(e)}")
+            logger.error(f"Error calculating all-time learning time for {user_id}: {str(e)}")
+            return 0
     
     async def initialize_user_progress(self, user_id: str, assigned_start_stage: int = 1, english_proficiency_text: str = None) -> dict:
         """
@@ -235,22 +288,39 @@ class SupabaseProgressTracker:
         print(f"🔄 [INIT] Starting progress initialization for user: {user_id}")
         print(f"🚀 [INIT] Assigned Start Stage: {assigned_start_stage}")
         try:
-            # Step 1: Prepare all the data needed for initialization
+            # Step 1: Fetch dynamic curriculum structure
+            print("🔄 [INIT] Fetching dynamic curriculum structure...")
+            all_stages = await self.get_all_stages()
+            if not all_stages:
+                raise ValueError("Could not fetch curriculum stages from the database.")
+            
+            total_stages_count = len(all_stages)
+            print(f"📚 [INIT] Found {total_stages_count} stages in the curriculum.")
+
+            # Step 2: Prepare all the data needed for initialization
             current_date = date.today()
             current_timestamp = datetime.now().isoformat()
             
             # Treat stage 0 as stage 1 for progress setup, but store original assignment
-            start_stage = assigned_start_stage if assigned_start_stage > 0 else 1
+            start_stage = assigned_start_stage
             
-            completed_stages = list(range(1, start_stage))
-            unlocked_stages = list(range(1, start_stage + 1))
+            completed_stages = list(range(0, start_stage))
+            unlocked_stages = list(range(0, start_stage + 1))
             
             unlocked_exercises_map = {}
-            for stage_id in completed_stages:
-                unlocked_exercises_map[str(stage_id)] = [1, 2, 3]
-            unlocked_exercises_map[str(start_stage)] = [1]
+            total_exercises_completed = 0
+            for stage_num in completed_stages:
+                exercises = await self.get_exercises_for_stage(stage_num)
+                unlocked_exercises_map[str(stage_num)] = [e['exercise_number'] for e in exercises]
+                total_exercises_completed += len(exercises)
+            
+            start_stage_exercises = await self.get_exercises_for_stage(start_stage)
+            if start_stage_exercises:
+                unlocked_exercises_map[str(start_stage)] = [start_stage_exercises[0]['exercise_number']]
+            else:
+                unlocked_exercises_map[str(start_stage)] = []
 
-            # Step 2: Upsert the user progress summary
+            # Step 3: Upsert the user progress summary
             progress_summary_payload = {
                 "user_id": user_id,
                 "current_stage": start_stage,
@@ -258,8 +328,8 @@ class SupabaseProgressTracker:
                 "topic_id": 1,
                 "unlocked_stages": unlocked_stages,
                 "unlocked_exercises": unlocked_exercises_map,
-                "overall_progress_percentage": (len(completed_stages) / 6) * 100,
-                "total_exercises_completed": len(completed_stages) * 3,
+                "overall_progress_percentage": (len(completed_stages) / total_stages_count) * 100 if total_stages_count > 0 else 0,
+                "total_exercises_completed": total_exercises_completed,
                 "english_proficiency_text": english_proficiency_text,
                 "assigned_start_stage": assigned_start_stage,
                 "last_activity_date": current_date.isoformat(),
@@ -274,7 +344,7 @@ class SupabaseProgressTracker:
             summary_result = self.client.table('ai_tutor_user_progress_summary').upsert(progress_summary_payload).execute()
             print(f"✅ [INIT] Progress summary upserted successfully.")
 
-            # Step 3: Create missing stage progress records
+            # Step 4: Create missing stage progress records
             print("🔍 [INIT] Checking for existing stage progress records...")
             existing_stages_res = self.client.table('ai_tutor_user_stage_progress').select('stage_id').eq('user_id', user_id).execute()
             existing_stage_ids = {s['stage_id'] for s in existing_stages_res.data}
@@ -282,10 +352,11 @@ class SupabaseProgressTracker:
             stage_progress_to_create = []
             for stage_id in completed_stages:
                 if stage_id not in existing_stage_ids:
+                    exercises_in_stage = await self.get_exercises_for_stage(stage_id)
                     stage_progress_to_create.append({
                         "user_id": user_id, "stage_id": stage_id, "started_at": current_timestamp,
                         "completed_at": current_timestamp, "completed": True,
-                        "progress_percentage": 100.0, "exercises_completed": 3
+                        "progress_percentage": 100.0, "exercises_completed": len(exercises_in_stage)
                     })
             
             if start_stage not in existing_stage_ids:
@@ -298,7 +369,7 @@ class SupabaseProgressTracker:
             else:
                 print("✅ [INIT] No new stage progress records needed.")
 
-            # Step 4: Create missing learning unlock records
+            # Step 5: Create missing learning unlock records
             print("🔍 [INIT] Checking for existing learning unlock records...")
             existing_unlocks_res = self.client.table('ai_tutor_learning_unlocks').select('stage_id, exercise_id').eq('user_id', user_id).execute()
             existing_unlocks = {(u['stage_id'], u['exercise_id']) for u in existing_unlocks_res.data}
@@ -312,14 +383,24 @@ class SupabaseProgressTracker:
                     unlocks_to_create.append({"user_id": user_id, "stage_id": stage_id, "exercise_id": None, "is_unlocked": True, "unlock_criteria_met": True, "unlocked_at": current_timestamp, "unlocked_by_criteria": "Initial assignment"})
                 
                 # Exercise unlock records
-                exercises_to_unlock = [1, 2, 3] if stage_id in completed_stages else [1]
+                exercises_to_unlock = []
+                if stage_id in completed_stages:
+                    exercises = await self.get_exercises_for_stage(stage_id)
+                    exercises_to_unlock = [e['exercise_number'] for e in exercises]
+                elif stage_id == start_stage: # Only unlock first exercise for the starting stage
+                    exercises = await self.get_exercises_for_stage(stage_id)
+                    if exercises:
+                        exercises_to_unlock = [exercises[0]['exercise_number']]
+
                 for ex_id in exercises_to_unlock:
                     if (stage_id, ex_id) not in existing_unlocks:
                         unlocks_to_create.append({"user_id": user_id, "stage_id": stage_id, "exercise_id": ex_id, "is_unlocked": True, "unlock_criteria_met": True, "unlocked_at": current_timestamp, "unlocked_by_criteria": "Initial assignment"})
                 
                 # Create locked records for the starting stage's other exercises
                 if stage_id == start_stage:
-                    for ex_id in [2, 3]:
+                    all_exercises_in_stage = await self.get_exercises_for_stage(stage_id)
+                    locked_exercises = [e['exercise_number'] for e in all_exercises_in_stage if e['exercise_number'] not in exercises_to_unlock]
+                    for ex_id in locked_exercises:
                         if (stage_id, ex_id) not in existing_unlocks:
                              unlocks_to_create.append({"user_id": user_id, "stage_id": stage_id, "exercise_id": ex_id, "is_unlocked": False, "unlock_criteria_met": False})
 
@@ -352,10 +433,12 @@ class SupabaseProgressTracker:
             if not user_id or not user_id.strip():
                 raise ValueError("User ID is required")
             
-            if not (1 <= stage_id <= 6):
-                raise ValueError(f"Invalid stage_id: {stage_id}. Must be between 1 and 6")
+            if not (0 <= stage_id <= 6):
+                raise ValueError(f"Invalid stage_id: {stage_id}. Must be between 0 and 6")
             
-            if not (1 <= exercise_id <= 3):
+            if not (1 <= exercise_id <= 5) and stage_id == 0: # Stage 0 has 5 lessons
+                 raise ValueError(f"Invalid exercise_id for Stage 0: {exercise_id}. Must be between 1 and 5")
+            elif not (1 <= exercise_id <= 3) and stage_id > 0:
                 raise ValueError(f"Invalid exercise_id: {exercise_id}. Must be between 1 and 3")
             
             if not (1 <= topic_id <= 100):  # Reasonable topic range
@@ -450,23 +533,27 @@ class SupabaseProgressTracker:
                 # Create new exercise progress record
                 current_timestamp = datetime.now().isoformat()
                 
+                # The topic_id passed to this function IS the topic_number.
+                # No need to query the database for it again.
+                topic_number = topic_id if topic_id is not None else 1
+                
                 # Determine initial topic_id based on completion
-                initial_topic_id = topic_id or 1
+                next_topic_id = topic_number
                 # Use different thresholds for different exercises
                 if exercise_id == 3:  # Problem-solving exercise
-                    if score >= 60 and topic_id:
+                    if score >= 60:
                         # If topic was completed successfully, start with next topic
-                        initial_topic_id = topic_id + 1
+                        next_topic_id = topic_number + 1
                 else:
-                    if score >= 80 and topic_id:
+                    if score >= 80:
                         # If topic was completed successfully, start with next topic
-                        initial_topic_id = topic_id + 1
+                        next_topic_id = topic_number + 1
                 
                 new_exercise_data = {
                     "user_id": user_id,
                     "stage_id": stage_id,
                     "exercise_id": exercise_id,
-                    "current_topic_id": initial_topic_id,
+                    "current_topic_id": next_topic_id,
                     "attempts": 1,
                     "scores": [score],
                     "last_5_scores": [score],
@@ -553,6 +640,9 @@ class SupabaseProgressTracker:
             # Update current_topic_id based on topic completion
             current_topic_id = exercise_data.get('current_topic_id', 1)
             
+            # The topic_id passed in is the topic_number, so we use it directly.
+            topic_number = topic_id if topic_id is not None else 1
+            
             # Check if this topic was completed successfully
             # Use different thresholds for different exercises
             if exercise_id == 3:  # Problem-solving exercise
@@ -560,15 +650,15 @@ class SupabaseProgressTracker:
             else:
                 topic_completed = score >= 80  # 80% threshold for other exercises
             
-            if topic_completed:
+            if topic_completed and topic_number >= current_topic_id:
                 # Increment topic_id for next topic when current topic is completed
-                next_topic_id = current_topic_id + 1
+                next_topic_id = topic_number + 1
                 update_data["current_topic_id"] = next_topic_id
-                print(f"🎉 [EXERCISE] Topic {current_topic_id} completed! Moving to topic {next_topic_id}")
-            elif topic_id and topic_id > current_topic_id:
+                print(f"🎉 [EXERCISE] Topic {topic_number} completed! Moving to topic {next_topic_id}")
+            elif topic_id and topic_number > current_topic_id:
                 # Update topic_id if user is working on a higher topic
-                update_data["current_topic_id"] = topic_id
-                print(f"📝 [EXERCISE] Updated current_topic_id to {topic_id}")
+                update_data["current_topic_id"] = topic_number
+                print(f"📝 [EXERCISE] Updated current_topic_id to {topic_number}")
             
             # Check if exercise is completed (3 consecutive scores >= 80)
             if completed and not exercise_data.get('completed_at'):
@@ -665,8 +755,28 @@ class SupabaseProgressTracker:
             
             # Get progress summary
             print(f"🔍 [GET] Fetching progress summary...")
-            summary = self.client.table('ai_tutor_user_progress_summary').select('*').eq('user_id', user_id).execute()
-            print(f"📊 [GET] Progress summary: {summary.data[0] if summary.data else 'None'}")
+            summary_res = self.client.table('ai_tutor_user_progress_summary').select('*').eq('user_id', user_id).execute()
+            summary = summary_res.data[0] if summary_res.data else {}
+            print(f"📊 [GET] Initial progress summary from DB: {summary}")
+
+            # Always calculate fresh statistics to ensure data is up-to-date
+            print(f"🔄 [GET] Recalculating latest statistics for user {user_id}...")
+            current_date = date.today()
+            
+            # Calculate all-time total learning time from the source of truth
+            total_time = await self._calculate_total_learning_time(user_id)
+            summary['total_time_spent_minutes'] = total_time
+
+            # Calculate streak
+            current_streak, longest_streak = await self._calculate_streak(user_id, current_date)
+            summary['streak_days'] = current_streak
+            summary['longest_streak'] = max(summary.get('longest_streak', 0), longest_streak)
+            
+            # Calculate session metrics (30-day window)
+            session_metrics = await self._calculate_session_metrics(user_id)
+            summary.update(session_metrics)
+            
+            print(f"📊 [GET] Final updated summary with fresh stats: {summary}")
             
             # Get stage progress
             print(f"🔍 [GET] Fetching stage progress...")
@@ -684,7 +794,7 @@ class SupabaseProgressTracker:
             print(f"📊 [GET] Learning unlocks: {len(unlocks.data)} unlocks")
             
             result_data = {
-                "summary": summary.data[0] if summary.data else None,
+                "summary": summary,
                 "stages": stages.data,
                 "exercises": exercises.data,
                 "unlocks": unlocks.data
@@ -709,10 +819,12 @@ class SupabaseProgressTracker:
             if not user_id or not user_id.strip():
                 raise ValueError("User ID is required")
             
-            if not (1 <= stage_id <= 6):
-                raise ValueError(f"Invalid stage_id: {stage_id}. Must be between 1 and 6")
+            if not (0 <= stage_id <= 6):
+                raise ValueError(f"Invalid stage_id: {stage_id}. Must be between 0 and 6")
             
-            if not (1 <= exercise_id <= 3):
+            if not (1 <= exercise_id <= 5) and stage_id == 0: # Stage 0 has 5 lessons
+                 raise ValueError(f"Invalid exercise_id for Stage 0: {exercise_id}. Must be between 1 and 5")
+            elif not (1 <= exercise_id <= 3) and stage_id > 0:
                 raise ValueError(f"Invalid exercise_id: {exercise_id}. Must be between 1 and 3")
             
             # Get exercise progress
@@ -767,6 +879,70 @@ class SupabaseProgressTracker:
             logger.error(f"Error getting current topic: {str(e)}")
             return {"success": False, "error": str(e)}
     
+    async def complete_lesson(self, user_id: str, stage_id: int, exercise_id: int) -> dict:
+        """
+        Records the completion of a Stage 0 lesson by marking all its topics as complete.
+        """
+        print(f"🔄 [LESSON] Recording completion for user {user_id}, Stage {stage_id}, Lesson {exercise_id}")
+        if stage_id != 0:
+            return {"success": False, "error": "This function is only for Stage 0 lessons."}
+
+        try:
+            # Fetch all topics for the specified lesson (exercise)
+            topics_result = self.client.rpc('get_topics_for_exercise_full', {'stage_num': stage_id, 'exercise_num': exercise_id}).execute()
+            if not topics_result.data:
+                logger.warning(f"No topics found for Stage {stage_id}, Exercise {exercise_id}. Cannot record completion.")
+                return {"success": True, "message": "No topics found for this lesson, nothing to complete."}
+            
+            topics = topics_result.data
+            print(f"📚 [LESSON] Found {len(topics)} topics to mark as complete for Lesson {exercise_id}.")
+
+            # Create a list of tasks to run concurrently
+            tasks = []
+            for topic in topics:
+                tasks.append(
+                    self.record_topic_attempt(
+                        user_id=user_id,
+                        stage_id=stage_id,
+                        exercise_id=exercise_id,
+                        topic_id=topic['topic_number'],
+                        score=100.0,
+                        urdu_used=False,
+                        time_spent_seconds=1, # Default value for instant completion
+                        completed=True
+                    )
+                )
+
+            # Run all topic recordings concurrently
+            await asyncio.gather(*tasks)
+
+            print(f"✅ [LESSON] Successfully recorded completion for Lesson {exercise_id} for user {user_id}")
+            return {"success": True, "message": f"Lesson {exercise_id} completed."}
+
+        except Exception as e:
+            import traceback
+            print(f"❌ [LESSON] Error completing lesson for {user_id}: {str(e)}")
+            print(f"Traceback: {traceback.format_exc()}")
+            logger.error(f"Error completing lesson for {user_id}: {str(e)}")
+            return {"success": False, "error": str(e)}
+
+    async def get_user_topic_progress_all(self, user_id: str) -> dict:
+        """Get all topic progress for a user."""
+        print(f"🔄 [TOPIC_PROGRESS] Getting all topic progress for user {user_id}")
+        try:
+            if not user_id or not user_id.strip():
+                raise ValueError("User ID is required")
+            
+            result = self.client.table('ai_tutor_user_topic_progress').select('stage_id, exercise_id, topic_id, completed').eq('user_id', user_id).execute()
+            
+            print(f"📊 [TOPIC_PROGRESS] Found {len(result.data)} total topic records for user.")
+            return {"success": True, "data": result.data}
+            
+        except Exception as e:
+            print(f"❌ [TOPIC_PROGRESS] Error getting all topic progress: {str(e)}")
+            logger.error(f"Error getting all topic progress for user {user_id}: {str(e)}")
+            return {"success": False, "error": str(e)}
+
     async def get_user_topic_progress(self, user_id: str, stage_id: int, exercise_id: int) -> dict:
         """Get user's topic progress for a specific stage and exercise"""
         print(f"🔄 [TOPIC_PROGRESS] Getting topic progress for user {user_id}")
@@ -807,92 +983,165 @@ class SupabaseProgressTracker:
             
             # Get current exercise progress - use completed_at IS NOT NULL instead of completed column
             print(f"🔍 [UNLOCK] Fetching completed exercises...")
-            current_exercise = self.client.table('ai_tutor_user_exercise_progress').select('*').eq('user_id', user_id).not_.is_('completed_at', 'null').execute()
-            print(f"📊 [UNLOCK] Found {len(current_exercise.data)} completed exercises")
+            completed_exercises_res = self.client.table('ai_tutor_user_exercise_progress').select('*').eq('user_id', user_id).not_.is_('completed_at', 'null').execute()
+            print(f"📊 [UNLOCK] Found {len(completed_exercises_res.data)} completed exercises")
             
             unlocked_content = []
             current_timestamp = datetime.now().isoformat()
             
-            for exercise in current_exercise.data:
+            # Group completed exercises by stage for efficient processing
+            completed_by_stage = {}
+            for exercise in completed_exercises_res.data:
                 stage_id = exercise['stage_id']
-                exercise_id = exercise['exercise_id']
-                print(f"🔍 [UNLOCK] Processing completed exercise: stage {stage_id}, exercise {exercise_id}")
-                
-                # Check if next exercise should be unlocked
-                if exercise_id < 3:  # Not the last exercise in stage
-                    next_exercise_id = exercise_id + 1
-                    print(f"🔍 [UNLOCK] Checking if exercise {next_exercise_id} should be unlocked...")
-                    
-                    # Check if next exercise is already unlocked
-                    existing_unlock = self.client.table('ai_tutor_learning_unlocks').select('*').eq('user_id', user_id).eq('stage_id', stage_id).eq('exercise_id', next_exercise_id).execute()
-                    
-                    if not existing_unlock.data or not existing_unlock.data[0]['is_unlocked']:
-                        print(f"🔓 [UNLOCK] Unlocking exercise {next_exercise_id} in stage {stage_id}")
-                        # Since initialization creates these rows, we should always UPDATE.
-                        unlock_data = {
-                            "is_unlocked": True,
-                            "unlock_criteria_met": True,
-                            "unlocked_at": current_timestamp,
-                            "unlocked_by_criteria": f"Completed exercise {exercise_id} in stage {stage_id}"
-                        }
-                        
-                        unlock_result = self.client.table('ai_tutor_learning_unlocks').update(unlock_data).match({
-                            'user_id': user_id, 
-                            'stage_id': stage_id, 
-                            'exercise_id': next_exercise_id
-                        }).execute()
-
-                        print(f"✅ [UNLOCK] Exercise {next_exercise_id} unlocked successfully")
-                        unlocked_content.append(f"Stage {stage_id}, Exercise {next_exercise_id}")
-                    else:
-                        print(f"ℹ️ [UNLOCK] Exercise {next_exercise_id} already unlocked")
-                
-                # Check if next stage should be unlocked (if all exercises in current stage are completed)
-                if exercise_id == 3:  # Last exercise in stage
-                    print(f"🔍 [UNLOCK] Checking if stage {stage_id + 1} should be unlocked...")
-                    all_exercises_completed = self.client.table('ai_tutor_user_exercise_progress').select('exercise_id').eq('user_id', user_id).eq('stage_id', stage_id).not_.is_('completed_at', 'null').execute()
-                    
-                    if len(all_exercises_completed.data) == 3:  # All exercises completed
-                        next_stage_id = stage_id + 1
-                        
-                        if next_stage_id <= 6:  # Valid stage
-                            print(f"🔓 [UNLOCK] Unlocking stage {next_stage_id}")
-
-                            # Explicitly check if the stage unlock record exists
-                            existing_stage_unlock = self.client.table('ai_tutor_learning_unlocks').select('id').is_('exercise_id', 'null').eq('user_id', user_id).eq('stage_id', next_stage_id).execute()
-
-                            stage_unlock_payload = {
-                                "is_unlocked": True,
-                                "unlock_criteria_met": True,
-                                "unlocked_at": current_timestamp,
-                                "unlocked_by_criteria": f"Completed all exercises in stage {stage_id}"
-                            }
-                            
-                            if existing_stage_unlock.data:
-                                # Row exists, so UPDATE it
-                                print(f"🔓 [UNLOCK] Updating existing record to unlock stage {next_stage_id}")
-                                self.client.table('ai_tutor_learning_unlocks').update(stage_unlock_payload).eq('user_id', user_id).eq('stage_id', next_stage_id).is_('exercise_id', 'null').execute()
-                            else:
-                                # Row does not exist, so INSERT it
-                                print(f"🔓 [UNLOCK] Inserting new record to unlock stage {next_stage_id}")
-                                stage_insert_payload = stage_unlock_payload.copy()
-                                stage_insert_payload['user_id'] = user_id
-                                stage_insert_payload['stage_id'] = next_stage_id
-                                self.client.table('ai_tutor_learning_unlocks').insert(stage_insert_payload).execute()
-                            
-                            unlocked_content.append(f"Stage {next_stage_id}")
-                        else:
-                            print(f"ℹ️ [UNLOCK] Stage {next_stage_id} is beyond valid range (max 6)")
-                    else:
-                        print(f"ℹ️ [UNLOCK] Not all exercises completed in stage {stage_id} ({len(all_exercises_completed.data)}/3)")
+                if stage_id not in completed_by_stage:
+                    completed_by_stage[stage_id] = []
+                completed_by_stage[stage_id].append(exercise['exercise_id'])
             
+            all_stages_list = await self.get_all_stages()
+            if not all_stages_list:
+                print("⚠️ [UNLOCK] Could not fetch stage list for unlocking logic.")
+                return {"success": False, "error": "Could not fetch stages."}
+
+            max_stage_num = max(s['stage_number'] for s in all_stages_list)
+
+            for stage_id, completed_ids in completed_by_stage.items():
+                print(f"🔍 [UNLOCK] Processing stage {stage_id} with completed exercises: {completed_ids}")
+                
+                all_exercises_in_stage = await self.get_exercises_for_stage(stage_id)
+                if not all_exercises_in_stage:
+                    continue
+
+                all_exercise_nums = sorted([e['exercise_number'] for e in all_exercises_in_stage])
+                
+                # Check if all exercises in the current stage are completed
+                if set(all_exercise_nums).issubset(set(completed_ids)):
+                    # Unlock the next stage if it's not the final stage
+                    if stage_id < max_stage_num:
+                        next_stage_id = stage_id + 1
+                        print(f"✅ [UNLOCK] All exercises in stage {stage_id} completed. Unlocking stage {next_stage_id}.")
+                        
+                        # Unlock the next stage itself
+                        await self.unlock_stage_for_user(user_id, next_stage_id, f"Completed all exercises in stage {stage_id}", unlocked_content)
+                        
+                        # Unlock the first exercise of the next stage
+                        await self.unlock_first_exercise_of_stage(user_id, next_stage_id, unlocked_content)
+
+                        # --- BEGIN FIX: Update user's current stage in the summary table ---
+                        print(f"🔄 [UNLOCK] Updating user's current stage to {next_stage_id}")
+                        try:
+                            self.client.table('ai_tutor_user_progress_summary').update({
+                                'current_stage': next_stage_id
+                            }).eq('user_id', user_id).execute()
+                            print(f"✅ [UNLOCK] Successfully updated current_stage for user {user_id}")
+                        except Exception as e:
+                            print(f"❌ [UNLOCK] Failed to update current_stage for user {user_id}: {str(e)}")
+                            logger.error(f"Failed to update current_stage for user {user_id}: {str(e)}")
+                        # --- END FIX ---
+
+                # Unlock the next exercise WITHIN the current stage if applicable
+                last_completed = max(completed_ids) if completed_ids else 0
+                if last_completed in all_exercise_nums:
+                    last_completed_index = all_exercise_nums.index(last_completed)
+                    if last_completed_index < len(all_exercise_nums) - 1:
+                        next_exercise_id = all_exercise_nums[last_completed_index + 1]
+                        
+                        existing_unlock = self.client.table('ai_tutor_learning_unlocks').select('is_unlocked').eq('user_id', user_id).eq('stage_id', stage_id).eq('exercise_id', next_exercise_id).execute()
+                        
+                        if not existing_unlock.data or not existing_unlock.data[0]['is_unlocked']:
+                            print(f"🔓 [UNLOCK] Unlocking exercise {next_exercise_id} in stage {stage_id}")
+                            unlock_data = {
+                                "is_unlocked": True, "unlock_criteria_met": True, "unlocked_at": current_timestamp,
+                                "unlocked_by_criteria": f"Completed exercise {last_completed} in stage {stage_id}"
+                            }
+                            # Use upsert to handle potential race conditions or existing locked rows
+                            self.client.table('ai_tutor_learning_unlocks').upsert(unlock_data).match({'user_id': user_id, 'stage_id': stage_id, 'exercise_id': next_exercise_id}).execute()
+                            unlocked_content.append(f"Stage {stage_id}, Exercise {next_exercise_id}")
+
             print(f"📊 [UNLOCK] Total unlocked content: {unlocked_content}")
-            return {"success": True, "unlocked_content": unlocked_content}
+            return {"success": True, "unlocked_content": list(set(unlocked_content))}
             
         except Exception as e:
             print(f"❌ [UNLOCK] Error checking content unlocks for {user_id}: {str(e)}")
             logger.error(f"Error checking content unlocks for {user_id}: {str(e)}")
             return {"success": False, "error": str(e)}
+
+    async def get_all_stages_from_db(self) -> List[Dict]:
+        """Fetches all stages from the content hierarchy for caching."""
+        try:
+            print("🔄 [DB CACHE] Fetching all stages for cache...")
+            result = self.client.rpc('get_all_stages_with_counts').execute()
+            if result.data:
+                print(f"✅ [DB CACHE] Found {len(result.data)} stages.")
+                return result.data
+            return []
+        except Exception as e:
+            print(f"❌ [DB CACHE] Error fetching stages for cache: {str(e)}")
+            logger.error(f"Error fetching stages for cache: {str(e)}")
+            return []
+
+    async def get_all_exercises_from_db(self) -> List[Dict]:
+        """Fetches all exercises from the content hierarchy for caching."""
+        try:
+            print("🔄 [DB CACHE] Fetching all exercises for cache...")
+            result = self.client.rpc('get_all_exercises_with_details').execute()
+            if result.data:
+                print(f"✅ [DB CACHE] Found {len(result.data)} exercises.")
+                return result.data
+            return []
+        except Exception as e:
+            print(f"❌ [DB CACHE] Error fetching exercises for cache: {str(e)}")
+            logger.error(f"Error fetching exercises for cache: {str(e)}")
+            return []
+
+    async def unlock_stage_for_user(self, user_id: str, stage_id: int, unlock_reason: str, unlocked_content: List[str]):
+        """Unlocks a specific stage for a user."""
+        print(f"🔓 [UNLOCK] Unlocking stage {stage_id} for user {user_id} due to {unlock_reason}")
+        try:
+            existing_unlock = self.client.table('ai_tutor_learning_unlocks').select('is_unlocked').eq('user_id', user_id).eq('stage_id', stage_id).is_('exercise_id', None).execute()
+            if not existing_unlock.data or not existing_unlock.data[0]['is_unlocked']:
+                unlock_data = {
+                    "user_id": user_id,
+                    "stage_id": stage_id,
+                    "exercise_id": None,
+                    "is_unlocked": True, "unlock_criteria_met": True, "unlocked_at": datetime.now().isoformat(),
+                    "unlocked_by_criteria": unlock_reason
+                }
+                self.client.table('ai_tutor_learning_unlocks').upsert(unlock_data).execute()
+                unlocked_content.append(f"Stage {stage_id}")
+                print(f"✅ [UNLOCK] Stage {stage_id} unlocked.")
+            else:
+                print(f"⚠️ [UNLOCK] Stage {stage_id} already unlocked.")
+        except Exception as e:
+            print(f"❌ [UNLOCK] Error unlocking stage {stage_id} for user {user_id}: {str(e)}")
+            logger.error(f"Error unlocking stage {stage_id} for user {user_id}: {str(e)}")
+
+    async def unlock_first_exercise_of_stage(self, user_id: str, stage_id: int, unlocked_content: List[str]):
+        """Unlocks the first exercise of a specific stage for a user."""
+        print(f"🔓 [UNLOCK] Unlocking first exercise of stage {stage_id} for user {user_id}")
+        try:
+            all_exercises_in_stage = await self.get_exercises_for_stage(stage_id)
+            if not all_exercises_in_stage:
+                print(f"⚠️ [UNLOCK] No exercises found for stage {stage_id} to unlock first exercise.")
+                return
+
+            first_exercise_id = sorted([e['exercise_number'] for e in all_exercises_in_stage])[0]
+            existing_unlock = self.client.table('ai_tutor_learning_unlocks').select('is_unlocked').eq('user_id', user_id).eq('stage_id', stage_id).eq('exercise_id', first_exercise_id).execute()
+            if not existing_unlock.data or not existing_unlock.data[0]['is_unlocked']:
+                unlock_data = {
+                    "user_id": user_id,
+                    "stage_id": stage_id,
+                    "exercise_id": first_exercise_id,
+                    "is_unlocked": True, "unlock_criteria_met": True, "unlocked_at": datetime.now().isoformat(),
+                    "unlocked_by_criteria": f"Unlocked stage {stage_id}"
+                }
+                self.client.table('ai_tutor_learning_unlocks').upsert(unlock_data).execute()
+                unlocked_content.append(f"Stage {stage_id}, Exercise {first_exercise_id}")
+                print(f"✅ [UNLOCK] First exercise of stage {stage_id} unlocked.")
+            else:
+                print(f"⚠️ [UNLOCK] First exercise of stage {stage_id} already unlocked.")
+        except Exception as e:
+            print(f"❌ [UNLOCK] Error unlocking first exercise of stage {stage_id} for user {user_id}: {str(e)}")
+            logger.error(f"Error unlocking first exercise of stage {stage_id} for user {user_id}: {str(e)}")
 
 # Global instance
 progress_tracker = SupabaseProgressTracker() 

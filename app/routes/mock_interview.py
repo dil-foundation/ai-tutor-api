@@ -4,26 +4,56 @@ from typing import List, Optional, Dict, Any
 import json
 import base64
 import logging
+from fastapi.concurrency import run_in_threadpool
 from app.services.tts import synthesize_speech_exercises
 from app.services.feedback import evaluate_response_ex2_stage4
-from app.supabase_client import SupabaseProgressTracker
+from app.supabase_client import supabase, progress_tracker
 from app.services.stt import transcribe_audio_bytes_eng_only
 from app.auth_middleware import get_current_user, require_student, require_admin_or_teacher_or_student
 import os
 
 router = APIRouter(tags=["Stage 4 - Exercise 2 (Mock Interview)"])
 
-# Initialize progress tracker
-progress_tracker = SupabaseProgressTracker()
-
-# Load interview questions data
-def load_interview_questions():
+async def get_question_by_id_from_db(question_id: int):
+    """Fetch a mock interview question from Supabase by its topic_number for Stage 4, Exercise 2."""
+    print(f"🔍 [DB] Looking for question with topic_number (ID): {question_id} for Stage 4, Exercise 2")
     try:
-        with open("app/data/stage4_exercise2.json", "r", encoding="utf-8") as f:
-            return json.load(f)
+        # parent_id for Stage 4, Exercise 2 ('Negotiation & Persuasion') is 17, but the content is interview mastery. Let's use 17.
+        # The sql file says stage4_exercise2 is "Professional Interview Mastery" which matches the json file.
+        # The exercise before it is "Negotiation & Persuasion", which has parent_id 17 according to the base schema.
+        # Ah, the user has attached stage4_exercise2_complete_insertions.sql. It uses parent_id 17. So 17 is correct.
+        query = supabase.table("ai_tutor_content_hierarchy").select("id, topic_number, title, title_urdu, topic_data, category, difficulty").eq("level", "topic").eq("parent_id", 17).eq("topic_number", question_id).single()
+        response = await run_in_threadpool(query.execute)
+        
+        if response.data:
+            db_question = response.data
+            topic_data = db_question.get("topic_data", {})
+            
+            formatted_question = {
+                "id": db_question.get("topic_number"),
+                "db_id": db_question.get("id"),
+                "question": db_question.get("title"),
+                "question_urdu": db_question.get("title_urdu"),
+                "category": db_question.get("category"),
+                "difficulty": db_question.get("difficulty"),
+                "speaking_duration": topic_data.get("speaking_duration"),
+                "thinking_time": topic_data.get("thinking_time"),
+                "expected_structure": topic_data.get("expected_structure"),
+                "expected_keywords": topic_data.get("expected_keywords", []),
+                "vocabulary_focus": topic_data.get("vocabulary_focus", []),
+                "model_response": topic_data.get("model_response"),
+                "model_response_urdu": topic_data.get("model_response_urdu"),
+                "evaluation_criteria": topic_data.get("evaluation_criteria", {}),
+                "learning_objectives": topic_data.get("learning_objectives", [])
+            }
+            print(f"✅ [DB] Found question: {formatted_question['question']}")
+            return formatted_question
+        else:
+            print(f"❌ [DB] Question with topic_number {question_id} not found for parent_id 17")
+            return None
     except Exception as e:
-        logging.error(f"Error loading interview questions: {e}")
-        return []
+        print(f"❌ [DB] Error fetching question from Supabase: {str(e)}")
+        return None
 
 
 async def check_exercise_completion(user_id: str) -> dict:
@@ -31,10 +61,21 @@ async def check_exercise_completion(user_id: str) -> dict:
     print(f"🔍 [COMPLETION] Checking exercise completion for user: {user_id}")
     
     try:
-        # Get total questions count
-        questions = load_interview_questions()
-        total_topics = len(questions)
-        print(f"📊 [COMPLETION] Total questions available: {total_topics}")
+        # Get total questions count from Supabase
+        total_topics = 0
+        try:
+            # parent_id for 'Professional Interview Mastery' is 17
+            query = supabase.table("ai_tutor_content_hierarchy").select("id", count="exact").eq("level", "topic").eq("parent_id", 17)
+            response = await run_in_threadpool(query.execute)
+            if response.count is not None:
+                total_topics = response.count
+                print(f"📊 [COMPLETION] Total questions available from DB: {total_topics}")
+            else:
+                print("⚠️ [COMPLETION] Could not get count from Supabase, falling back to default.")
+                total_topics = 8
+        except Exception as e:
+            print(f"❌ [COMPLETION] Error getting question count from DB: {str(e)}")
+            total_topics = 8 # Default fallback
         
         # Get user's progress for stage 4, exercise 2
         progress_result = await progress_tracker.get_user_topic_progress(
@@ -135,13 +176,41 @@ class AudioEvaluationRequest(BaseModel):
     tags=["Stage 4 - Exercise 2 (Mock Interview)"]
 )
 async def get_interview_questions(current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
-    """Get all mock interview questions"""
+    """Get all mock interview questions from Supabase"""
     try:
-        questions = load_interview_questions()
-        return {"questions": questions}
+        print("🔄 [DB] Fetching all questions for Stage 4, Exercise 2 from Supabase")
+        query = supabase.table("ai_tutor_content_hierarchy").select("id, topic_number, title, title_urdu, topic_data, category, difficulty").eq("level", "topic").eq("parent_id", 17).order("topic_number", desc=False)
+        response = await run_in_threadpool(query.execute)
+        
+        if response.data:
+            questions = []
+            for q in response.data:
+                topic_data = q.get("topic_data", {})
+                questions.append({
+                    "id": q.get("topic_number"),
+                    "db_id": q.get("id"),
+                    "question": q.get("title"),
+                    "question_urdu": q.get("title_urdu"),
+                    "category": q.get("category"),
+                    "difficulty": q.get("difficulty"),
+                    "speaking_duration": topic_data.get("speaking_duration"),
+                    "thinking_time": topic_data.get("thinking_time"),
+                    "expected_structure": topic_data.get("expected_structure"),
+                    "expected_keywords": topic_data.get("expected_keywords", []),
+                    "vocabulary_focus": topic_data.get("vocabulary_focus", []),
+                    "model_response": topic_data.get("model_response"),
+                    "model_response_urdu": topic_data.get("model_response_urdu"),
+                    "evaluation_criteria": topic_data.get("evaluation_criteria", {}),
+                    "learning_objectives": topic_data.get("learning_objectives", [])
+                })
+            print(f"✅ [DB] Successfully loaded {len(questions)} questions from Supabase")
+            return {"questions": questions}
+        else:
+            print("❌ [DB] No questions found for Stage 4, Exercise 2")
+            return {"questions": []}
     except Exception as e:
         logging.error(f"Error fetching interview questions: {e}")
-        raise HTTPException(status_code=500, detail="Failed to load interview questions")
+        raise HTTPException(status_code=500, detail="Failed to load interview questions from database")
 
 @router.get(
     "/mock-interview-questions/{question_id}",
@@ -152,8 +221,7 @@ async def get_interview_questions(current_user: Dict[str, Any] = Depends(require
 async def get_interview_question(question_id: int, current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
     """Get a specific mock interview question by ID"""
     try:
-        questions = load_interview_questions()
-        question = next((q for q in questions if q["id"] == question_id), None)
+        question = await get_question_by_id_from_db(question_id)
         
         if not question:
             raise HTTPException(status_code=404, detail="Interview question not found")
@@ -178,8 +246,7 @@ async def generate_interview_audio(
 ):
     """Generate audio for a specific mock interview question"""
     try:
-        questions = load_interview_questions()
-        question = next((q for q in questions if q["id"] == question_id), None)
+        question = await get_question_by_id_from_db(question_id)
         
         if not question:
             raise HTTPException(status_code=404, detail="Interview question not found")
@@ -233,8 +300,7 @@ async def evaluate_mock_interview(
             raise HTTPException(status_code=403, detail="You can only access your own data")
         
         # Load question data
-        questions = load_interview_questions()
-        question_data = next((q for q in questions if q["id"] == request.question_id), None)
+        question_data = await get_question_by_id_from_db(request.question_id)
         
         if not question_data:
             raise HTTPException(status_code=404, detail="Interview question not found")
@@ -287,7 +353,7 @@ async def evaluate_mock_interview(
                 user_id=request.user_id,
                 stage_id=4,
                 exercise_id=2,
-                topic_id=request.question_id,
+                topic_id=question_data['id'], # Use the actual database ID
                 score=evaluation.get("score", 0),
                 urdu_used=request.urdu_used,
                 time_spent_seconds=adjusted_time_spent,
@@ -301,8 +367,11 @@ async def evaluate_mock_interview(
         
         # Check for content unlocks
         try:
-            unlocked_content = await progress_tracker.check_content_unlocks(request.user_id)
-            evaluation["unlocked_content"] = unlocked_content
+            unlocked_content_result = await progress_tracker.check_and_unlock_content(request.user_id)
+            if unlocked_content_result["success"]:
+                evaluation["unlocked_content"] = unlocked_content_result.get("unlocked_content", [])
+            else:
+                evaluation["unlocked_content"] = []
         except Exception as e:
             print(f"⚠️ [API] Content unlock check failed: {e}")
             evaluation["unlocked_content"] = []

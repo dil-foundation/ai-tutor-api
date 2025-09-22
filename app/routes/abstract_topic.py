@@ -3,10 +3,11 @@ from pydantic import BaseModel
 import json
 import base64
 from typing import List, Optional, Dict, Any
+from fastapi.concurrency import run_in_threadpool
 from app.services.feedback import evaluate_response_ex1_stage4
 from app.services.stt import transcribe_audio_bytes_eng_only
 from app.services.tts import synthesize_speech_exercises
-from app.supabase_client import progress_tracker
+from app.supabase_client import supabase, progress_tracker
 from app.auth_middleware import get_current_user, require_student,require_admin_or_teacher_or_student
 import os
 
@@ -22,22 +23,43 @@ class AudioEvaluationRequest(BaseModel):
     urdu_used: bool
 
 # Load topics data
-def load_topics():
-    """Load abstract topics from JSON file"""
+async def get_topic_by_id_from_db(topic_id: int):
+    """Fetch an abstract topic from Supabase by its topic_number for Stage 4, Exercise 1."""
+    print(f"🔍 [DB] Looking for topic with topic_number (ID): {topic_id} for Stage 4, Exercise 1")
     try:
-        with open("app/data/stage4_exercise1.json", "r", encoding="utf-8") as f:
-            return json.load(f)
+        # parent_id for Stage 4, Exercise 1 ('Business Presentation Skills') is 16.
+        query = supabase.table("ai_tutor_content_hierarchy").select("id, topic_number, title, title_urdu, topic_data, category, difficulty").eq("level", "topic").eq("parent_id", 16).eq("topic_number", topic_id).single()
+        response = await run_in_threadpool(query.execute)
+        
+        if response.data:
+            db_topic = response.data
+            topic_data = db_topic.get("topic_data", {})
+            
+            formatted_topic = {
+                "id": db_topic.get("topic_number"),
+                "db_id": db_topic.get("id"),
+                "topic": db_topic.get("title"),
+                "topic_urdu": db_topic.get("title_urdu"),
+                "category": db_topic.get("category"),
+                "difficulty": db_topic.get("difficulty"),
+                "speaking_duration": topic_data.get("speaking_duration"),
+                "thinking_time": topic_data.get("thinking_time"),
+                "expected_structure": topic_data.get("expected_structure"),
+                "key_connectors": topic_data.get("key_connectors", []),
+                "vocabulary_focus": topic_data.get("vocabulary_focus", []),
+                "model_response": topic_data.get("model_response"),
+                "model_response_urdu": topic_data.get("model_response_urdu"),
+                "evaluation_criteria": topic_data.get("evaluation_criteria", {}),
+                "learning_objectives": topic_data.get("learning_objectives", [])
+            }
+            print(f"✅ [DB] Found topic: {formatted_topic['topic']}")
+            return formatted_topic
+        else:
+            print(f"❌ [DB] Topic with topic_number {topic_id} not found for parent_id 16")
+            return None
     except Exception as e:
-        print(f"❌ [DATA] Error loading topics: {str(e)}")
-        return []
-
-def get_topic_by_id(topic_id: int):
-    """Get a specific topic by ID"""
-    topics = load_topics()
-    for topic in topics:
-        if topic["id"] == topic_id:
-            return topic
-    return None
+        print(f"❌ [DB] Error fetching topic from Supabase: {str(e)}")
+        return None
 
 
 async def check_exercise_completion(user_id: str) -> dict:
@@ -45,10 +67,21 @@ async def check_exercise_completion(user_id: str) -> dict:
     print(f"🔍 [COMPLETION] Checking exercise completion for user: {user_id}")
     
     try:
-        # Get total topics count
-        topics = load_topics()
-        total_topics = len(topics)
-        print(f"📊 [COMPLETION] Total topics available: {total_topics}")
+        # Get total topics count from Supabase
+        total_topics = 0
+        try:
+            # parent_id for 'Business Presentation Skills' is 16
+            query = supabase.table("ai_tutor_content_hierarchy").select("id", count="exact").eq("level", "topic").eq("parent_id", 16)
+            response = await run_in_threadpool(query.execute)
+            if response.count is not None:
+                total_topics = response.count
+                print(f"📊 [COMPLETION] Total topics available from DB: {total_topics}")
+            else:
+                print("⚠️ [COMPLETION] Could not get count from Supabase, falling back to default.")
+                total_topics = 5
+        except Exception as e:
+            print(f"❌ [COMPLETION] Error getting topic count from DB: {str(e)}")
+            total_topics = 5 # Default fallback
         
         # Get user's progress for stage 4, exercise 1
         progress_result = await progress_tracker.get_user_topic_progress(
@@ -141,20 +174,46 @@ async def check_exercise_completion(user_id: str) -> dict:
     tags=["Stage 4 - Exercise 1 (Abstract Topic Monologue)"]
 )
 async def get_abstract_topics(current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
-    """Get all abstract topics"""
+    """Get all abstract topics from Supabase"""
     print("🔄 [API] GET /abstract-topics endpoint called")
     
     try:
-        topics = load_topics()
-        print(f"✅ [API] Retrieved {len(topics)} topics")
+        print("🔄 [DB] Fetching all topics for Stage 4, Exercise 1 from Supabase")
+        query = supabase.table("ai_tutor_content_hierarchy").select("id, topic_number, title, title_urdu, topic_data, category, difficulty").eq("level", "topic").eq("parent_id", 16).order("topic_number", desc=False)
+        response = await run_in_threadpool(query.execute)
         
-        return {
-            "topics": topics,
-            "total_count": len(topics)
-        }
+        if response.data:
+            topics = []
+            for t in response.data:
+                topic_data = t.get("topic_data", {})
+                topics.append({
+                    "id": t.get("topic_number"),
+                    "db_id": t.get("id"),
+                    "topic": t.get("title"),
+                    "topic_urdu": t.get("title_urdu"),
+                    "category": t.get("category"),
+                    "difficulty": t.get("difficulty"),
+                    "speaking_duration": topic_data.get("speaking_duration"),
+                    "thinking_time": topic_data.get("thinking_time"),
+                    "expected_structure": topic_data.get("expected_structure"),
+                    "key_connectors": topic_data.get("key_connectors", []),
+                    "vocabulary_focus": topic_data.get("vocabulary_focus", []),
+                    "model_response": topic_data.get("model_response"),
+                    "model_response_urdu": topic_data.get("model_response_urdu"),
+                    "evaluation_criteria": topic_data.get("evaluation_criteria", {}),
+                    "learning_objectives": topic_data.get("learning_objectives", [])
+                })
+            print(f"✅ [DB] Successfully loaded {len(topics)} topics from Supabase")
+            return {
+                "topics": topics,
+                "total_count": len(topics)
+            }
+        else:
+            print("❌ [DB] No topics found for Stage 4, Exercise 1")
+            return {"topics": [], "total_count": 0}
     except Exception as e:
         print(f"❌ [API] Error retrieving topics: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to load topics: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to load topics from database: {str(e)}")
 
 @router.get(
     "/abstract-topics/{topic_id}",
@@ -167,7 +226,7 @@ async def get_abstract_topic(topic_id: int, current_user: Dict[str, Any] = Depen
     print(f"🔄 [API] GET /abstract-topics/{topic_id} endpoint called")
     
     try:
-        topic = get_topic_by_id(topic_id)
+        topic = await get_topic_by_id_from_db(topic_id)
         if not topic:
             print(f"❌ [API] Topic {topic_id} not found")
             raise HTTPException(status_code=404, detail="Topic not found")
@@ -194,7 +253,7 @@ async def generate_abstract_topic_audio(
     print(f"🔄 [API] POST /abstract-topic/{topic_id} endpoint called")
     
     try:
-        topic = get_topic_by_id(topic_id)
+        topic = await get_topic_by_id_from_db(topic_id)
         if not topic:
             print(f"❌ [API] Topic {topic_id} not found")
             raise HTTPException(status_code=404, detail="Topic not found")
@@ -255,7 +314,7 @@ async def evaluate_abstract_topic(
     
     try:
         # Get topic data
-        topic_data = get_topic_by_id(request.topic_id)
+        topic_data = await get_topic_by_id_from_db(request.topic_id)
         if not topic_data:
             print(f"❌ [API] Topic {request.topic_id} not found")
             raise HTTPException(status_code=404, detail="Topic not found")
@@ -371,7 +430,7 @@ async def evaluate_abstract_topic(
                         user_id=request.user_id,
                         stage_id=4,  # Stage 4
                         exercise_id=1,  # Exercise 1 (Abstract Topic Monologue)
-                        topic_id=request.topic_id,
+                        topic_id=topic_data['id'], # Use the actual database ID
                         score=float(score),
                         urdu_used=request.urdu_used,
                         time_spent_seconds=time_spent,
@@ -565,7 +624,8 @@ async def get_abstract_topic_current_topic(
             return {
                 "success": True,
                 "current_topic_id": current_topic_result.get("current_topic_id", 1),
-                "total_topics": current_topic_result.get("total_topics", 5)
+                "total_topics": current_topic_result.get("total_topics", 5),
+                "is_completed": current_topic_result.get("is_completed", False)
             }
         else:
             print(f"❌ [API] Failed to retrieve current topic: {current_topic_result.get('error')}")

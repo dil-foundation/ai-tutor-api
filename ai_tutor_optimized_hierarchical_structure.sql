@@ -1,5 +1,5 @@
 -- =============================================================================
--- AI English Tutor - Hierarchical Structure Database Schema
+-- AI English Tutor - OPTIMIZED Hierarchical Structure Database Schema
 -- =============================================================================
 
 -- Enable UUID extension
@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS public.ai_tutor_content_hierarchy (
     -- Hierarchy Level (stage, exercise, topic)
     level TEXT NOT NULL CHECK (level IN ('stage', 'exercise', 'topic')),
     
-    -- Hierarchy Path (e.g., "1.2.3" for Stage 1, Exercise 2, Topic 3)
+    -- Hierarchy Path (e.g., "1", "1.1", "1.1.1")
     hierarchy_path TEXT NOT NULL,
     
     -- Parent Reference (NULL for stages, stage_id for exercises, exercise_id for topics)
@@ -35,22 +35,31 @@ CREATE TABLE IF NOT EXISTS public.ai_tutor_content_hierarchy (
     
     -- Exercise-specific fields (only for level='exercise')
     exercise_number INTEGER,
-    exercise_type TEXT,
+    exercise_type TEXT CHECK (exercise_type IN ('pronunciation', 'response', 'dialogue', 'narration', 'conversation', 'roleplay', 'storytelling', 'discussion', 'problem_solving', 'presentation', 'negotiation', 'leadership', 'debate', 'academic', 'interview', 'spontaneous', 'diplomatic', 'academic_debate')),
     exercise_order INTEGER,
     
     -- Topic-specific fields (only for level='topic')
     topic_number INTEGER,
-    topic_data JSONB, -- Stores all topic-specific data (phrases, questions, scenarios, etc.)
     topic_order INTEGER,
     
-    -- Common fields
+    -- ENHANCED: Flexible data storage for all topic types
+    topic_data JSONB NOT NULL DEFAULT '{}', -- Stores ALL topic-specific data
+    
+    -- ENHANCED: Common fields for all levels
+    category TEXT, -- Common across all levels
+    difficulty TEXT, -- Common across all levels (beginner, intermediate, advanced, etc.)
+    
+    -- ENHANCED: Additional metadata
+    metadata JSONB DEFAULT '{}', -- For any additional metadata
+    
+    -- Status and timestamps
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- =============================================================================
--- INDEXES FOR PERFORMANCE
+-- ENHANCED INDEXES FOR PERFORMANCE
 -- =============================================================================
 
 -- Primary hierarchy indexes
@@ -60,7 +69,7 @@ CREATE INDEX IF NOT EXISTS idx_content_hierarchy_parent ON public.ai_tutor_conte
 
 -- Stage-specific indexes
 CREATE INDEX IF NOT EXISTS idx_content_hierarchy_stage_number ON public.ai_tutor_content_hierarchy(stage_number) WHERE level = 'stage';
-CREATE INDEX IF NOT EXISTS idx_content_hierarchy_difficulty ON public.ai_tutor_content_hierarchy(difficulty_level) WHERE level = 'stage';
+CREATE INDEX IF NOT EXISTS idx_content_hierarchy_difficulty_level ON public.ai_tutor_content_hierarchy(difficulty_level) WHERE level = 'stage';
 
 -- Exercise-specific indexes
 CREATE INDEX IF NOT EXISTS idx_content_hierarchy_exercise_number ON public.ai_tutor_content_hierarchy(exercise_number) WHERE level = 'exercise';
@@ -68,6 +77,13 @@ CREATE INDEX IF NOT EXISTS idx_content_hierarchy_exercise_type ON public.ai_tuto
 
 -- Topic-specific indexes
 CREATE INDEX IF NOT EXISTS idx_content_hierarchy_topic_number ON public.ai_tutor_content_hierarchy(topic_number) WHERE level = 'topic';
+
+-- Common field indexes
+CREATE INDEX IF NOT EXISTS idx_content_hierarchy_category ON public.ai_tutor_content_hierarchy(category);
+CREATE INDEX IF NOT EXISTS idx_content_hierarchy_difficulty ON public.ai_tutor_content_hierarchy(difficulty);
+
+-- JSONB indexes for topic_data
+CREATE INDEX IF NOT EXISTS idx_content_hierarchy_topic_data_gin ON public.ai_tutor_content_hierarchy USING GIN (topic_data);
 
 -- =============================================================================
 -- INSERT STAGE DATA
@@ -122,22 +138,19 @@ INSERT INTO public.ai_tutor_content_hierarchy (level, hierarchy_path, parent_id,
 ('exercise', '6.3', 6, 'Advanced Academic Debate', 'اعلیٰ تعلیمی بحث', 'Advanced academic debate and formal argumentation', 'اعلیٰ تعلیمی بحث اور رسمی دلیل', 3, 'academic_debate', 3);
 
 -- =============================================================================
--- INSERT SAMPLE TOPIC DATA (Stage 1, Exercise 1 - Repeat After Me Phrases)
+-- SAMPLE TOPIC DATA INSERTIONS SKIPPED
 -- =============================================================================
-
-INSERT INTO public.ai_tutor_content_hierarchy (level, hierarchy_path, parent_id, title, title_urdu, description, description_urdu, topic_number, topic_data, topic_order) VALUES
-('topic', '1.1.1', 7, 'Hello, how are you?', 'ہیلو، آپ کیسے ہیں؟', 'Basic greeting phrase', 'بنیادی سلام کا جملہ', 1, '{"phrase": "Hello, how are you?", "urdu_meaning": "ہیلو، آپ کیسے ہیں؟", "category": "greetings", "difficulty": "beginner"}', 1),
-('topic', '1.1.2', 7, 'My name is Ali.', 'میرا نام علی ہے۔', 'Self-introduction phrase', 'خود تعارف کا جملہ', 2, '{"phrase": "My name is Ali.", "urdu_meaning": "میرا نام علی ہے۔", "category": "introduction", "difficulty": "beginner"}', 2),
-('topic', '1.1.3', 7, 'I am fine, thank you.', 'میں ٹھیک ہوں، شکریہ۔', 'Response to how are you', 'آپ کیسے ہیں کے جواب میں', 3, '{"phrase": "I am fine, thank you.", "urdu_meaning": "میں ٹھیک ہوں، شکریہ۔", "category": "greetings", "difficulty": "beginner"}', 3),
-('topic', '1.1.4', 7, 'Nice to meet you.', 'آپ سے مل کر خوشی ہوئی۔', 'Meeting someone new', 'نئے شخص سے ملاقات', 4, '{"phrase": "Nice to meet you.", "urdu_meaning": "آپ سے مل کر خوشی ہوئی۔", "category": "greetings", "difficulty": "beginner"}', 4),
-('topic', '1.1.5', 7, 'What is your name?', 'آپ کا نام کیا ہے؟', 'Asking for name', 'نام پوچھنا', 5, '{"phrase": "What is your name?", "urdu_meaning": "آپ کا نام کیا ہے؟", "category": "introduction", "difficulty": "beginner"}', 5);
+-- 
+-- NOTE: Sample topic insertions have been moved to comprehensive_sample_insertions.sql
+-- Run that file separately for comprehensive sample data across all exercises.
+-- This keeps the table creation script clean and focused on structure only.
 
 -- =============================================================================
--- HELPER FUNCTIONS FOR HIERARCHY NAVIGATION
+-- ENHANCED HELPER FUNCTIONS FOR HIERARCHY NAVIGATION
 -- =============================================================================
 
--- Function to get all stages
-CREATE OR REPLACE FUNCTION get_all_stages()
+-- Function to get all stages with exercise counts
+CREATE OR REPLACE FUNCTION get_all_stages_with_counts()
 RETURNS TABLE (
     stage_id INTEGER,
     stage_number INTEGER,
@@ -145,26 +158,67 @@ RETURNS TABLE (
     title_urdu TEXT,
     description TEXT,
     difficulty_level TEXT,
-    stage_order INTEGER
+    stage_order INTEGER,
+    exercise_count BIGINT,
+    topic_count BIGINT
 ) AS $$
 BEGIN
     RETURN QUERY
     SELECT 
-        h.id,
-        h.stage_number,
-        h.title,
-        h.title_urdu,
-        h.description,
-        h.difficulty_level,
-        h.stage_order
-    FROM public.ai_tutor_content_hierarchy h
-    WHERE h.level = 'stage'
-    ORDER BY h.stage_order;
+        s.id,
+        s.stage_number,
+        s.title,
+        s.title_urdu,
+        s.description,
+        s.difficulty_level,
+        s.stage_order,
+        COUNT(DISTINCT e.id) as exercise_count,
+        COUNT(DISTINCT t.id) as topic_count
+    FROM public.ai_tutor_content_hierarchy s
+    LEFT JOIN public.ai_tutor_content_hierarchy e ON e.parent_id = s.id AND e.level = 'exercise'
+    LEFT JOIN public.ai_tutor_content_hierarchy t ON t.parent_id = e.id AND t.level = 'topic'
+    WHERE s.level = 'stage'
+    GROUP BY s.id, s.stage_number, s.title, s.title_urdu, s.description, s.difficulty_level, s.stage_order
+    ORDER BY s.stage_order;
 END;
 $$ LANGUAGE plpgsql;
 
--- Function to get exercises for a specific stage
-CREATE OR REPLACE FUNCTION get_exercises_for_stage(stage_num INTEGER)
+-- Function to get all exercises with details (including stage number)
+CREATE OR REPLACE FUNCTION get_all_exercises_with_details()
+RETURNS TABLE (
+    exercise_id INTEGER,
+    stage_number INTEGER,
+    exercise_number INTEGER,
+    title TEXT,
+    title_urdu TEXT,
+    description TEXT,
+    exercise_type TEXT,
+    exercise_order INTEGER,
+    topic_count BIGINT
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        e.id,
+        s.stage_number,
+        e.exercise_number,
+        e.title,
+        e.title_urdu,
+        e.description,
+        e.exercise_type,
+        e.exercise_order,
+        COUNT(t.id) as topic_count
+    FROM public.ai_tutor_content_hierarchy e
+    JOIN public.ai_tutor_content_hierarchy s ON e.parent_id = s.id AND s.level = 'stage'
+    LEFT JOIN public.ai_tutor_content_hierarchy t ON t.parent_id = e.id AND t.level = 'topic'
+    WHERE e.level = 'exercise'
+    GROUP BY e.id, s.stage_number, e.exercise_number, e.title, e.title_urdu, e.description, e.exercise_type, e.exercise_order
+    ORDER BY s.stage_number, e.exercise_order;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function to get exercises for a specific stage with topic counts
+CREATE OR REPLACE FUNCTION get_exercises_for_stage_with_counts(stage_num INTEGER)
 RETURNS TABLE (
     exercise_id INTEGER,
     exercise_number INTEGER,
@@ -172,30 +226,34 @@ RETURNS TABLE (
     title_urdu TEXT,
     description TEXT,
     exercise_type TEXT,
-    exercise_order INTEGER
+    exercise_order INTEGER,
+    topic_count BIGINT
 ) AS $$
 BEGIN
     RETURN QUERY
     SELECT 
-        h.id,
-        h.exercise_number,
-        h.title,
-        h.title_urdu,
-        h.description,
-        h.exercise_type,
-        h.exercise_order
-    FROM public.ai_tutor_content_hierarchy h
-    WHERE h.level = 'exercise' 
-    AND h.parent_id = (
+        e.id,
+        e.exercise_number,
+        e.title,
+        e.title_urdu,
+        e.description,
+        e.exercise_type,
+        e.exercise_order,
+        COUNT(t.id) as topic_count
+    FROM public.ai_tutor_content_hierarchy e
+    LEFT JOIN public.ai_tutor_content_hierarchy t ON t.parent_id = e.id AND t.level = 'topic'
+    WHERE e.level = 'exercise' 
+    AND e.parent_id = (
         SELECT id FROM public.ai_tutor_content_hierarchy 
         WHERE level = 'stage' AND stage_number = stage_num
     )
-    ORDER BY h.exercise_order;
+    GROUP BY e.id, e.exercise_number, e.title, e.title_urdu, e.description, e.exercise_type, e.exercise_order
+    ORDER BY e.exercise_order;
 END;
 $$ LANGUAGE plpgsql;
 
--- Function to get topics for a specific exercise
-CREATE OR REPLACE FUNCTION get_topics_for_exercise(stage_num INTEGER, exercise_num INTEGER)
+-- Function to get topics for a specific exercise with full data
+CREATE OR REPLACE FUNCTION get_topics_for_exercise_full(stage_num INTEGER, exercise_num INTEGER)
 RETURNS TABLE (
     topic_id INTEGER,
     topic_number INTEGER,
@@ -203,21 +261,25 @@ RETURNS TABLE (
     title_urdu TEXT,
     description TEXT,
     topic_data JSONB,
-    topic_order INTEGER
+    topic_order INTEGER,
+    category TEXT,
+    difficulty TEXT
 ) AS $$
 BEGIN
     RETURN QUERY
     SELECT 
-        h.id,
-        h.topic_number,
-        h.title,
-        h.title_urdu,
-        h.description,
-        h.topic_data,
-        h.topic_order
-    FROM public.ai_tutor_content_hierarchy h
-    WHERE h.level = 'topic' 
-    AND h.parent_id = (
+        t.id,
+        t.topic_number,
+        t.title,
+        t.title_urdu,
+        t.description,
+        t.topic_data,
+        t.topic_order,
+        t.category,
+        t.difficulty
+    FROM public.ai_tutor_content_hierarchy t
+    WHERE t.level = 'topic' 
+    AND t.parent_id = (
         SELECT id FROM public.ai_tutor_content_hierarchy 
         WHERE level = 'exercise' 
         AND parent_id = (
@@ -226,7 +288,39 @@ BEGIN
         )
         AND exercise_number = exercise_num
     )
-    ORDER BY h.topic_order;
+    ORDER BY t.topic_order;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function to search topics by content
+CREATE OR REPLACE FUNCTION search_topics_by_content(search_term TEXT)
+RETURNS TABLE (
+    topic_id INTEGER,
+    hierarchy_path TEXT,
+    title TEXT,
+    title_urdu TEXT,
+    topic_data JSONB,
+    category TEXT,
+    difficulty TEXT
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        t.id,
+        t.hierarchy_path,
+        t.title,
+        t.title_urdu,
+        t.topic_data,
+        t.category,
+        t.difficulty
+    FROM public.ai_tutor_content_hierarchy t
+    WHERE t.level = 'topic'
+    AND (
+        t.title ILIKE '%' || search_term || '%'
+        OR t.title_urdu ILIKE '%' || search_term || '%'
+        OR t.topic_data::TEXT ILIKE '%' || search_term || '%'
+    )
+    ORDER BY t.hierarchy_path;
 END;
 $$ LANGUAGE plpgsql;
 
@@ -250,33 +344,57 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated;
 -- VERIFICATION QUERIES
 -- =============================================================================
 
--- Verify the hierarchical structure
+-- Verify the hierarchical structure (stages and exercises only)
 SELECT 'HIERARCHICAL STRUCTURE OVERVIEW:' as info;
 
--- Show all stages
-SELECT 'STAGES:' as level, stage_number, title, title_urdu, difficulty_level 
-FROM public.ai_tutor_content_hierarchy 
-WHERE level = 'stage' 
-ORDER BY stage_order;
+-- Show all stages with exercise counts (no topics yet)
+SELECT 
+    s.id,
+    s.stage_number,
+    s.title,
+    s.title_urdu,
+    s.description,
+    s.difficulty_level,
+    s.stage_order,
+    COUNT(DISTINCT e.id) as exercise_count
+FROM public.ai_tutor_content_hierarchy s
+LEFT JOIN public.ai_tutor_content_hierarchy e ON e.parent_id = s.id AND e.level = 'exercise'
+WHERE s.level = 'stage'
+GROUP BY s.id, s.stage_number, s.title, s.title_urdu, s.description, s.difficulty_level, s.stage_order
+ORDER BY s.stage_order;
 
 -- Show exercises for Stage 1
-SELECT 'STAGE 1 EXERCISES:' as level, exercise_number, title, title_urdu, exercise_type 
+SELECT 'STAGE 1 EXERCISES:' as info;
+SELECT 
+    e.id,
+    e.exercise_number,
+    e.title,
+    e.title_urdu,
+    e.description,
+    e.exercise_type,
+    e.exercise_order
+FROM public.ai_tutor_content_hierarchy e
+WHERE e.level = 'exercise' 
+AND e.parent_id = (
+    SELECT id FROM public.ai_tutor_content_hierarchy 
+    WHERE level = 'stage' AND stage_number = 1
+)
+ORDER BY e.exercise_order;
+
+-- Verify table structure is ready for topic insertions
+SELECT 'TABLE STRUCTURE READY FOR TOPIC INSERTIONS:' as info;
+SELECT 
+    'Stages created:' as info,
+    COUNT(*) as count
 FROM public.ai_tutor_content_hierarchy 
-WHERE level = 'exercise' AND parent_id = 1 
-ORDER BY exercise_order;
-
--- Show topics for Stage 1, Exercise 1
-SELECT 'STAGE 1 EXERCISE 1 TOPICS:' as level, topic_number, title, title_urdu, topic_data 
+WHERE level = 'stage'
+UNION ALL
+SELECT 
+    'Exercises created:' as info,
+    COUNT(*) as count
 FROM public.ai_tutor_content_hierarchy 
-WHERE level = 'topic' AND parent_id = 7 
-ORDER BY topic_order;
-
--- Test helper functions
-SELECT 'Testing get_all_stages():' as test;
-SELECT * FROM get_all_stages();
-
-SELECT 'Testing get_exercises_for_stage(1):' as test;
-SELECT * FROM get_exercises_for_stage(1);
-
-SELECT 'Testing get_topics_for_exercise(1, 1):' as test;
-SELECT * FROM get_topics_for_exercise(1, 1);
+WHERE level = 'exercise'
+UNION ALL
+SELECT 
+    'Topics ready for insertion:' as info,
+    0 as count;

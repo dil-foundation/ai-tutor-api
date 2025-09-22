@@ -6,15 +6,14 @@ import json
 import os
 import base64
 from io import BytesIO
+from fastapi.concurrency import run_in_threadpool
 from app.services.tts import synthesize_speech, synthesize_speech_exercises
 from app.services.stt import transcribe_audio_bytes_eng_only
 from app.services.feedback import evaluate_response_ex3_stage5
-from app.supabase_client import progress_tracker
+from app.supabase_client import supabase, progress_tracker
 from app.auth_middleware import get_current_user, require_student,require_admin_or_teacher_or_student
 
 router = APIRouter()
-
-IN_DEPTH_INTERVIEW_FILE = os.path.join(os.path.dirname(__file__), '..', 'data', 'stage5_exercise3.json')
 
 class AudioEvaluationRequest(BaseModel):
     audio_base64: str
@@ -24,20 +23,38 @@ class AudioEvaluationRequest(BaseModel):
     time_spent_seconds: int
     urdu_used: bool
 
-def get_prompt_by_id(prompt_id: int):
-    print(f"🔍 [PROMPT] Looking for prompt with ID: {prompt_id}")
+async def get_prompt_by_id_from_db(prompt_id: int):
+    """Fetch an in-depth interview prompt from Supabase by its topic_number for Stage 5, Exercise 3."""
+    print(f"🔍 [DB] Looking for prompt with topic_number (ID): {prompt_id} for Stage 5, Exercise 3")
     try:
-        with open(IN_DEPTH_INTERVIEW_FILE, 'r', encoding='utf-8') as f:
-            prompts = json.load(f)
-            print(f"📖 [PROMPT] Loaded {len(prompts)} prompts from file")
-            for prompt in prompts:
-                if prompt['id'] == prompt_id:
-                    print(f"✅ [PROMPT] Found prompt: {prompt['question']}")
-                    return prompt  # Return the full prompt object
-            print(f"❌ [PROMPT] Prompt with ID {prompt_id} not found")
+        # parent_id for Stage 5, Exercise 3 ('Professional Interview Mastery') is 21.
+        query = supabase.table("ai_tutor_content_hierarchy").select("id, topic_number, title, topic_data, category, difficulty").eq("level", "topic").eq("parent_id", 21).eq("topic_number", prompt_id).single()
+        response = await run_in_threadpool(query.execute)
+        
+        if response.data:
+            db_item = response.data
+            topic_data = db_item.get("topic_data", {})
+            
+            formatted_item = {
+                "id": db_item.get("topic_number"),
+                "db_id": db_item.get("id"),
+                "question": db_item.get("title"),
+                "category": db_item.get("category"),
+                "difficulty": db_item.get("difficulty"),
+                "question_type": topic_data.get("question_type"),
+                "expected_structure": topic_data.get("expected_structure"),
+                "expected_keywords": topic_data.get("expected_keywords", []),
+                "vocabulary_focus": topic_data.get("vocabulary_focus", []),
+                "model_answer": topic_data.get("model_answer"),
+                "evaluation_criteria": topic_data.get("evaluation_criteria", {})
+            }
+            print(f"✅ [DB] Found prompt: {formatted_item['question']}")
+            return formatted_item
+        else:
+            print(f"❌ [DB] Prompt with topic_number {prompt_id} not found for parent_id 21")
             return None
     except Exception as e:
-        print(f"❌ [PROMPT] Error reading prompt file: {str(e)}")
+        print(f"❌ [DB] Error fetching prompt from Supabase: {str(e)}")
         return None
 
 
@@ -46,16 +63,21 @@ async def check_exercise_completion(user_id: str) -> dict:
     print(f"🔍 [COMPLETION] Checking exercise completion for user: {user_id}")
     
     try:
-        # Get total prompts count
-        prompts = []
+        # Get total prompts count from Supabase
+        total_topics = 0
         try:
-            with open(IN_DEPTH_INTERVIEW_FILE, 'r', encoding='utf-8') as f:
-                prompts = json.load(f)
+            # parent_id for 'Professional Interview Mastery' is 21
+            query = supabase.table("ai_tutor_content_hierarchy").select("id", count="exact").eq("level", "topic").eq("parent_id", 21)
+            response = await run_in_threadpool(query.execute)
+            if response.count is not None:
+                total_topics = response.count
+                print(f"📊 [COMPLETION] Total prompts available from DB: {total_topics}")
+            else:
+                print("⚠️ [COMPLETION] Could not get count from Supabase, falling back to default.")
+                total_topics = 7
         except Exception as e:
-            print(f"❌ [COMPLETION] Error reading prompts file: {str(e)}")
-        
-        total_topics = len(prompts)
-        print(f"📊 [COMPLETION] Total prompts available: {total_topics}")
+            print(f"❌ [COMPLETION] Error getting prompt count from DB: {str(e)}")
+            total_topics = 7
         
         # Get user's progress for stage 5, exercise 3
         progress_result = await progress_tracker.get_user_topic_progress(
@@ -140,14 +162,29 @@ async def get_all_prompts(current_user: Dict[str, Any] = Depends(require_admin_o
     print("🔄 [API] GET /in-depth-interview-prompts endpoint called")
     print(f"👤 [API] Authenticated user: {current_user['email']}")
     try:
-        print(f"📁 [API] Reading prompt file from: {IN_DEPTH_INTERVIEW_FILE}")
-        with open(IN_DEPTH_INTERVIEW_FILE, 'r', encoding='utf-8') as f:
-            prompts = json.load(f)
-        print(f"✅ [API] Successfully loaded {len(prompts)} prompts")
-        return {"prompts": prompts}
+        print("🔄 [DB] Fetching all prompts for Stage 5, Exercise 3 from Supabase")
+        # parent_id for 'Professional Interview Mastery' is 21
+        query = supabase.table("ai_tutor_content_hierarchy").select("id, topic_number, title, topic_data, category, difficulty").eq("level", "topic").eq("parent_id", 21).order("topic_number", desc=False)
+        response = await run_in_threadpool(query.execute)
+
+        if response.data:
+            prompts = []
+            for item in response.data:
+                prompts.append({
+                    "id": item.get("topic_number"),
+                    "db_id": item.get("id"),
+                    "question": item.get("title"),
+                    "category": item.get("category"),
+                    "difficulty": item.get("difficulty"),
+                })
+            print(f"✅ [DB] Successfully loaded {len(prompts)} prompts from Supabase")
+            return {"prompts": prompts}
+        else:
+            print("❌ [DB] No prompts found for Stage 5, Exercise 3")
+            return {"prompts": []}
     except Exception as e:
         print(f"❌ [API] Error in get_all_prompts: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to load prompts: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to load prompts from database: {str(e)}")
 
 @router.get("/in-depth-interview-prompts/{prompt_id}")
 async def get_prompt(
@@ -158,23 +195,12 @@ async def get_prompt(
     print(f"🔄 [API] GET /in-depth-interview-prompts/{prompt_id} endpoint called")
     print(f"👤 [API] Authenticated user: {current_user['email']}")
     try:
-        prompt_data = get_prompt_by_id(prompt_id)
+        prompt_data = await get_prompt_by_id_from_db(prompt_id)
         if not prompt_data:
             print(f"❌ [API] Prompt {prompt_id} not found")
             raise HTTPException(status_code=404, detail="Prompt not found")
         print(f"✅ [API] Returning prompt: {prompt_data['question']}")
-        return {
-            "id": prompt_data['id'],
-            "question": prompt_data['question'],
-            "category": prompt_data['category'],
-            "difficulty": prompt_data['difficulty'],
-            "question_type": prompt_data['question_type'],
-            "expected_structure": prompt_data['expected_structure'],
-            "expected_keywords": prompt_data['expected_keywords'],
-            "vocabulary_focus": prompt_data['vocabulary_focus'],
-            "model_answer": prompt_data['model_answer'],
-            "evaluation_criteria": prompt_data['evaluation_criteria']
-        }
+        return prompt_data
     except HTTPException:
         raise
     except Exception as e:
@@ -198,7 +224,7 @@ async def in_depth_interview(
     print(f"🔄 [API] POST /in-depth-interview/{prompt_id} endpoint called")
     print(f"👤 [API] Authenticated user: {current_user['email']}")
     try:
-        prompt_data = get_prompt_by_id(prompt_id)
+        prompt_data = await get_prompt_by_id_from_db(prompt_id)
         if not prompt_data:
             print(f"❌ [API] Prompt {prompt_id} not found")
             raise HTTPException(status_code=404, detail="Prompt not found")
@@ -249,7 +275,7 @@ async def evaluate_in_depth_interview(
     
     try:
         # Get the expected prompt and keywords
-        prompt_data = get_prompt_by_id(request.prompt_id)
+        prompt_data = await get_prompt_by_id_from_db(request.prompt_id)
         if not prompt_data:
             print(f"❌ [API] Prompt {request.prompt_id} not found")
             raise HTTPException(status_code=404, detail="Prompt not found")
@@ -357,7 +383,7 @@ async def evaluate_in_depth_interview(
                         user_id=request.user_id,
                         stage_id=5,  # Stage 5
                         exercise_id=3,  # Exercise 3 (In-Depth Interview)
-                        topic_id=request.prompt_id,
+                        topic_id=prompt_data['id'],
                         score=float(score),
                         urdu_used=request.urdu_used,
                         time_spent_seconds=time_spent,

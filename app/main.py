@@ -54,6 +54,8 @@ from app.routes import (
 )
 from .services.settings_manager import get_ai_settings
 from .services.safety_manager import get_ai_safety_settings
+from .supabase_client import progress_tracker
+from .cache import load_content_cache
 
 
 from fastapi import FastAPI
@@ -109,6 +111,10 @@ async def startup_event():
     # Proactively fetch and cache AI Safety & Ethics settings on startup
     print("🛡️ [STARTUP] Initializing AI Safety & Ethics settings...")
     await get_ai_safety_settings()
+
+    # Proactively load content hierarchy into cache
+    print("📚 [STARTUP] Loading content hierarchy into cache...")
+    await load_content_cache(progress_tracker)
     
     print("📊 [STARTUP] Features enabled:")
     print("   - Progress Tracking System")
