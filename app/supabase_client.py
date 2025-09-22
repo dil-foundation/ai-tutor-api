@@ -531,17 +531,21 @@ class SupabaseProgressTracker:
                 # Create new exercise progress record
                 current_timestamp = datetime.now().isoformat()
                 
+                # Fetch topic details to get the correct topic_number
+                topic_details = self.client.table('ai_tutor_content_hierarchy').select('topic_number').eq('id', topic_id).single().execute()
+                topic_number = topic_details.data.get('topic_number', 1) if topic_details.data else 1
+                
                 # Determine initial topic_id based on completion
-                initial_topic_id = topic_id or 1
+                initial_topic_id = topic_number
                 # Use different thresholds for different exercises
                 if exercise_id == 3:  # Problem-solving exercise
-                    if score >= 60 and topic_id:
+                    if score >= 60:
                         # If topic was completed successfully, start with next topic
-                        initial_topic_id = topic_id + 1
+                        initial_topic_id = topic_number + 1
                 else:
-                    if score >= 80 and topic_id:
+                    if score >= 80:
                         # If topic was completed successfully, start with next topic
-                        initial_topic_id = topic_id + 1
+                        initial_topic_id = topic_number + 1
                 
                 new_exercise_data = {
                     "user_id": user_id,
@@ -634,6 +638,10 @@ class SupabaseProgressTracker:
             # Update current_topic_id based on topic completion
             current_topic_id = exercise_data.get('current_topic_id', 1)
             
+            # Fetch topic details to get the correct topic_number
+            topic_details = self.client.table('ai_tutor_content_hierarchy').select('topic_number').eq('id', topic_id).single().execute()
+            topic_number = topic_details.data.get('topic_number', 1) if topic_details.data else 1
+            
             # Check if this topic was completed successfully
             # Use different thresholds for different exercises
             if exercise_id == 3:  # Problem-solving exercise
@@ -641,15 +649,15 @@ class SupabaseProgressTracker:
             else:
                 topic_completed = score >= 80  # 80% threshold for other exercises
             
-            if topic_completed:
+            if topic_completed and topic_number >= current_topic_id:
                 # Increment topic_id for next topic when current topic is completed
-                next_topic_id = current_topic_id + 1
+                next_topic_id = topic_number + 1
                 update_data["current_topic_id"] = next_topic_id
-                print(f"🎉 [EXERCISE] Topic {current_topic_id} completed! Moving to topic {next_topic_id}")
-            elif topic_id and topic_id > current_topic_id:
+                print(f"🎉 [EXERCISE] Topic {topic_number} completed! Moving to topic {next_topic_id}")
+            elif topic_id and topic_number > current_topic_id:
                 # Update topic_id if user is working on a higher topic
-                update_data["current_topic_id"] = topic_id
-                print(f"📝 [EXERCISE] Updated current_topic_id to {topic_id}")
+                update_data["current_topic_id"] = topic_number
+                print(f"📝 [EXERCISE] Updated current_topic_id to {topic_number}")
             
             # Check if exercise is completed (3 consecutive scores >= 80)
             if completed and not exercise_data.get('completed_at'):
@@ -868,6 +876,23 @@ class SupabaseProgressTracker:
             logger.error(f"Error getting current topic: {str(e)}")
             return {"success": False, "error": str(e)}
     
+    async def get_user_topic_progress_all(self, user_id: str) -> dict:
+        """Get all topic progress for a user."""
+        print(f"🔄 [TOPIC_PROGRESS] Getting all topic progress for user {user_id}")
+        try:
+            if not user_id or not user_id.strip():
+                raise ValueError("User ID is required")
+            
+            result = self.client.table('ai_tutor_user_topic_progress').select('stage_id, exercise_id, topic_id, completed').eq('user_id', user_id).execute()
+            
+            print(f"📊 [TOPIC_PROGRESS] Found {len(result.data)} total topic records for user.")
+            return {"success": True, "data": result.data}
+            
+        except Exception as e:
+            print(f"❌ [TOPIC_PROGRESS] Error getting all topic progress: {str(e)}")
+            logger.error(f"Error getting all topic progress for user {user_id}: {str(e)}")
+            return {"success": False, "error": str(e)}
+
     async def get_user_topic_progress(self, user_id: str, stage_id: int, exercise_id: int) -> dict:
         """Get user's topic progress for a specific stage and exercise"""
         print(f"🔄 [TOPIC_PROGRESS] Getting topic progress for user {user_id}")

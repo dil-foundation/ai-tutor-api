@@ -317,6 +317,14 @@ async def get_comprehensive_progress(
         exercises = progress_data.get("exercises", [])
         unlocks = progress_data.get("unlocks", [])
         
+        # ADDED: Fetch detailed topic progress
+        print(f"🔄 [API] Fetching detailed topic progress for user: {request.user_id}")
+        topic_progress_result = await progress_tracker.get_user_topic_progress_all(request.user_id)
+        if not topic_progress_result["success"]:
+            raise HTTPException(status_code=500, detail="Failed to get topic progress.")
+        topic_progress = topic_progress_result.get("data", [])
+        print(f"📊 [API] Found {len(topic_progress)} completed topic records.")
+        
         print(f"📊 [API] Data summary:")
         print(f"   - Summary exists: {summary is not None}")
         print(f"   - Stages count: {len(stages)}")
@@ -324,7 +332,7 @@ async def get_comprehensive_progress(
         print(f"   - Unlocks count: {len(unlocks)}")
         
         # Process and structure the data for frontend
-        processed_data = await _process_progress_data_for_frontend(summary, stages, exercises, unlocks)
+        processed_data = await _process_progress_data_for_frontend(summary, stages, exercises, unlocks, topic_progress)
         
         print(f"✅ [API] Comprehensive progress data processed successfully")
         return ProgressResponse(
@@ -338,7 +346,7 @@ async def get_comprehensive_progress(
         logger.error(f"Error in get_comprehensive_progress: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
-async def _process_progress_data_for_frontend(summary: dict, stages: list, exercises: list, unlocks: list) -> dict:
+async def _process_progress_data_for_frontend(summary: dict, stages: list, exercises: list, unlocks: list, topic_progress: list) -> dict:
     """Process raw progress data into frontend-friendly format"""
     print(f"🔄 [PROCESS] Processing progress data for frontend")
     
@@ -402,28 +410,34 @@ async def _process_progress_data_for_frontend(summary: dict, stages: list, exerc
                 exercise_data = next((e for e in exercises if e.get('stage_id') == stage_id and e.get('exercise_id') == exercise_id), None)
                 
                 exercise_name = exercise_info_db['title']
-                exercise_topics = exercise_info_db['topic_count']
+                exercise_topics_count = exercise_info_db['topic_count'] # Renamed for clarity
                 exercise_status = "locked"
                 exercise_progress = 0
                 exercise_attempts = 0
-                exercise_completed_topics = 0
+
+                # MODIFIED: Calculate completed topics from detailed progress
+                completed_topics_for_exercise = {
+                    tp['topic_id'] for tp in topic_progress 
+                    if tp['stage_id'] == stage_id and tp['exercise_id'] == exercise_id and tp['completed']
+                }
+                exercise_completed_topics = len(completed_topics_for_exercise)
                 
-                stage_total_topics += exercise_topics
+                stage_total_topics += exercise_topics_count
                 
                 if exercise_data:
                     exercise_attempts = exercise_data.get('attempts', 0)
-                    current_topic_id = exercise_data.get('current_topic_id', 1)
                     
                     if exercise_data.get('completed_at'):
                         exercise_status = "completed"
-                        exercise_completed_topics = exercise_topics
+                        # Ensure completed topics count matches total topics if exercise is marked complete
+                        exercise_completed_topics = exercise_topics_count
                         exercise_progress = 100
                         stage_completed_exercises += 1
                         total_completed_exercises += 1
                     elif exercise_attempts > 0:
                         exercise_status = "in_progress"
-                        exercise_completed_topics = min(current_topic_id - 1, exercise_topics)
-                        exercise_progress = (exercise_completed_topics / exercise_topics) * 100 if exercise_topics > 0 else 0
+                        # Progress based on actual completed topics
+                        exercise_progress = (exercise_completed_topics / exercise_topics_count) * 100 if exercise_topics_count > 0 else 0
                     
                     stage_completed_topics += exercise_completed_topics
                     
@@ -437,7 +451,7 @@ async def _process_progress_data_for_frontend(summary: dict, stages: list, exerc
                     "status": exercise_status,
                     "progress": exercise_progress,
                     "attempts": exercise_attempts,
-                    "topics": exercise_topics,
+                    "topics": exercise_topics_count,
                     "completed_topics": exercise_completed_topics
                 })
             
