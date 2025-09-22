@@ -30,12 +30,15 @@ async def assess_english_proficiency(text: str) -> int:
         
         system_prompt = """
         You are an expert English language proficiency evaluator. Your task is to assess a user's 
-        self-described English proficiency and assign them a starting stage from 0 to 3.
+        self-described English proficiency and assign them a starting stage from 0 to 6.
         The stages are defined as follows:
-        - Stage 0 (A1): Absolute beginner, knows only a few words or simple phrases.
-        - Stage 1 (A2-B1): Can handle basic conversations, simple sentences, and common topics.
-        - Stage 2 (B2): Intermediate to upper-intermediate, can understand main ideas of complex text, can interact with a degree of fluency.
-        - Stage 3 (C1-C2): Advanced, can express ideas fluently and spontaneously, can use language flexibly for social, academic, and professional purposes.
+        - Stage 0 (A1): Absolute beginner, knows only a few words or simple phrases. For users who write "I don't know English" or similar.
+        - Stage 1 (A1/A2): Foundation Speaking. Can handle basic conversation skills and pronunciation.
+        - Stage 2 (A2): Daily Communication. Can handle practical daily life conversations and routine expressions.
+        - Stage 3 (B1): Storytelling & Discussion. Has narrative skills and can participate in group discussions.
+        - Stage 4 (B2): Professional Communication. Can handle business and professional communication.
+        - Stage 5 (C1): Advanced Debate & Analysis. Can handle complex argumentation and academic presentations.
+        - Stage 6 (C2): Mastery & Diplomacy. Can use language flexibly and spontaneously for all purposes.
 
         Analyze the provided text for grammatical accuracy, vocabulary range, sentence structure, and overall coherence.
         Based on your analysis, return a single integer for the most appropriate starting stage.
@@ -57,14 +60,12 @@ async def assess_english_proficiency(text: str) -> int:
 
         response_content = response.choices[0].message.content
         logger.info(f"OpenAI response received: {response_content}")
-        
-        print(f"OpenAI response received: {response_content}")
-        
+
         if response_content:
             data = json.loads(response_content)
             assigned_stage = data.get("assigned_stage")
 
-            if isinstance(assigned_stage, int) and 0 <= assigned_stage <= 3:
+            if isinstance(assigned_stage, int) and 0 <= assigned_stage <= 6:
                 logger.info(f"Successfully assigned stage: {assigned_stage}")
                 return assigned_stage
             else:
