@@ -302,10 +302,10 @@ class SupabaseProgressTracker:
             current_timestamp = datetime.now().isoformat()
             
             # Treat stage 0 as stage 1 for progress setup, but store original assignment
-            start_stage = assigned_start_stage if assigned_start_stage > 0 else 1
+            start_stage = assigned_start_stage
             
-            completed_stages = list(range(1, start_stage))
-            unlocked_stages = list(range(1, start_stage + 1))
+            completed_stages = list(range(0, start_stage))
+            unlocked_stages = list(range(0, start_stage + 1))
             
             unlocked_exercises_map = {}
             total_exercises_completed = 0
@@ -433,10 +433,12 @@ class SupabaseProgressTracker:
             if not user_id or not user_id.strip():
                 raise ValueError("User ID is required")
             
-            if not (1 <= stage_id <= 6):
-                raise ValueError(f"Invalid stage_id: {stage_id}. Must be between 1 and 6")
+            if not (0 <= stage_id <= 6):
+                raise ValueError(f"Invalid stage_id: {stage_id}. Must be between 0 and 6")
             
-            if not (1 <= exercise_id <= 3):
+            if not (1 <= exercise_id <= 5) and stage_id == 0: # Stage 0 has 5 lessons
+                 raise ValueError(f"Invalid exercise_id for Stage 0: {exercise_id}. Must be between 1 and 5")
+            elif not (1 <= exercise_id <= 3) and stage_id > 0:
                 raise ValueError(f"Invalid exercise_id: {exercise_id}. Must be between 1 and 3")
             
             if not (1 <= topic_id <= 100):  # Reasonable topic range
@@ -531,27 +533,27 @@ class SupabaseProgressTracker:
                 # Create new exercise progress record
                 current_timestamp = datetime.now().isoformat()
                 
-                # Fetch topic details to get the correct topic_number
-                topic_details = self.client.table('ai_tutor_content_hierarchy').select('topic_number').eq('id', topic_id).single().execute()
-                topic_number = topic_details.data.get('topic_number', 1) if topic_details.data else 1
+                # The topic_id passed to this function IS the topic_number.
+                # No need to query the database for it again.
+                topic_number = topic_id if topic_id is not None else 1
                 
                 # Determine initial topic_id based on completion
-                initial_topic_id = topic_number
+                next_topic_id = topic_number
                 # Use different thresholds for different exercises
                 if exercise_id == 3:  # Problem-solving exercise
                     if score >= 60:
                         # If topic was completed successfully, start with next topic
-                        initial_topic_id = topic_number + 1
+                        next_topic_id = topic_number + 1
                 else:
                     if score >= 80:
                         # If topic was completed successfully, start with next topic
-                        initial_topic_id = topic_number + 1
+                        next_topic_id = topic_number + 1
                 
                 new_exercise_data = {
                     "user_id": user_id,
                     "stage_id": stage_id,
                     "exercise_id": exercise_id,
-                    "current_topic_id": initial_topic_id,
+                    "current_topic_id": next_topic_id,
                     "attempts": 1,
                     "scores": [score],
                     "last_5_scores": [score],
@@ -638,9 +640,8 @@ class SupabaseProgressTracker:
             # Update current_topic_id based on topic completion
             current_topic_id = exercise_data.get('current_topic_id', 1)
             
-            # Fetch topic details to get the correct topic_number
-            topic_details = self.client.table('ai_tutor_content_hierarchy').select('topic_number').eq('id', topic_id).single().execute()
-            topic_number = topic_details.data.get('topic_number', 1) if topic_details.data else 1
+            # The topic_id passed in is the topic_number, so we use it directly.
+            topic_number = topic_id if topic_id is not None else 1
             
             # Check if this topic was completed successfully
             # Use different thresholds for different exercises
@@ -818,10 +819,12 @@ class SupabaseProgressTracker:
             if not user_id or not user_id.strip():
                 raise ValueError("User ID is required")
             
-            if not (1 <= stage_id <= 6):
-                raise ValueError(f"Invalid stage_id: {stage_id}. Must be between 1 and 6")
+            if not (0 <= stage_id <= 6):
+                raise ValueError(f"Invalid stage_id: {stage_id}. Must be between 0 and 6")
             
-            if not (1 <= exercise_id <= 3):
+            if not (1 <= exercise_id <= 5) and stage_id == 0: # Stage 0 has 5 lessons
+                 raise ValueError(f"Invalid exercise_id for Stage 0: {exercise_id}. Must be between 1 and 5")
+            elif not (1 <= exercise_id <= 3) and stage_id > 0:
                 raise ValueError(f"Invalid exercise_id: {exercise_id}. Must be between 1 and 3")
             
             # Get exercise progress
@@ -876,6 +879,53 @@ class SupabaseProgressTracker:
             logger.error(f"Error getting current topic: {str(e)}")
             return {"success": False, "error": str(e)}
     
+    async def complete_lesson(self, user_id: str, stage_id: int, exercise_id: int) -> dict:
+        """
+        Records the completion of a Stage 0 lesson by marking all its topics as complete.
+        """
+        print(f"🔄 [LESSON] Recording completion for user {user_id}, Stage {stage_id}, Lesson {exercise_id}")
+        if stage_id != 0:
+            return {"success": False, "error": "This function is only for Stage 0 lessons."}
+
+        try:
+            # Fetch all topics for the specified lesson (exercise)
+            topics_result = self.client.rpc('get_topics_for_exercise_full', {'stage_num': stage_id, 'exercise_num': exercise_id}).execute()
+            if not topics_result.data:
+                logger.warning(f"No topics found for Stage {stage_id}, Exercise {exercise_id}. Cannot record completion.")
+                return {"success": True, "message": "No topics found for this lesson, nothing to complete."}
+            
+            topics = topics_result.data
+            print(f"📚 [LESSON] Found {len(topics)} topics to mark as complete for Lesson {exercise_id}.")
+
+            # Create a list of tasks to run concurrently
+            tasks = []
+            for topic in topics:
+                tasks.append(
+                    self.record_topic_attempt(
+                        user_id=user_id,
+                        stage_id=stage_id,
+                        exercise_id=exercise_id,
+                        topic_id=topic['topic_number'],
+                        score=100.0,
+                        urdu_used=False,
+                        time_spent_seconds=1, # Default value for instant completion
+                        completed=True
+                    )
+                )
+
+            # Run all topic recordings concurrently
+            await asyncio.gather(*tasks)
+
+            print(f"✅ [LESSON] Successfully recorded completion for Lesson {exercise_id} for user {user_id}")
+            return {"success": True, "message": f"Lesson {exercise_id} completed."}
+
+        except Exception as e:
+            import traceback
+            print(f"❌ [LESSON] Error completing lesson for {user_id}: {str(e)}")
+            print(f"Traceback: {traceback.format_exc()}")
+            logger.error(f"Error completing lesson for {user_id}: {str(e)}")
+            return {"success": False, "error": str(e)}
+
     async def get_user_topic_progress_all(self, user_id: str) -> dict:
         """Get all topic progress for a user."""
         print(f"🔄 [TOPIC_PROGRESS] Getting all topic progress for user {user_id}")

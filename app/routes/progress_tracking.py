@@ -31,6 +31,11 @@ class GetCurrentTopicRequest(BaseModel):
     stage_id: int
     exercise_id: int
 
+class LessonCompletionRequest(BaseModel):
+    user_id: str
+    stage_id: int
+    exercise_id: int
+
 class ProgressResponse(BaseModel):
     success: bool
     data: Optional[dict] = None
@@ -143,6 +148,42 @@ async def record_topic_attempt(
     except Exception as e:
         print(f"❌ [API] Error in record_topic_attempt: {str(e)}")
         logger.error(f"Error in record_topic_attempt: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+@router.post("/complete-lesson", response_model=ProgressResponse)
+async def complete_lesson(
+    request: LessonCompletionRequest,
+    current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)
+):
+    """Records the completion of a Stage 0 lesson."""
+    print(f"🔄 [API] POST /complete-lesson called for user {request.user_id}, stage {request.stage_id}, lesson {request.exercise_id}")
+    
+    # Verify user is accessing their own data
+    if request.user_id != current_user['id']:
+        raise HTTPException(status_code=403, detail="Unauthorized access to user data")
+        
+    try:
+        result = await progress_tracker.complete_lesson(
+            user_id=request.user_id,
+            stage_id=request.stage_id,
+            exercise_id=request.exercise_id
+        )
+        
+        if result["success"]:
+            # Check for content unlocks after completing the lesson
+            unlock_result = await progress_tracker.check_and_unlock_content(request.user_id)
+            unlocked_content = unlock_result.get("unlocked_content", [])
+            
+            return ProgressResponse(
+                success=True,
+                data={"unlocked_content": unlocked_content},
+                message=result.get("message", "Lesson completed successfully.")
+            )
+        else:
+            raise HTTPException(status_code=500, detail=result.get("error", "Failed to complete lesson."))
+
+    except Exception as e:
+        logger.error(f"Error in /complete-lesson endpoint: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @router.get("/user-progress/{user_id}", response_model=ProgressResponse)
