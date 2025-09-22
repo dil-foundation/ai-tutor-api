@@ -404,7 +404,7 @@ async def evaluate_audio(
                         user_id=request.user_id,
                         stage_id=1,  # Stage 1
                         exercise_id=1,  # Exercise 1 (Repeat After Me)
-                        topic_id=phrase_data['db_id'], # Use the actual database ID
+                        topic_id=phrase_data['id'], # Use the topic_number (e.g., 26)
                         score=float(score),
                         urdu_used=request.urdu_used,
                         time_spent_seconds=time_spent,

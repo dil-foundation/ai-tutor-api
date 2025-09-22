@@ -387,7 +387,7 @@ async def evaluate_critical_opinion(
                         user_id=request.user_id,
                         stage_id=6,  # Stage 6
                         exercise_id=3,  # Exercise 3 (Critical Opinion Builder)
-                        topic_id=topic_data['db_id'],
+                        topic_id=topic_data['id'],
                         score=float(score),
                         urdu_used=request.urdu_used,
                         time_spent_seconds=time_spent,

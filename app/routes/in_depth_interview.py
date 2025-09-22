@@ -383,7 +383,7 @@ async def evaluate_in_depth_interview(
                         user_id=request.user_id,
                         stage_id=5,  # Stage 5
                         exercise_id=3,  # Exercise 3 (In-Depth Interview)
-                        topic_id=prompt_data['db_id'],
+                        topic_id=prompt_data['id'],
                         score=float(score),
                         urdu_used=request.urdu_used,
                         time_spent_seconds=time_spent,

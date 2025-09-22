@@ -409,7 +409,7 @@ async def evaluate_group_dialogue(
                         user_id=request.user_id,
                         stage_id=3,  # Stage 3
                         exercise_id=2,  # Exercise 2 (Group Dialogue)
-                        topic_id=scenario_data['db_id'], # Use the actual database ID
+                        topic_id=scenario_data['id'], # Use the actual database ID
                         score=float(score),
                         urdu_used=request.urdu_used,
                         time_spent_seconds=time_spent,

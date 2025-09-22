@@ -359,7 +359,7 @@ async def evaluate_quick_answer_audio(
                 user_id=request.user_id,
                 stage_id=2,  # Stage 2
                 exercise_id=2,  # Exercise 2 (Quick Answer)
-                topic_id=question['db_id'], # Use the actual database ID
+                topic_id=question['id'], # Use the actual database ID
                 score=evaluation.get("score", 0),
                 urdu_used=request.urdu_used,
                 time_spent_seconds=request.time_spent_seconds,

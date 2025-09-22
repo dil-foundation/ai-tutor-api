@@ -382,7 +382,7 @@ async def evaluate_quick_response(
                         user_id=request.user_id,
                         stage_id=1,  # Stage 1
                         exercise_id=2,  # Exercise 2 (Quick Response)
-                        topic_id=prompt_data['db_id'], # Use the actual database ID
+                        topic_id=prompt_data['id'], # Use the topic_number (e.g., 1, 2, 3...)
                         score=float(score),
                         urdu_used=request.urdu_used,
                         time_spent_seconds=time_spent,

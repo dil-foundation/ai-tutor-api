@@ -386,7 +386,7 @@ async def evaluate_academic_presentation(
                         user_id=request.user_id,
                         stage_id=5,  # Stage 5
                         exercise_id=2,  # Exercise 2 (Academic Presentation)
-                        topic_id=topic_data['db_id'], # Use the actual database ID
+                        topic_id=topic_data['id'], # Use the actual database ID
                         score=float(score),
                         urdu_used=request.urdu_used,
                         time_spent_seconds=time_spent,

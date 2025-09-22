@@ -353,7 +353,7 @@ async def evaluate_mock_interview(
                 user_id=request.user_id,
                 stage_id=4,
                 exercise_id=2,
-                topic_id=question_data['db_id'], # Use the actual database ID
+                topic_id=question_data['id'], # Use the actual database ID
                 score=evaluation.get("score", 0),
                 urdu_used=request.urdu_used,
                 time_spent_seconds=adjusted_time_spent,

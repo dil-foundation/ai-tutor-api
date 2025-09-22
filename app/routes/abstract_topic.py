@@ -430,7 +430,7 @@ async def evaluate_abstract_topic(
                         user_id=request.user_id,
                         stage_id=4,  # Stage 4
                         exercise_id=1,  # Exercise 1 (Abstract Topic Monologue)
-                        topic_id=topic_data['db_id'], # Use the actual database ID
+                        topic_id=topic_data['id'], # Use the actual database ID
                         score=float(score),
                         urdu_used=request.urdu_used,
                         time_spent_seconds=time_spent,

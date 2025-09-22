@@ -423,7 +423,7 @@ async def evaluate_problem_solving(
                         user_id=request.user_id,
                         stage_id=3,  # Stage 3
                         exercise_id=3,  # Exercise 3 (Problem-Solving)
-                        topic_id=scenario_data['db_id'], # Use the actual database ID
+                        topic_id=scenario_data['id'], # Use the actual database ID
                         score=float(score),
                         urdu_used=request.urdu_used,
                         time_spent_seconds=time_spent,
