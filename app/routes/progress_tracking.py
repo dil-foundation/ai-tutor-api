@@ -429,7 +429,8 @@ async def _process_progress_data_for_frontend(summary: dict, stages: list, exerc
         total_completed_exercises = 0
         total_learning_units = 0
         total_completed_units = 0
-        
+        total_exercises_in_curriculum = 0
+
         print(f"🔄 [PROCESS] Calculating progress for {len(all_stages_db)} stages")
         
         for stage_data in all_stages_db:
@@ -497,7 +498,30 @@ async def _process_progress_data_for_frontend(summary: dict, stages: list, exerc
                 })
             
             stage_progress_percentage = (stage_completed_topics / stage_total_topics) * 100 if stage_total_topics > 0 else 0
-            stage_completed = stage_completed_exercises == len(exercises_in_stage_db) if exercises_in_stage_db else False
+            
+            # --- BEGIN FIX: Prioritize database 'completed' flag ---
+            # First, check if the stage is already marked as completed in the database record.
+            # This is important for users who start at a higher stage.
+            stage_completed_from_db = stage_progress.get('completed', False) if stage_progress else False
+            
+            # Second, if not marked in the DB, calculate completion based on exercises.
+            # This handles completion through normal gameplay.
+            stage_completed_by_exercises = stage_completed_exercises == len(exercises_in_stage_db) if exercises_in_stage_db else False
+
+            # The stage is considered complete if either condition is met.
+            stage_completed = stage_completed_from_db or stage_completed_by_exercises
+            
+            # If the stage was pre-completed, override the calculated progress to ensure it shows 100%.
+            if stage_completed_from_db and not stage_completed_by_exercises:
+                print(f"✅ [PROCESS] Stage {stage_id} was pre-completed. Overriding progress to 100%.")
+                stage_progress_percentage = 100.0
+                stage_completed_topics = stage_total_topics
+                stage_completed_exercises = len(exercises_in_stage_db)
+                # Also mark all exercises within this stage as completed for the UI.
+                for ex in stage_exercises:
+                    ex['status'] = 'completed'
+                    ex['progress'] = 100.0
+            # --- END FIX ---
             
             if stage_completed:
                 total_completed_stages += 1
@@ -528,7 +552,7 @@ async def _process_progress_data_for_frontend(summary: dict, stages: list, exerc
             })
         
         # Calculate overall progress using professional logic
-        overall_progress = (total_completed_units / total_learning_units) * 100 if total_learning_units > 0 else 0
+        overall_progress_percentage = (total_completed_units / total_learning_units) * 100 if total_learning_units > 0 else 0
         
         # Get current stage progress
         current_stage_data = next((s for s in processed_stages if s['stage_id'] == current_stage_id), processed_stages[0])
@@ -537,7 +561,7 @@ async def _process_progress_data_for_frontend(summary: dict, stages: list, exerc
         print(f"📊 [PROCESS] Overall Progress Calculation:")
         print(f"   - Total learning units: {total_learning_units}")
         print(f"   - Completed units: {total_completed_units}")
-        print(f"   - Overall progress: {overall_progress:.1f}%")
+        print(f"   - Overall progress: {overall_progress_percentage:.1f}%")
         print(f"   - Current stage progress: {current_stage_progress:.1f}%")
         
         # Generate comprehensive achievements based on actual progress
@@ -617,22 +641,22 @@ async def _process_progress_data_for_frontend(summary: dict, stages: list, exerc
             })
         
         # Progress-based achievements
-        if overall_progress >= 25:
+        if overall_progress_percentage >= 25:
             achievements.append({
                 "name": "Quarter Master",
                 "icon": "trophy",
                 "date": summary.get('last_activity_date', date.today().isoformat()),
                 "color": "#F39C12",
-                "description": f"Achieved {overall_progress:.0f}% overall progress"
+                "description": f"Achieved {overall_progress_percentage:.0f}% overall progress"
             })
         
-        if overall_progress >= 50:
+        if overall_progress_percentage >= 50:
             achievements.append({
                 "name": "Halfway Hero",
                 "icon": "medal",
                 "date": summary.get('last_activity_date', date.today().isoformat()),
                 "color": "#E67E22",
-                "description": f"Reached {overall_progress:.0f}% overall progress"
+                "description": f"Reached {overall_progress_percentage:.0f}% overall progress"
             })
         
         # Topic completion achievements
@@ -648,7 +672,7 @@ async def _process_progress_data_for_frontend(summary: dict, stages: list, exerc
         # Generate realistic fluency trend based on actual progress
         fluency_trend = []
         base_score = 50
-        progress_factor = overall_progress / 100
+        progress_factor = overall_progress_percentage / 100
         
         # Create a more realistic trend with some variation
         for week in range(7):
@@ -671,43 +695,52 @@ async def _process_progress_data_for_frontend(summary: dict, stages: list, exerc
         else:
             total_practice_time_display = f"{total_practice_hours:.1f}h"
 
+        # --- BEGIN FIX: Recalculate total completed exercises ---
+        # The summary from the database might not include pre-completed exercises.
+        # We will recalculate the total by summing up the completed exercises from each processed stage.
+        total_completed_exercises_calculated = sum(
+            stage.get('completed_exercises', 0) for stage in processed_stages
+        )
+        print(f"📊 [PROCESS] Recalculated total completed exercises from stages: {total_completed_exercises_calculated}")
+        # --- END FIX ---
+
         processed_data = {
-            "current_stage": {
-                "id": current_stage_id,
-                "name": current_stage_info['name'],
-                "subtitle": current_stage_info['subtitle'],
-                "progress": current_stage_progress
+            'current_stage': {
+                'id': summary.get('current_stage'),
+                'name': current_stage_info.get('name', 'Unknown Stage') if current_stage_info else 'Unknown Stage',
+                'subtitle': current_stage_info.get('subtitle', '') if current_stage_info else '',
+                'progress': current_stage_progress
             },
-            "overall_progress": overall_progress,
-            "total_progress": overall_progress,  # For compatibility
-            "streak_days": streak_days,
-            "total_practice_time": total_practice_time_display,
-            "total_exercises_completed": summary.get('total_exercises_completed', 0),
-            "longest_streak": longest_streak,
-            "average_session_duration": average_session_duration,
-            "weekly_learning_hours": weekly_learning_hours,
-            "monthly_learning_hours": monthly_learning_hours,
-            "first_activity_date": summary.get('first_activity_date'),
-            "last_activity_date": summary.get('last_activity_date'),
-            "stages": processed_stages,
-            "achievements": achievements,
-            "fluency_trend": fluency_trend,
-            "unlocked_content": unlocks,
-            "total_completed_stages": total_completed_stages,
-            "total_completed_exercises": total_completed_exercises,
-            "total_learning_units": total_learning_units,
-            "total_completed_units": total_completed_units
+            'overall_progress': overall_progress_percentage,
+            'total_progress': overall_progress_percentage,
+            'streak_days': summary.get('streak_days', 0),
+            'total_practice_time': f"{summary.get('total_time_spent_minutes', 0.0):.1f}m",
+            'longest_streak': summary.get('longest_streak', 0),
+            'average_session_duration': summary.get('average_session_duration_minutes', 0),
+            'weekly_learning_hours': summary.get('weekly_learning_hours', 0),
+            'monthly_learning_hours': summary.get('monthly_learning_hours', 0),
+            'first_activity_date': summary.get('first_activity_date'),
+            'last_activity_date': summary.get('last_activity_date'),
+            'stages': processed_stages,
+            'achievements': achievements,
+            'fluency_trend': fluency_trend,
+            'unlocked_content': unlocks,
+            'total_completed_stages': total_completed_stages,
+            'total_completed_exercises': total_completed_exercises_calculated,
+            'total_exercises_in_curriculum': total_exercises_in_curriculum,
+            'total_learning_units': total_learning_units,
+            'total_completed_units': total_completed_units
         }
         
         print(f"✅ [PROCESS] Progress data processed successfully")
         print(f"📊 [PROCESS] Processed data summary:")
-        print(f"   - Current stage: {current_stage_id}")
-        print(f"   - Overall progress: {overall_progress:.1f}%")
-        print(f"   - Streak days: {streak_days}")
-        print(f"   - Total practice time: {processed_data['total_practice_time']}")
+        print(f"   - Current stage: {summary.get('current_stage')}")
+        print(f"   - Overall progress: {overall_progress_percentage:.1f}%")
+        print(f"   - Streak days: {summary.get('streak_days', 0)}")
+        print(f"   - Total practice time: {summary.get('total_time_spent_minutes', 0.0):.1f}m")
         print(f"   - Achievements count: {len(achievements)}")
         print(f"   - Completed stages: {total_completed_stages}")
-        print(f"   - Completed exercises: {total_completed_exercises}")
+        print(f"   - Completed exercises: {total_completed_exercises_calculated}")
         print(f"   - Total learning units: {total_learning_units}")
         print(f"   - Completed units: {total_completed_units}")
         
@@ -736,6 +769,7 @@ async def _process_progress_data_for_frontend(summary: dict, stages: list, exerc
             "unlocked_content": [],
             "total_completed_stages": 0,
             "total_completed_exercises": 0,
+            "total_exercises_in_curriculum": 0,
             "total_learning_units": 0,
             "total_completed_units": 0
         }

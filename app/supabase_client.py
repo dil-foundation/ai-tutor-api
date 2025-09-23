@@ -1,7 +1,7 @@
 import os
 import asyncio
 from datetime import date, datetime, timedelta
-from supabase import create_client, Client
+from supabase.client import create_client, Client
 from dotenv import load_dotenv
 import logging
 from typing import Dict, List, Optional, Tuple
@@ -607,20 +607,36 @@ class SupabaseProgressTracker:
                 mature = average_score >= 80  # 80% threshold for other exercises
                 print(f"📊 [EXERCISE] Exercise mature: {mature} (average >= 80)")
             
-            # Check if exercise is completed (3 consecutive scores >= threshold)
+            # --- BEGIN FIX: Correct Exercise Completion Logic ---
+            # An exercise is complete only when ALL of its topics are marked as complete.
+            # The old logic of using 3 consecutive high scores was incorrect.
             completed = False
-            if len(scores) >= 3:
-                recent_scores = scores[-3:]
-                # Use different thresholds for different exercises
-                if exercise_id == 3:  # Problem-solving exercise
-                    completed = all(s >= 60 for s in recent_scores)  # 60% threshold
-                    print(f"📊 [EXERCISE] Recent 3 scores: {recent_scores}")
-                    print(f"📊 [EXERCISE] Exercise completed: {completed} (3 consecutive >= 60)")
+            try:
+                # Get the total number of topics for this exercise from the database.
+                topics_res = self.client.rpc('get_topics_for_exercise_full', {'stage_num': stage_id, 'exercise_num': exercise_id}).execute()
+                total_topics = len(topics_res.data) if topics_res.data else 0
+                print(f"📊 [EXERCISE] Total topics for this exercise: {total_topics}")
+
+                if total_topics > 0:
+                    # Get the count of all topics this user has completed for this exercise.
+                    completed_topics_res = self.client.table('ai_tutor_user_topic_progress').select(
+                        'topic_id', count='exact'
+                    ).eq('user_id', user_id).eq('stage_id', stage_id).eq('exercise_id', exercise_id).eq('completed', True).execute()
+                    
+                    completed_topics_count = completed_topics_res.count if completed_topics_res.count is not None else 0
+                    print(f"📊 [EXERCISE] User has completed {completed_topics_count} topics.")
+                    
+                    # If the user has completed all topics, the exercise is complete.
+                    if completed_topics_count >= total_topics:
+                        completed = True
+                        print(f"🎉 [EXERCISE] All {total_topics} topics are done. Marking exercise as complete.")
                 else:
-                    completed = all(s >= 80 for s in recent_scores)  # 80% threshold
-                    print(f"📊 [EXERCISE] Recent 3 scores: {recent_scores}")
-                    print(f"📊 [EXERCISE] Exercise completed: {completed} (3 consecutive >= 80)")
+                    print(f"⚠️ [EXERCISE] No topics found for this exercise. Cannot determine completion status.")
             
+            except Exception as e:
+                print(f"❌ [EXERCISE] Error checking exercise completion status: {str(e)}")
+            # --- END FIX ---
+
             # Update exercise progress
             current_timestamp = datetime.now().isoformat()
             
@@ -660,7 +676,7 @@ class SupabaseProgressTracker:
                 update_data["current_topic_id"] = topic_number
                 print(f"📝 [EXERCISE] Updated current_topic_id to {topic_number}")
             
-            # Check if exercise is completed (3 consecutive scores >= 80)
+            # Check if exercise is completed (based on the new logic)
             if completed and not exercise_data.get('completed_at'):
                 update_data["completed_at"] = current_timestamp
                 print(f"🎉 [EXERCISE] Exercise marked as completed!")
