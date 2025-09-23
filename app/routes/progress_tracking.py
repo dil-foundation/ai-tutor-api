@@ -439,6 +439,7 @@ async def _process_progress_data_for_frontend(summary: dict, stages: list, exerc
             
             # Get exercises for this stage dynamically
             exercises_in_stage_db = await progress_tracker.get_exercises_for_stage(stage_id)
+            total_exercises_in_curriculum += len(exercises_in_stage_db)
             
             stage_exercises = []
             stage_completed_exercises = 0
@@ -544,11 +545,12 @@ async def _process_progress_data_for_frontend(summary: dict, stages: list, exerc
                 "completed": stage_completed,
                 "progress": stage_progress_percentage,
                 "exercises": stage_exercises,
+                "completed_exercises": stage_completed_exercises,
+                "total_topics": stage_total_topics,
+                "completed_topics": stage_completed_topics,
                 "started_at": stage_progress.get('started_at') if stage_progress else None,
                 "completed_at": stage_progress.get('completed_at') if stage_progress else None,
-                "unlocked": stage_unlocked,
-                "total_topics": stage_total_topics,
-                "completed_topics": stage_completed_topics
+                "unlocked": stage_unlocked
             })
         
         # Calculate overall progress using professional logic

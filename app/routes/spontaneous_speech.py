@@ -120,7 +120,7 @@ async def check_exercise_completion(user_id: str) -> dict:
         
         # Determine if exercise is truly completed
         # Exercise is completed ONLY when ALL topics are completed
-        exercise_completed = completed_topics >= total_topics and completed_topics > 0
+        exercise_completed = completed_topics >= total_topics and total_topics > 0
         
         print(f"📊 [COMPLETION] Completion status calculated:")
         print(f"   - Total topics: {total_topics}")
@@ -372,7 +372,7 @@ async def evaluate_spontaneous_speech(
                         user_id=request.user_id,
                         stage_id=6,  # Stage 6
                         exercise_id=1,  # Exercise 1 (Spontaneous Speech)
-                        topic_id=topic_data['db_id'],
+                        topic_id=topic_data['id'],
                         score=float(score),
                         urdu_used=request.urdu_used,
                         time_spent_seconds=time_spent,

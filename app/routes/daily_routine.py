@@ -123,12 +123,13 @@ async def check_exercise_completion(user_id: str) -> dict:
         is_exercise_completed = current_topic_result.get("is_completed", False)
         
         # Calculate completion metrics
-        completed_topics = len(topic_progress) if topic_progress else 0
+        completed_topics_list = [t for t in topic_progress if t.get('completed') is True]
+        completed_topics = len(completed_topics_list)
         progress_percentage = (completed_topics / total_routines) * 100 if total_routines > 0 else 0
         
         # Determine if exercise is truly completed
         # Exercise is completed ONLY when ALL topics are completed
-        exercise_completed = completed_topics >= total_routines and completed_topics > 0
+        exercise_completed = completed_topics >= total_routines and total_routines > 0
         
         print(f"📊 [COMPLETION] Completion status calculated:")
         print(f"   - Total routines: {total_routines}")
@@ -409,7 +410,7 @@ async def evaluate_daily_routine(
                         user_id=request.user_id,
                         stage_id=2,  # Stage 2
                         exercise_id=1,  # Exercise 1 (Daily Routine)
-                        topic_id=phrase_data['id'], # Use the actual database ID
+                        topic_id=phrase_data['id'], # Use the topic_number
                         score=float(score),
                         urdu_used=request.urdu_used,
                         time_spent_seconds=time_spent,
