@@ -18,7 +18,7 @@ from app.redis_client import redis_client
 from app.auth_middleware import get_current_user, require_student,require_admin_or_teacher_or_student
 import json
 import base64
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from fastapi.concurrency import run_in_threadpool
 
 router = APIRouter()
@@ -159,7 +159,7 @@ async def check_exercise_completion(user_id: str) -> dict:
         
         # Determine if exercise is truly completed
         # Exercise is completed ONLY when ALL topics are completed
-        exercise_completed = completed_topics >= total_topics and completed_topics > 0
+        exercise_completed = completed_topics >= total_topics and total_topics > 0
         
         print(f"📊 [COMPLETION] Completion status calculated:")
         print(f"   - Total scenarios: {total_topics}")
@@ -526,12 +526,12 @@ async def evaluate_roleplay_session(
                 # Validate time spent
                 time_spent = max(1, min(request.time_spent_seconds, 1800))  # Between 1-30 minutes
                 
-                # Record the topic attempt with actual evaluation results
+                # Record the topic attempt
                 progress_result = await progress_tracker.record_topic_attempt(
                     user_id=request.user_id,
                     stage_id=2,  # Stage 2
                     exercise_id=3,  # Exercise 3 (Roleplay Simulation)
-                    topic_id=scenario["db_id"],
+                    topic_id=scenario["id"], # Use the topic_number
                     score=float(evaluation.get("overall_score", 0)),
                     urdu_used=request.urdu_used,
                     time_spent_seconds=time_spent,
@@ -606,7 +606,8 @@ async def evaluate_roleplay_session(
             learning_progress=evaluation.get("learning_progress", "none"),
             recommendations=evaluation.get("recommendations", []),
             progress_recorded=progress_recorded,
-            unlocked_content=unlocked_content
+            unlocked_content=unlocked_content,
+            exercise_completion=exercise_completion_status
         )
         
     except Exception as e:

@@ -115,13 +115,14 @@ async def check_exercise_completion(user_id: str) -> dict:
         is_exercise_completed = current_topic_result.get("is_completed", False)
         
         # Calculate completion metrics
-        completed_topics = len(topic_progress) if topic_progress else 0
+        completed_topics_list = [t for t in topic_progress if t.get('completed') is True]
+        completed_topics = len(completed_topics_list)
         progress_percentage = (completed_topics / total_phrases) * 100 if total_phrases > 0 else 0
         
         # Determine if exercise is truly completed
         # Exercise is completed ONLY when ALL topics are completed (50 out of 50)
         # This means completed_topics must equal total_phrases exactly
-        exercise_completed = completed_topics >= total_phrases and completed_topics > 0
+        exercise_completed = completed_topics >= total_phrases and total_phrases > 0
         
         print(f"📊 [COMPLETION] Completion status calculated:")
         print(f"   - Total phrases: {total_phrases}")

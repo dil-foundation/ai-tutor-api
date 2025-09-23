@@ -107,9 +107,16 @@ async def check_exercise_completion(user_id: str) -> dict:
         # Calculate progress percentage
         progress_percentage = (completed_topics / total_topics * 100) if total_topics > 0 else 0.0
         
+
+         # Calculate completion metrics
+        completed_topics_list = [t for t in user_progress if t.get('completed') is True]
+        completed_topics = len(completed_topics_list)
+        progress_percentage = (completed_topics / total_topics) * 100 if total_topics > 0 else 0
+        
+        
         # Determine if exercise is truly completed
         # Exercise is completed ONLY when ALL topics are completed
-        exercise_completed = completed_topics >= total_topics and completed_topics > 0
+        exercise_completed = completed_topics >= total_topics and total_topics > 0
         
         print(f"📊 [COMPLETION] Completion status calculated:")
         print(f"   - Total questions: {total_topics}")
@@ -359,7 +366,7 @@ async def evaluate_quick_answer_audio(
                 user_id=request.user_id,
                 stage_id=2,  # Stage 2
                 exercise_id=2,  # Exercise 2 (Quick Answer)
-                topic_id=question['id'], # Use the actual database ID
+                topic_id=question['id'], # Use the topic_number
                 score=evaluation.get("score", 0),
                 urdu_used=request.urdu_used,
                 time_spent_seconds=request.time_spent_seconds,

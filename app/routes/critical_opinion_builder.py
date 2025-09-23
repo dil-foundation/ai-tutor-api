@@ -122,7 +122,7 @@ async def check_exercise_completion(user_id: str) -> dict:
         
         # Determine if exercise is truly completed
         # Exercise is completed ONLY when ALL topics are completed
-        exercise_completed = completed_topics >= total_topics and completed_topics > 0
+        exercise_completed = completed_topics >= total_topics and total_topics > 0
         
         print(f"📊 [COMPLETION] Completion status calculated:")
         print(f"   - Total topics: {total_topics}")

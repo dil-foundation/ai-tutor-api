@@ -122,7 +122,7 @@ async def check_exercise_completion(user_id: str) -> dict:
         
         # Determine if exercise is truly completed
         # Exercise is completed ONLY when ALL topics are completed
-        exercise_completed = completed_topics >= total_topics and completed_topics > 0
+        exercise_completed = completed_topics >= total_topics and total_topics > 0
         
         print(f"📊 [COMPLETION] Completion status calculated:")
         print(f"   - Total scenarios: {total_topics}")
@@ -374,7 +374,7 @@ async def evaluate_sensitive_scenario(
                         user_id=request.user_id,
                         stage_id=6,  # Stage 6
                         exercise_id=2,  # Exercise 2 (Sensitive Scenario)
-                        topic_id=scenario_data['db_id'],
+                        topic_id=scenario_data['id'],
                         score=float(score),
                         urdu_used=request.urdu_used,
                         time_spent_seconds=time_spent,
