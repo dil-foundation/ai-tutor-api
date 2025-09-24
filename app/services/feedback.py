@@ -952,11 +952,10 @@ Your task is to evaluate the student's response against multiple acceptable answ
 - 0-49: Very poor or irrelevant response
 
 📌 Rules:
-- Respond ONLY with valid JSON (no commentary or explanation).
-- Score ≥ 70 → is_correct: true, completed: true
-- Feedback must be encouraging and constructive.
-- Consider variations in acceptable responses.
-- Focus on meaning and communication over perfect grammar.
+-- Respond ONLY with valid JSON (no commentary or explanation).
+-- Score ≥ 70 → is_correct: true, completed: true
+-- For questions about personal information (e.g., name, age, country), the provided "Expected Answers" are just examples. Prioritize correct sentence structure over matching the specific details in the examples.
+-- Feedback must be encouraging and constructive.
 """
 
     try:

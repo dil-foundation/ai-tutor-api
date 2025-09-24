@@ -636,7 +636,7 @@ class SupabaseProgressTracker:
             except Exception as e:
                 print(f"❌ [EXERCISE] Error checking exercise completion status: {str(e)}")
             # --- END FIX ---
-
+            
             # Update exercise progress
             current_timestamp = datetime.now().isoformat()
             
@@ -894,6 +894,27 @@ class SupabaseProgressTracker:
             print(f"❌ [TOPIC] Error getting current topic: {str(e)}")
             logger.error(f"Error getting current topic: {str(e)}")
             return {"success": False, "error": str(e)}
+
+    async def _mark_stage_as_completed(self, user_id: str, stage_id: int):
+        """Marks a stage as completed in the user_stage_progress table."""
+        try:
+            print(f"🔄 [STAGE_COMPLETE] Marking stage {stage_id} as complete for user {user_id}")
+            current_timestamp = datetime.now().isoformat()
+            
+            exercises_in_stage = await self.get_exercises_for_stage(stage_id)
+            
+            stage_progress_payload = {
+                "completed": True,
+                "completed_at": current_timestamp,
+                "progress_percentage": 100.0,
+                "exercises_completed": len(exercises_in_stage)
+            }
+            
+            self.client.table('ai_tutor_user_stage_progress').update(stage_progress_payload).eq('user_id', user_id).eq('stage_id', stage_id).execute()
+            print(f"✅ [STAGE_COMPLETE] Stage {stage_id} marked as complete.")
+        except Exception as e:
+            print(f"❌ [STAGE_COMPLETE] Error marking stage {stage_id} as complete: {str(e)}")
+            logger.error(f"Error marking stage {stage_id} as complete for user {user_id}: {str(e)}")
     
     async def complete_lesson(self, user_id: str, stage_id: int, exercise_id: int) -> dict:
         """
@@ -958,7 +979,7 @@ class SupabaseProgressTracker:
             print(f"❌ [TOPIC_PROGRESS] Error getting all topic progress: {str(e)}")
             logger.error(f"Error getting all topic progress for user {user_id}: {str(e)}")
             return {"success": False, "error": str(e)}
-
+    
     async def get_user_topic_progress(self, user_id: str, stage_id: int, exercise_id: int) -> dict:
         """Get user's topic progress for a specific stage and exercise"""
         print(f"🔄 [TOPIC_PROGRESS] Getting topic progress for user {user_id}")
@@ -1031,6 +1052,9 @@ class SupabaseProgressTracker:
                 
                 # Check if all exercises in the current stage are completed
                 if set(all_exercise_nums).issubset(set(completed_ids)):
+                    # Mark the current stage as completed
+                    await self._mark_stage_as_completed(user_id, stage_id)
+
                     # Unlock the next stage if it's not the final stage
                     if stage_id < max_stage_num:
                         next_stage_id = stage_id + 1
@@ -1042,16 +1066,26 @@ class SupabaseProgressTracker:
                         # Unlock the first exercise of the next stage
                         await self.unlock_first_exercise_of_stage(user_id, next_stage_id, unlocked_content)
 
-                        # --- BEGIN FIX: Update user's current stage in the summary table ---
-                        print(f"🔄 [UNLOCK] Updating user's current stage to {next_stage_id}")
+                        # --- BEGIN FIX: Update user's current stage AND unlocked stages list in the summary table ---
+                        print(f"🔄 [UNLOCK] Updating user's summary: current stage to {next_stage_id} and adding to unlocked list.")
                         try:
+                            # Fetch current summary to get unlocked_stages list
+                            summary_res = self.client.table('ai_tutor_user_progress_summary').select('unlocked_stages').eq('user_id', user_id).single().execute()
+                            
+                            current_unlocked = summary_res.data.get('unlocked_stages', []) if summary_res.data else []
+                            
+                            # Add new stage if not already present
+                            if next_stage_id not in current_unlocked:
+                                current_unlocked.append(next_stage_id)
+                            
                             self.client.table('ai_tutor_user_progress_summary').update({
-                                'current_stage': next_stage_id
+                                'current_stage': next_stage_id,
+                                'unlocked_stages': current_unlocked
                             }).eq('user_id', user_id).execute()
-                            print(f"✅ [UNLOCK] Successfully updated current_stage for user {user_id}")
+                            print(f"✅ [UNLOCK] Successfully updated summary for user {user_id}")
                         except Exception as e:
-                            print(f"❌ [UNLOCK] Failed to update current_stage for user {user_id}: {str(e)}")
-                            logger.error(f"Failed to update current_stage for user {user_id}: {str(e)}")
+                            print(f"❌ [UNLOCK] Failed to update summary for user {user_id}: {str(e)}")
+                            logger.error(f"Failed to update summary for user {user_id}: {str(e)}")
                         # --- END FIX ---
 
                 # Unlock the next exercise WITHIN the current stage if applicable
@@ -1072,7 +1106,7 @@ class SupabaseProgressTracker:
                             # Use upsert to handle potential race conditions or existing locked rows
                             self.client.table('ai_tutor_learning_unlocks').upsert(unlock_data).match({'user_id': user_id, 'stage_id': stage_id, 'exercise_id': next_exercise_id}).execute()
                             unlocked_content.append(f"Stage {stage_id}, Exercise {next_exercise_id}")
-
+            
             print(f"📊 [UNLOCK] Total unlocked content: {unlocked_content}")
             return {"success": True, "unlocked_content": list(set(unlocked_content))}
             

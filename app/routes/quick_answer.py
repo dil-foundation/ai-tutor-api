@@ -28,8 +28,8 @@ async def get_question_by_id_internal(question_id: int):
             formatted_question = {
                 "id": db_question.get("topic_number"),
                 "db_id": db_question.get("id"),
-                "question": db_question.get("title"),
-                "question_urdu": db_question.get("title_urdu"),
+                "question": topic_data.get("question", db_question.get("title")),
+                "question_urdu": topic_data.get("question_urdu", db_question.get("title_urdu")),
                 "expected_answers": topic_data.get("expected_answers", []),
                 "expected_answers_urdu": topic_data.get("expected_answers_urdu", []),
                 "keywords": topic_data.get("keywords", []),
@@ -194,8 +194,8 @@ async def get_all_questions(current_user: Dict[str, Any] = Depends(require_admin
                 questions.append({
                     "id": q.get("topic_number"),
                     "db_id": q.get("id"),
-                    "question": q.get("title"),
-                    "question_urdu": q.get("title_urdu"),
+                    "question": topic_data.get("question", q.get("title")),
+                    "question_urdu": topic_data.get("question_urdu", q.get("title_urdu")),
                     "expected_answers": topic_data.get("expected_answers", []),
                     "expected_answers_urdu": topic_data.get("expected_answers_urdu", []),
                     "keywords": topic_data.get("keywords", []),
