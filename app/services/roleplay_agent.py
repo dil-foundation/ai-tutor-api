@@ -106,8 +106,30 @@ class RoleplayAgent:
     def _generate_ai_response(self, session_data: Dict, user_input: str, scenario: Dict) -> str:
         """Generate AI response based on scenario context and conversation history"""
         try:
-            # Create context-aware prompt
-            prompt = f"""
+            # Check if this is the first response to the user to make it brief and conclusive
+            # History will be [initial_assistant, user_response] at this point
+            is_first_user_turn = len(session_data['history']) == 2
+
+            if is_first_user_turn:
+                print("✅ [ROLEPLAY] Generating a brief, conclusive response for the first user turn.")
+                # Prompt for a brief, concluding response
+                prompt = f"""
+You are roleplaying as a {scenario['ai_character']} in a {scenario['scenario_context']} scenario.
+This is a quick practice session. The student has just given their first response.
+Your task is to provide a brief, concluding response that naturally ends the conversation.
+
+Student's response: "{user_input}"
+
+Your response should:
+1. Be 1-2 sentences maximum.
+2. Provide a natural closing to the conversation. For example, if ordering coffee, you could say "Here is your coffee. Enjoy!". If asking for directions, "You're welcome. Have a safe trip."
+3. Stay in character as the {scenario['ai_character']}.
+
+Respond as the {scenario['ai_character']}:
+"""
+            else:
+                # Original prompt for longer conversations (fallback)
+                prompt = f"""
 You are roleplaying as a {scenario['ai_character']} in a {scenario['scenario_context']} scenario.
 Cultural context: {scenario['cultural_context']}
 Conversation flow: {scenario['conversation_flow']}
@@ -165,10 +187,16 @@ Respond as the {scenario['ai_character']}:
     
     def _check_conversation_end(self, session_data: Dict, ai_response: str) -> str:
         """Check if the conversation should end naturally"""
-        # Simple logic: end after 8-12 exchanges or if AI indicates completion
         message_count = len(session_data["history"])
         
-        if message_count >= 20:  # Maximum conversation length
+        # End conversation after the AI's first response to the user (history: [initial_ai, user, response_ai])
+        if message_count >= 3:
+            print(f"🏁 [ROLEPLAY] Conversation ending because message count is {message_count} (>= 3)")
+            return "end"
+        
+        # Original logic as a fallback, though less likely to be hit now
+        if message_count >= 20:
+            print(f"🏁 [ROLEPLAY] Conversation ending because message count is {message_count} (>= 20)")
             return "end"
         
         # Check if AI response indicates conversation completion
@@ -178,6 +206,7 @@ Respond as the {scenario['ai_character']}:
         ]
         
         if any(indicator in ai_response.lower() for indicator in end_indicators):
+            print(f"🏁 [ROLEPLAY] Conversation ending due to end indicator in AI response: '{ai_response}'")
             return "end"
         
         return "continue"
