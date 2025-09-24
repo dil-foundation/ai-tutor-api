@@ -38,8 +38,8 @@ async def get_dialogue_by_id(dialogue_id: int):
             formatted_dialogue = {
                 "id": db_dialogue.get("topic_number"),
                 "db_id": db_dialogue.get("id"),
-                "ai_prompt": db_dialogue.get("title"),
-                "ai_prompt_urdu": db_dialogue.get("title_urdu"),
+                "ai_prompt": topic_data.get("ai_prompt", db_dialogue.get("title")),
+                "ai_prompt_urdu": topic_data.get("ai_prompt_urdu", db_dialogue.get("title_urdu")),
                 "expected_keywords": topic_data.get("expected_keywords"),
                 "expected_keywords_urdu": topic_data.get("expected_keywords_urdu"),
                 "category": db_dialogue.get("category"),
@@ -185,8 +185,8 @@ async def get_all_dialogues(current_user: Dict[str, Any] = Depends(require_admin
                 dialogues.append({
                     "id": d.get("topic_number"),
                     "db_id": d.get("id"),
-                    "ai_prompt": d.get("title"),
-                    "ai_prompt_urdu": d.get("title_urdu"),
+                    "ai_prompt": topic_data.get("ai_prompt", d.get("title")),
+                    "ai_prompt_urdu": topic_data.get("ai_prompt_urdu", d.get("title_urdu")),
                     "expected_keywords": topic_data.get("expected_keywords"),
                     "expected_keywords_urdu": topic_data.get("expected_keywords_urdu"),
                     "category": d.get("category"),
