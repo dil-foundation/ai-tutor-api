@@ -1567,8 +1567,8 @@ You are an expert English language tutor evaluating a student's storytelling res
 **REQUIRED JSON OUTPUT FORMAT:**
 {{
     "score": <number between 0-100>,
-    "is_correct": <boolean - true if score >= 75>,
-    "completed": <boolean - true if score >= 80>,
+    "is_correct": <boolean - true if score >= 35>,
+    "completed": <boolean - true if score >= 35>,
     "keyword_matches": <number of expected keywords found>,
     "total_keywords": <total number of expected keywords>,
     "fluency_score": <number between 0-100>,
@@ -1654,8 +1654,11 @@ You are an expert English language tutor evaluating a student's storytelling res
             score = 50
             evaluation_result["score"] = score
         
-        is_correct = evaluation_result.get("is_correct", score >= 75)
-        completed = evaluation_result.get("completed", score >= 80)
+        is_correct = evaluation_result.get("is_correct", score >= 35)
+        completed = evaluation_result.get("completed", score >= 35)
+
+        print("✅ is_correct: ", is_correct)
+        print("✅ completed: ", completed)
         
         # Ensure keyword matches is valid
         keyword_matches = evaluation_result.get("keyword_matches", 0)
