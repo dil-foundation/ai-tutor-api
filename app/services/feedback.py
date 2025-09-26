@@ -3074,7 +3074,7 @@ You are an expert English language evaluator for C1 Advanced level academic pres
     "score": <0-100>
 }}
 
-Note: Do NOT include "completed" or "is_correct" fields in your response. These will be calculated automatically based on the score threshold.
+Note: Do NOT include "completed" or "is_correct" fields in your response. These will be calculated automatically based on the score threshold of 35.
 
 Ensure the response is valid JSON and all scores are numerical values.
 """
@@ -3113,10 +3113,10 @@ Ensure the response is valid JSON and all scores are numerical values.
         if not isinstance(evaluation.get("score"), (int, float)):
             evaluation["score"] = evaluation.get("overall_score", 0)
         
-        # Force correct completion logic based on score threshold (80 for Stage 5)
+        # Force correct completion logic based on score threshold (35 for Stage 5)
         score = evaluation.get("score", 0)
-        evaluation["completed"] = score >= 80
-        evaluation["is_correct"] = score >= 80
+        evaluation["completed"] = score >= 35
+        evaluation["is_correct"] = score >= 35
             
         print(f"✅ [EVAL] Evaluation completed. Score: {evaluation.get('score', 0)}%")
         
@@ -3275,10 +3275,10 @@ Ensure the response is valid JSON and all scores are numerical values.
         if not isinstance(evaluation.get("score"), (int, float)):
             evaluation["score"] = evaluation.get("overall_score", 0)
         
-        # Force correct completion logic based on score threshold (80 for Stage 5)
+        # Force correct completion logic based on score threshold (35 for Stage 5)
         score = evaluation.get("score", 0)
-        evaluation["completed"] = score >= 70
-        evaluation["is_correct"] = score >= 70
+        evaluation["completed"] = score >= 35
+        evaluation["is_correct"] = score >= 35
             
         print(f"✅ [EVAL] Evaluation completed. Score: {evaluation.get('score', 0)}%")
         
