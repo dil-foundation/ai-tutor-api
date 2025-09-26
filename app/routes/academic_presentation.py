@@ -466,4 +466,24 @@ async def evaluate_academic_presentation(
         raise
     except Exception as e:
         print(f"❌ [API] Unexpected error in evaluate_academic_presentation: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}") 
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+@router.get("/academic-presentation-current-topic/{user_id}")
+async def get_current_topic(
+    user_id: str,
+    current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)
+):
+    """Get user's current topic for Academic Presentation exercise"""
+    print(f"🔄 [API] GET /academic-presentation-current-topic/{user_id} endpoint called")
+    
+    if user_id != current_user['id']:
+        raise HTTPException(status_code=403, detail="You can only access your own data")
+    
+    try:
+        # Stage 5, Exercise 2 for Academic Presentation
+        topic_data = await progress_tracker.get_current_topic_for_exercise(user_id, stage_id=5, exercise_id=2)
+        print(f"✅ [API] Current topic retrieved: {topic_data}")
+        return topic_data
+    except Exception as e:
+        print(f"❌ [API] Error getting current topic: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get current topic: {str(e)}") 

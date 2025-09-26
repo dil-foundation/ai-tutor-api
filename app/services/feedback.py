@@ -1823,7 +1823,7 @@ Focus on conversational skills and group interaction abilities.
         evaluation_result = json.loads(result_text)
         
         # Calculate success based on overall score
-        success = evaluation_result.get("overall_score", 0) >= 75
+        success = evaluation_result.get("overall_score", 0) >= 35
         
         print(f"✅ [EVAL] Evaluation completed. Score: {evaluation_result.get('overall_score', 0)}%")
         
@@ -2031,7 +2031,7 @@ Provide only the JSON output, no additional text.
         evaluation_result = json.loads(result_text)
         
         # Calculate success based on overall score (adjusted for B1 intermediate level)
-        success = evaluation_result.get("overall_score", 0) >= 60
+        success = evaluation_result.get("overall_score", 0) >= 35
         
         print(f"✅ [EVAL] Evaluation completed. Score: {evaluation_result.get('overall_score', 0)}%")
         
@@ -2290,7 +2290,7 @@ Focus on B2 Upper Intermediate standards for abstract topic discussion and exten
         evaluation_result = json.loads(result_text)
         
         # Calculate success based on overall score (B2 level requires 80%+)
-        success = evaluation_result.get("overall_score", 0) >= 80
+        success = evaluation_result.get("overall_score", 0) >= 35
         
         print(f"✅ [EVAL] Evaluation completed. Score: {evaluation_result.get('overall_score', 0)}%")
         
@@ -2571,7 +2571,7 @@ Focus on B2 Upper Intermediate standards for professional interview communicatio
         evaluation_result = json.loads(result_text)
         
         # Calculate success based on overall score (B2 level requires 80%+)
-        success = evaluation_result.get("overall_score", 0) >= 80
+        success = evaluation_result.get("overall_score", 0) >= 35
         
         print(f"✅ [EVAL] Evaluation completed. Score: {evaluation_result.get('overall_score', 0)}%")
         
@@ -2799,7 +2799,7 @@ Focus on B2 Upper Intermediate level expectations. Be encouraging but honest in 
         overall_score = evaluation_data.get("overall_score", 0)
         
         # Determine if the response meets the success threshold (80% for B2 level)
-        success_threshold = 80
+        success_threshold = 35
         is_successful = overall_score >= success_threshold
         
         # Count keyword matches
@@ -2878,12 +2878,12 @@ You are an expert English language evaluator specializing in C1 Advanced level c
 - **90-100:** Exceptional C1 level with sophisticated argumentation and vocabulary
 - **80-89:** Strong C1 level with clear structure and advanced language use
 - **70-79:** Good C1 level with some areas for improvement
-- **60-69:** Adequate C1 level with noticeable gaps
-- **Below 60:** Needs significant improvement to reach C1 level
+- **35-69:** Adequate C1 level with noticeable gaps
+- **Below 35:** Needs significant improvement to reach C1 level
 
-**Success Threshold:** 80 points (C1 Advanced level)
+**Success Threshold:** 35 points (C1 Advanced level)
 
-**IMPORTANT:** Set "completed" and "is_correct" to true ONLY if the overall_score is 80 or higher.
+**IMPORTANT:** Set "completed" and "is_correct" to true ONLY if the overall_score is 35 or higher.
 
 Analyze the response and provide detailed feedback in the following JSON format:
 
@@ -2958,10 +2958,10 @@ Ensure the response is valid JSON and all scores are numerical values.
         if not isinstance(evaluation.get("score"), (int, float)):
             evaluation["score"] = evaluation.get("overall_score", 0)
         
-        # Force correct completion logic based on score threshold (80 for Stage 5)
+        # Force correct completion logic based on score threshold (35 for Stage 5)
         score = evaluation.get("score", 0)
-        evaluation["completed"] = score >= 80
-        evaluation["is_correct"] = score >= 80
+        evaluation["completed"] = score >= 35
+        evaluation["is_correct"] = score >= 35
             
         print(f"✅ [EVAL] Evaluation completed. Score: {evaluation.get('score', 0)}%")
         
@@ -3074,7 +3074,7 @@ You are an expert English language evaluator for C1 Advanced level academic pres
     "score": <0-100>
 }}
 
-Note: Do NOT include "completed" or "is_correct" fields in your response. These will be calculated automatically based on the score threshold.
+Note: Do NOT include "completed" or "is_correct" fields in your response. These will be calculated automatically based on the score threshold of 35.
 
 Ensure the response is valid JSON and all scores are numerical values.
 """
@@ -3113,10 +3113,10 @@ Ensure the response is valid JSON and all scores are numerical values.
         if not isinstance(evaluation.get("score"), (int, float)):
             evaluation["score"] = evaluation.get("overall_score", 0)
         
-        # Force correct completion logic based on score threshold (80 for Stage 5)
+        # Force correct completion logic based on score threshold (35 for Stage 5)
         score = evaluation.get("score", 0)
-        evaluation["completed"] = score >= 80
-        evaluation["is_correct"] = score >= 80
+        evaluation["completed"] = score >= 35
+        evaluation["is_correct"] = score >= 35
             
         print(f"✅ [EVAL] Evaluation completed. Score: {evaluation.get('score', 0)}%")
         
@@ -3275,10 +3275,10 @@ Ensure the response is valid JSON and all scores are numerical values.
         if not isinstance(evaluation.get("score"), (int, float)):
             evaluation["score"] = evaluation.get("overall_score", 0)
         
-        # Force correct completion logic based on score threshold (80 for Stage 5)
+        # Force correct completion logic based on score threshold (35 for Stage 5)
         score = evaluation.get("score", 0)
-        evaluation["completed"] = score >= 70
-        evaluation["is_correct"] = score >= 70
+        evaluation["completed"] = score >= 35
+        evaluation["is_correct"] = score >= 35
             
         print(f"✅ [EVAL] Evaluation completed. Score: {evaluation.get('score', 0)}%")
         

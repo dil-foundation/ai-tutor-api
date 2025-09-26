@@ -792,6 +792,52 @@ class SupabaseProgressTracker:
             session_metrics = await self._calculate_session_metrics(user_id)
             summary.update(session_metrics)
             
+            # --- BEGIN FIX: Recalculate current_stage from exercise completion data ---
+            print(f"🔄 [GET] Recalculating current stage from exercise completion data for user {user_id}...")
+            try:
+                # Get all exercises for this user with a completion date
+                user_exercises_res = self.client.table('ai_tutor_user_exercise_progress').select('stage_id, exercise_id, completed_at').eq('user_id', user_id).not_.is_('completed_at', 'null').execute()
+                
+                if user_exercises_res.data:
+                    completed_exercises = user_exercises_res.data
+                    
+                    # Group completed exercises by stage
+                    completed_by_stage = {}
+                    for ex in completed_exercises:
+                        stage_id = ex['stage_id']
+                        if stage_id not in completed_by_stage:
+                            completed_by_stage[stage_id] = set()
+                        completed_by_stage[stage_id].add(ex['exercise_id'])
+                        
+                    # Get all stage definitions with exercise counts
+                    all_stages_defs = await self.get_all_stages()
+                    if all_stages_defs:
+                        highest_completed_stage = -1
+                        sorted_stages = sorted(all_stages_defs, key=lambda s: s['stage_number'])
+                        
+                        for stage_def in sorted_stages:
+                            stage_num = stage_def['stage_number']
+                            total_exercises_in_stage = stage_def.get('exercise_count', 0)
+                            
+                            if total_exercises_in_stage > 0:
+                                completed_in_stage = len(completed_by_stage.get(stage_num, set()))
+                                if completed_in_stage >= total_exercises_in_stage:
+                                    # This stage is complete
+                                    highest_completed_stage = max(highest_completed_stage, stage_num)
+                        
+                        # Current stage is the one after the highest completed one
+                        recalculated_current_stage = highest_completed_stage + 1
+                        
+                        # Cap at max stage number
+                        max_stage_num = sorted_stages[-1]['stage_number']
+                        recalculated_current_stage = min(recalculated_current_stage, max_stage_num)
+
+                        print(f"📊 [GET] Recalculated current stage is: {recalculated_current_stage}. DB summary value was: {summary.get('current_stage')}")
+                        summary['current_stage'] = recalculated_current_stage
+            except Exception as e:
+                print(f"❌ [GET] Error recalculating current stage: {str(e)}. Using value from summary.")
+            # --- END FIX ---
+            
             print(f"📊 [GET] Final updated summary with fresh stats: {summary}")
             
             # Get stage progress
@@ -1100,11 +1146,14 @@ class SupabaseProgressTracker:
                         if not existing_unlock.data or not existing_unlock.data[0]['is_unlocked']:
                             print(f"🔓 [UNLOCK] Unlocking exercise {next_exercise_id} in stage {stage_id}")
                             unlock_data = {
+                                "user_id": user_id,
+                                "stage_id": stage_id,
+                                "exercise_id": next_exercise_id,
                                 "is_unlocked": True, "unlock_criteria_met": True, "unlocked_at": current_timestamp,
                                 "unlocked_by_criteria": f"Completed exercise {last_completed} in stage {stage_id}"
                             }
                             # Use upsert to handle potential race conditions or existing locked rows
-                            self.client.table('ai_tutor_learning_unlocks').upsert(unlock_data).match({'user_id': user_id, 'stage_id': stage_id, 'exercise_id': next_exercise_id}).execute()
+                            self.client.table('ai_tutor_learning_unlocks').upsert(unlock_data).execute()
                             unlocked_content.append(f"Stage {stage_id}, Exercise {next_exercise_id}")
             
             print(f"📊 [UNLOCK] Total unlocked content: {unlocked_content}")
