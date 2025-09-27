@@ -45,6 +45,8 @@ async def signup(request: SignUpRequest):
                     "first_name": request.firstName,
                     "last_name": request.lastName,
                     "grade": request.grade,
+                    "assigned_start_stage": assigned_stage,  # Store assigned stage in user metadata
+                    "english_proficiency_text": request.english_proficiency_text  # Store proficiency text too
                 }
             }
         })

@@ -12,13 +12,20 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 async def assess_english_proficiency(text: str) -> int:
     """
-    Assesses the user's English proficiency based on the provided text and assigns a starting stage.
+    Assesses the user's ACTUAL English proficiency level based on their written text and assigns a starting stage.
+
+    This function analyzes the user's demonstrated English knowledge through their writing, focusing on:
+    - Grammar accuracy and complexity
+    - Vocabulary range and sophistication  
+    - Sentence structure variety
+    - Overall fluency and coherence
+    - Error patterns and frequency
 
     Args:
-        text: The text provided by the user during sign-up.
+        text: The text written by the user during sign-up (acts as a proficiency test).
 
     Returns:
-        An integer representing the assigned stage (0-3).
+        An integer representing the assigned stage (0-6) based on demonstrated English knowledge.
         Returns 0 as a fallback if the assessment fails.
     """
     if not text or not text.strip():
@@ -29,23 +36,47 @@ async def assess_english_proficiency(text: str) -> int:
         logger.info(f"Assessing proficiency for text: '{text}'")
         
         system_prompt = """
-        You are an expert English language proficiency evaluator. Your task is to assess a user's 
-        self-described English proficiency and assign them a starting stage from 0 to 6.
-        The stages are defined as follows:
-        - Stage 0 (A1): Absolute beginner, knows only a few words or simple phrases. For users who write "I don't know English" or similar.
-        - Stage 1 (A1/A2): Foundation Speaking. Can handle basic conversation skills and pronunciation.
-        - Stage 2 (A2): Daily Communication. Can handle practical daily life conversations and routine expressions.
-        - Stage 3 (B1): Storytelling & Discussion. Has narrative skills and can participate in group discussions.
-        - Stage 4 (B2): Professional Communication. Can handle business and professional communication.
-        - Stage 5 (C1): Advanced Debate & Analysis. Can handle complex argumentation and academic presentations.
-        - Stage 6 (C2): Mastery & Diplomacy. Can use language flexibly and spontaneously for all purposes.
+        You are an expert English language proficiency evaluator. Your task is to assess a user's ACTUAL English proficiency level based on the text they have written and assign them an appropriate starting stage from 0 to 6.
 
-        Analyze the provided text for grammatical accuracy, vocabulary range, sentence structure, and overall coherence.
-        Based on your analysis, return a single integer for the most appropriate starting stage.
-        Your response MUST be a valid JSON object with a single key "assigned_stage". For example: {"assigned_stage": 2}
+        IMPORTANT: Focus on analyzing the user's DEMONSTRATED English knowledge, not their self-description. Evaluate their actual language skills shown in the text.
+
+        The stages are defined as follows:
+        - Stage 0 (A1): Basic vocabulary, simple sentences, frequent errors, limited grammar knowledge
+        - Stage 1 (A1/A2): Simple present/past tense, basic vocabulary, some sentence variety, common errors
+        - Stage 2 (A2): Present/past/future tenses, expanded vocabulary, compound sentences, fewer errors
+        - Stage 3 (B1): Complex sentences, varied tenses, good vocabulary range, minimal errors, narrative ability
+        - Stage 4 (B2): Advanced grammar, sophisticated vocabulary, complex structures, professional language
+        - Stage 5 (C1): Near-native fluency, academic language, complex argumentation, minimal errors
+        - Stage 6 (C2): Native-like proficiency, idiomatic expressions, perfect grammar, sophisticated style
+
+        EVALUATION CRITERIA:
+        1. Grammar accuracy and complexity
+        2. Vocabulary range and sophistication
+        3. Sentence structure variety
+        4. Overall coherence and fluency
+        5. Error frequency and types
+        6. Language complexity demonstrated
+
+        Analyze the provided text for these criteria and assign the most appropriate stage based on the user's ACTUAL English knowledge demonstrated in their writing.
+
+        Your response MUST be a valid JSON object with a single key "assigned_stage". For example: {"assigned_stage": 3}
         """
 
-        evaluation_prompt = f"Please evaluate the following text and assign a starting stage:\n\n---\n{text}\n---"
+        evaluation_prompt = f"""Analyze the following text and assess the user's English proficiency level based on their demonstrated language skills:
+
+Text to evaluate:
+---
+{text}
+---
+
+Consider the following aspects:
+- Grammar accuracy and complexity
+- Vocabulary sophistication and range
+- Sentence structure variety
+- Overall fluency and coherence
+- Error patterns and frequency
+
+Assign a stage (0-6) based on the ACTUAL English knowledge demonstrated in this text."""
 
         response = client.chat.completions.create(
             model="gpt-4-turbo",
