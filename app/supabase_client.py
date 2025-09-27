@@ -476,47 +476,106 @@ class SupabaseProgressTracker:
             else:
                 print("✅ [INIT] No topic progress records needed.")
 
-            # Step 7: Create missing learning unlock records
+            # Step 7: Create/Update learning unlock records
             print("🔍 [INIT] Checking for existing learning unlock records...")
-            existing_unlocks_res = self.client.table('ai_tutor_learning_unlocks').select('stage_id, exercise_id').eq('user_id', user_id).execute()
-            existing_unlocks = {(u['stage_id'], u['exercise_id']) for u in existing_unlocks_res.data}
+            existing_unlocks_res = self.client.table('ai_tutor_learning_unlocks').select('*').eq('user_id', user_id).execute()
+            existing_unlocks = {(u['stage_id'], u['exercise_id']): u for u in existing_unlocks_res.data}
 
             unlocks_to_create = []
+            unlocks_to_update = []
             
-            # Unlocks for all stages up to the starting one
-            for stage_id in unlocked_stages:
+            # First, determine which stages should be unlocked vs locked
+            all_stages = await self.get_all_stages()
+            all_stage_numbers = [s['stage_number'] for s in all_stages]
+            
+            # Process each stage
+            for stage_id in all_stage_numbers:
+                should_be_unlocked = stage_id in unlocked_stages
+                
                 # Stage unlock record
-                if (stage_id, None) not in existing_unlocks:
-                    unlocks_to_create.append({"user_id": user_id, "stage_id": stage_id, "exercise_id": None, "is_unlocked": True, "unlock_criteria_met": True, "unlocked_at": current_timestamp, "unlocked_by_criteria": "Initial assignment"})
+                stage_unlock_key = (stage_id, None)
+                if stage_unlock_key in existing_unlocks:
+                    existing_unlock = existing_unlocks[stage_unlock_key]
+                    if existing_unlock['is_unlocked'] != should_be_unlocked:
+                        unlocks_to_update.append({
+                            "stage_id": stage_id,
+                            "exercise_id": None,
+                            "is_unlocked": should_be_unlocked,
+                            "unlock_criteria_met": should_be_unlocked,
+                            "unlocked_at": current_timestamp if should_be_unlocked else None,
+                            "unlocked_by_criteria": "Initial assignment" if should_be_unlocked else None
+                        })
+                        print(f"📝 [INIT] Will update stage {stage_id} unlock to: {should_be_unlocked}")
+                else:
+                    unlocks_to_create.append({
+                        "user_id": user_id, 
+                        "stage_id": stage_id, 
+                        "exercise_id": None, 
+                        "is_unlocked": should_be_unlocked, 
+                        "unlock_criteria_met": should_be_unlocked, 
+                        "unlocked_at": current_timestamp if should_be_unlocked else None, 
+                        "unlocked_by_criteria": "Initial assignment" if should_be_unlocked else None
+                    })
+                    print(f"📝 [INIT] Will create stage {stage_id} unlock: {should_be_unlocked}")
                 
-                # Exercise unlock records
-                exercises_to_unlock = []
-                if stage_id in completed_stages:
-                    exercises = await self.get_exercises_for_stage(stage_id)
-                    exercises_to_unlock = [e['exercise_number'] for e in exercises]
-                elif stage_id == start_stage: # Only unlock first exercise for the starting stage
-                    exercises = await self.get_exercises_for_stage(stage_id)
-                    if exercises:
-                        exercises_to_unlock = [exercises[0]['exercise_number']]
+                # Exercise unlock records for this stage
+                exercises_in_stage = await self.get_exercises_for_stage(stage_id)
+                for exercise in exercises_in_stage:
+                    exercise_id = exercise['exercise_number']
+                    exercise_unlock_key = (stage_id, exercise_id)
+                    
+                    # Determine if this exercise should be unlocked
+                    exercise_should_be_unlocked = False
+                    if stage_id in completed_stages:
+                        # All exercises unlocked in completed stages
+                        exercise_should_be_unlocked = True
+                    elif stage_id == start_stage and exercise_id == 1:
+                        # Only first exercise unlocked in starting stage
+                        exercise_should_be_unlocked = True
+                    
+                    if exercise_unlock_key in existing_unlocks:
+                        existing_unlock = existing_unlocks[exercise_unlock_key]
+                        if existing_unlock['is_unlocked'] != exercise_should_be_unlocked:
+                            unlocks_to_update.append({
+                                "stage_id": stage_id,
+                                "exercise_id": exercise_id,
+                                "is_unlocked": exercise_should_be_unlocked,
+                                "unlock_criteria_met": exercise_should_be_unlocked,
+                                "unlocked_at": current_timestamp if exercise_should_be_unlocked else None,
+                                "unlocked_by_criteria": "Initial assignment" if exercise_should_be_unlocked else None
+                            })
+                            print(f"📝 [INIT] Will update stage {stage_id}, exercise {exercise_id} unlock to: {exercise_should_be_unlocked}")
+                    else:
+                        unlocks_to_create.append({
+                            "user_id": user_id,
+                            "stage_id": stage_id,
+                            "exercise_id": exercise_id,
+                            "is_unlocked": exercise_should_be_unlocked,
+                            "unlock_criteria_met": exercise_should_be_unlocked,
+                            "unlocked_at": current_timestamp if exercise_should_be_unlocked else None,
+                            "unlocked_by_criteria": "Initial assignment" if exercise_should_be_unlocked else None
+                        })
+                        print(f"📝 [INIT] Will create stage {stage_id}, exercise {exercise_id} unlock: {exercise_should_be_unlocked}")
 
-                for ex_id in exercises_to_unlock:
-                    if (stage_id, ex_id) not in existing_unlocks:
-                        unlocks_to_create.append({"user_id": user_id, "stage_id": stage_id, "exercise_id": ex_id, "is_unlocked": True, "unlock_criteria_met": True, "unlocked_at": current_timestamp, "unlocked_by_criteria": "Initial assignment"})
-                
-                # Create locked records for the starting stage's other exercises
-                if stage_id == start_stage:
-                    all_exercises_in_stage = await self.get_exercises_for_stage(stage_id)
-                    locked_exercises = [e['exercise_number'] for e in all_exercises_in_stage if e['exercise_number'] not in exercises_to_unlock]
-                    for ex_id in locked_exercises:
-                        if (stage_id, ex_id) not in existing_unlocks:
-                             unlocks_to_create.append({"user_id": user_id, "stage_id": stage_id, "exercise_id": ex_id, "is_unlocked": False, "unlock_criteria_met": False})
-
+            # Execute unlock operations
             if unlocks_to_create:
                 print(f"📝 [INIT] Creating {len(unlocks_to_create)} new learning unlock records...")
                 self.client.table('ai_tutor_learning_unlocks').insert(unlocks_to_create).execute()
                 print("✅ [INIT] Learning unlock records created.")
-            else:
-                print("✅ [INIT] No new learning unlock records needed.")
+            
+            if unlocks_to_update:
+                print(f"📝 [INIT] Updating {len(unlocks_to_update)} existing learning unlock records...")
+                for update_data in unlocks_to_update:
+                    self.client.table('ai_tutor_learning_unlocks').update({
+                        "is_unlocked": update_data["is_unlocked"],
+                        "unlock_criteria_met": update_data["unlock_criteria_met"],
+                        "unlocked_at": update_data["unlocked_at"],
+                        "unlocked_by_criteria": update_data["unlocked_by_criteria"]
+                    }).eq('user_id', user_id).eq('stage_id', update_data["stage_id"]).eq('exercise_id', update_data["exercise_id"]).execute()
+                print("✅ [INIT] Learning unlock records updated.")
+            
+            if not unlocks_to_create and not unlocks_to_update:
+                print("✅ [INIT] No learning unlock records needed.")
 
             print(f"🎉 [INIT] Successfully initialized progress for user: {user_id}")
             return {"success": True, "message": "User progress initialized successfully", "data": summary_result.data[0] if summary_result.data else None}

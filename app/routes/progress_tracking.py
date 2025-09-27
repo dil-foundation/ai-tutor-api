@@ -573,7 +573,9 @@ async def _process_progress_data_for_frontend(summary: dict, stages: list, exerc
             if stage_completed:
                 total_completed_stages += 1
             
-            stage_unlocked = any(e['status'] != 'locked' for e in stage_exercises)
+            # Determine if stage should be unlocked based on summary data
+            unlocked_stages_from_summary = summary.get('unlocked_stages', [])
+            stage_unlocked = stage_id in unlocked_stages_from_summary
             
             total_learning_units += stage_total_topics
             total_completed_units += stage_completed_topics
