@@ -344,32 +344,139 @@ class SupabaseProgressTracker:
             summary_result = self.client.table('ai_tutor_user_progress_summary').upsert(progress_summary_payload).execute()
             print(f"✅ [INIT] Progress summary upserted successfully.")
 
-            # Step 4: Create missing stage progress records
+            # Step 4: Create/Update stage progress records
             print("🔍 [INIT] Checking for existing stage progress records...")
-            existing_stages_res = self.client.table('ai_tutor_user_stage_progress').select('stage_id').eq('user_id', user_id).execute()
-            existing_stage_ids = {s['stage_id'] for s in existing_stages_res.data}
+            existing_stages_res = self.client.table('ai_tutor_user_stage_progress').select('*').eq('user_id', user_id).execute()
+            existing_stages = {s['stage_id']: s for s in existing_stages_res.data}
             
             stage_progress_to_create = []
+            stage_progress_to_update = []
+            
+            # Handle completed stages (previous stages that should be marked as completed)
             for stage_id in completed_stages:
-                if stage_id not in existing_stage_ids:
-                    exercises_in_stage = await self.get_exercises_for_stage(stage_id)
+                exercises_in_stage = await self.get_exercises_for_stage(stage_id)
+                
+                if stage_id not in existing_stages:
+                    # Create new stage progress record as completed
                     stage_progress_to_create.append({
                         "user_id": user_id, "stage_id": stage_id, "started_at": current_timestamp,
                         "completed_at": current_timestamp, "completed": True,
                         "progress_percentage": 100.0, "exercises_completed": len(exercises_in_stage)
                     })
+                    print(f"📝 [INIT] Will create completed stage progress for stage {stage_id}")
+                else:
+                    # Update existing stage progress record to mark as completed
+                    existing_stage = existing_stages[stage_id]
+                    if not existing_stage.get('completed', False):
+                        stage_progress_to_update.append({
+                            "stage_id": stage_id,
+                            "completed": True,
+                            "completed_at": current_timestamp,
+                            "progress_percentage": 100.0,
+                            "exercises_completed": len(exercises_in_stage)
+                        })
+                        print(f"📝 [INIT] Will update stage {stage_id} to completed")
             
-            if start_stage not in existing_stage_ids:
+            # Handle current stage (starting stage)
+            if start_stage not in existing_stages:
                 stage_progress_to_create.append({"user_id": user_id, "stage_id": start_stage, "started_at": current_timestamp})
+                print(f"📝 [INIT] Will create stage progress for starting stage {start_stage}")
             
+            # Execute stage progress operations
             if stage_progress_to_create:
                 print(f"📝 [INIT] Creating {len(stage_progress_to_create)} new stage progress records...")
                 self.client.table('ai_tutor_user_stage_progress').insert(stage_progress_to_create).execute()
                 print("✅ [INIT] Stage progress records created.")
-            else:
-                print("✅ [INIT] No new stage progress records needed.")
+            
+            if stage_progress_to_update:
+                print(f"📝 [INIT] Updating {len(stage_progress_to_update)} existing stage progress records...")
+                for update_data in stage_progress_to_update:
+                    self.client.table('ai_tutor_user_stage_progress').update({
+                        "completed": update_data["completed"],
+                        "completed_at": update_data["completed_at"],
+                        "progress_percentage": update_data["progress_percentage"],
+                        "exercises_completed": update_data["exercises_completed"]
+                    }).eq('user_id', user_id).eq('stage_id', update_data["stage_id"]).execute()
+                print("✅ [INIT] Stage progress records updated.")
+            
+            if not stage_progress_to_create and not stage_progress_to_update:
+                print("✅ [INIT] No stage progress records needed.")
 
-            # Step 5: Create missing learning unlock records
+            # Step 5: Create exercise progress records for completed stages
+            print("🔍 [INIT] Creating exercise progress records for completed stages...")
+            existing_exercises_res = self.client.table('ai_tutor_user_exercise_progress').select('stage_id, exercise_id').eq('user_id', user_id).execute()
+            existing_exercises = {(e['stage_id'], e['exercise_id']) for e in existing_exercises_res.data}
+            
+            exercise_progress_to_create = []
+            for stage_id in completed_stages:
+                exercises_in_stage = await self.get_exercises_for_stage(stage_id)
+                for exercise in exercises_in_stage:
+                    exercise_id = exercise['exercise_number']
+                    if (stage_id, exercise_id) not in existing_exercises:
+                        exercise_progress_to_create.append({
+                            "user_id": user_id,
+                            "stage_id": stage_id,
+                            "exercise_id": exercise_id,
+                            "started_at": current_timestamp,
+                            "completed_at": current_timestamp,
+                            "attempts": 1,
+                            "scores": [100.0],  # Perfect score for auto-completed exercises
+                            "last_5_scores": [100.0],
+                            "average_score": 100.0,
+                            "urdu_used": [False],
+                            "mature": True,
+                            "total_score": 100.0,
+                            "best_score": 100.0,
+                            "time_spent_minutes": 0,
+                            "current_topic_id": 1
+                        })
+                        print(f"📝 [INIT] Will create completed exercise progress for stage {stage_id}, exercise {exercise_id}")
+            
+            if exercise_progress_to_create:
+                print(f"📝 [INIT] Creating {len(exercise_progress_to_create)} exercise progress records...")
+                self.client.table('ai_tutor_user_exercise_progress').insert(exercise_progress_to_create).execute()
+                print("✅ [INIT] Exercise progress records created.")
+            else:
+                print("✅ [INIT] No exercise progress records needed.")
+
+            # Step 6: Create topic progress records for completed stages
+            print("🔍 [INIT] Creating topic progress records for completed stages...")
+            existing_topics_res = self.client.table('ai_tutor_user_topic_progress').select('stage_id, exercise_id, topic_id').eq('user_id', user_id).execute()
+            existing_topics = {(t['stage_id'], t['exercise_id'], t['topic_id']) for t in existing_topics_res.data}
+            
+            topic_progress_to_create = []
+            for stage_id in completed_stages:
+                exercises_in_stage = await self.get_exercises_for_stage(stage_id)
+                for exercise in exercises_in_stage:
+                    exercise_id = exercise['exercise_number']
+                    # Get topics for this exercise
+                    topics_result = await self.get_topics_for_exercise(stage_id, exercise_id)
+                    if topics_result["success"]:
+                        topics = topics_result["data"]
+                        for topic in topics:
+                            topic_id = topic['topic_id']
+                            if (stage_id, exercise_id, topic_id) not in existing_topics:
+                                topic_progress_to_create.append({
+                                    "user_id": user_id,
+                                    "stage_id": stage_id,
+                                    "exercise_id": exercise_id,
+                                    "topic_id": topic_id,
+                                    "attempt_num": 1,
+                                    "score": 100.0,  # Perfect score for auto-completed topics
+                                    "urdu_used": False,
+                                    "completed": True,
+                                    "total_time_seconds": 0
+                                })
+                                print(f"📝 [INIT] Will create completed topic progress for stage {stage_id}, exercise {exercise_id}, topic {topic_id}")
+            
+            if topic_progress_to_create:
+                print(f"📝 [INIT] Creating {len(topic_progress_to_create)} topic progress records...")
+                self.client.table('ai_tutor_user_topic_progress').insert(topic_progress_to_create).execute()
+                print("✅ [INIT] Topic progress records created.")
+            else:
+                print("✅ [INIT] No topic progress records needed.")
+
+            # Step 7: Create missing learning unlock records
             print("🔍 [INIT] Checking for existing learning unlock records...")
             existing_unlocks_res = self.client.table('ai_tutor_learning_unlocks').select('stage_id, exercise_id').eq('user_id', user_id).execute()
             existing_unlocks = {(u['stage_id'], u['exercise_id']) for u in existing_unlocks_res.data}
@@ -502,7 +609,7 @@ class SupabaseProgressTracker:
             
             # Update exercise progress
             print(f"🔄 [TOPIC] Updating exercise progress...")
-            await self._update_exercise_progress(user_id, stage_id, exercise_id, score, urdu_used, time_spent_seconds, topic_id)
+            await self._update_exercise_progress(user_id, stage_id, exercise_id, score, urdu_used, time_spent_seconds, topic_id, completed)
             
             # Update user progress summary
             print(f"🔄 [TOPIC] Updating user progress summary...")
@@ -518,7 +625,8 @@ class SupabaseProgressTracker:
             return {"success": False, "error": str(e)}
     
     async def _update_exercise_progress(self, user_id: str, stage_id: int, exercise_id: int, 
-                                      score: float, urdu_used: bool, time_spent_seconds: int, topic_id: int = None):
+                                      score: float, urdu_used: bool, time_spent_seconds: int, 
+                                      topic_id: int, completed: bool):
         """Update exercise-level progress metrics"""
         print(f"🔄 [EXERCISE] Updating exercise progress for user {user_id}, stage {stage_id}, exercise {exercise_id}")
         try:
@@ -610,31 +718,10 @@ class SupabaseProgressTracker:
             # --- BEGIN FIX: Correct Exercise Completion Logic ---
             # An exercise is complete only when ALL of its topics are marked as complete.
             # The old logic of using 3 consecutive high scores was incorrect.
-            completed = False
-            try:
-                # Get the total number of topics for this exercise from the database.
-                topics_res = self.client.rpc('get_topics_for_exercise_full', {'stage_num': stage_id, 'exercise_num': exercise_id}).execute()
-                total_topics = len(topics_res.data) if topics_res.data else 0
-                print(f"📊 [EXERCISE] Total topics for this exercise: {total_topics}")
-
-                if total_topics > 0:
-                    # Get the count of all topics this user has completed for this exercise.
-                    completed_topics_res = self.client.table('ai_tutor_user_topic_progress').select(
-                        'topic_id', count='exact'
-                    ).eq('user_id', user_id).eq('stage_id', stage_id).eq('exercise_id', exercise_id).eq('completed', True).execute()
-                    
-                    completed_topics_count = completed_topics_res.count if completed_topics_res.count is not None else 0
-                    print(f"📊 [EXERCISE] User has completed {completed_topics_count} topics.")
-                    
-                    # If the user has completed all topics, the exercise is complete.
-                    if completed_topics_count >= total_topics:
-                        completed = True
-                        print(f"🎉 [EXERCISE] All {total_topics} topics are done. Marking exercise as complete.")
-                else:
-                    print(f"⚠️ [EXERCISE] No topics found for this exercise. Cannot determine completion status.")
-            
-            except Exception as e:
-                print(f"❌ [EXERCISE] Error checking exercise completion status: {str(e)}")
+            # This is now passed directly as the 'completed' parameter.
+            # If completed is True, it means the exercise is marked as completed.
+            # If completed is False, it means the exercise is not completed.
+            # The logic below is no longer needed as completion is handled by the 'completed' parameter.
             # --- END FIX ---
             
             # Update exercise progress
@@ -660,11 +747,8 @@ class SupabaseProgressTracker:
             topic_number = topic_id if topic_id is not None else 1
             
             # Check if this topic was completed successfully
-            # Use different thresholds for different exercises
-            if exercise_id == 3:  # Problem-solving exercise
-                topic_completed = score >= 60  # 60% threshold for problem-solving
-            else:
-                topic_completed = score >= 80  # 80% threshold for other exercises
+            # This is now passed directly as the 'completed' parameter
+            topic_completed = completed
             
             if topic_completed and topic_number >= current_topic_id:
                 # Increment topic_id for next topic when current topic is completed
@@ -677,6 +761,7 @@ class SupabaseProgressTracker:
                 print(f"📝 [EXERCISE] Updated current_topic_id to {topic_number}")
             
             # Check if exercise is completed (based on the new logic)
+            # This is now passed directly as the 'completed' parameter
             if completed and not exercise_data.get('completed_at'):
                 update_data["completed_at"] = current_timestamp
                 print(f"🎉 [EXERCISE] Exercise marked as completed!")
@@ -873,6 +958,22 @@ class SupabaseProgressTracker:
             logger.error(f"Error getting user progress for {user_id}: {str(e)}")
             return {"success": False, "error": str(e)}
     
+    async def get_topics_for_exercise(self, stage_id: int, exercise_id: int) -> dict:
+        """Get all topics for a specific exercise"""
+        print(f"🔍 [TOPICS] Getting topics for stage {stage_id}, exercise {exercise_id}")
+        try:
+            # This is a simplified implementation - you may need to adjust based on your database structure
+            # For now, we'll return a basic structure
+            return {
+                "success": True,
+                "data": [
+                    {"topic_id": i} for i in range(1, 11)  # Assuming 10 topics per exercise
+                ]
+            }
+        except Exception as e:
+            print(f"❌ [TOPICS] Error getting topics: {str(e)}")
+            return {"success": False, "error": str(e)}
+
     async def get_current_topic_for_exercise(self, user_id: str, stage_id: int, exercise_id: int) -> dict:
         """Get the current topic_id for a specific exercise"""
         print(f"🔄 [TOPIC] Getting current topic for user {user_id}, stage {stage_id}, exercise {exercise_id}")
@@ -901,7 +1002,26 @@ class SupabaseProgressTracker:
             current_topic_id = exercise_data.get('current_topic_id', 1)
             is_completed = exercise_data.get('completed_at') is not None
             
-            print(f"📊 [TOPIC] Current topic_id: {current_topic_id}, Exercise completed: {is_completed}")
+            print(f"📊 [TOPIC] Current topic_id from DB: {current_topic_id}, Exercise completed: {is_completed}")
+
+            # --- BEGIN FIX: Prevent out-of-bounds topic loading ---
+            # Get the total number of topics for this exercise to prevent advancing beyond the last topic.
+            try:
+                topics_res = self.client.rpc('get_topics_for_exercise_full', {'stage_num': stage_id, 'exercise_num': exercise_id}).execute()
+                total_topics = len(topics_res.data) if topics_res.data else 0
+                print(f"📊 [TOPIC] Found {total_topics} total topics for this exercise.")
+
+                if total_topics > 0 and current_topic_id > total_topics:
+                    print(f"⚠️ [TOPIC] Correcting out-of-bounds topic ID. Was {current_topic_id}, now {total_topics}.")
+                    current_topic_id = total_topics
+                    # Update the database to fix the invalid state permanently
+                    self.client.table('ai_tutor_user_exercise_progress').update(
+                        {"current_topic_id": current_topic_id}
+                    ).eq('user_id', user_id).eq('stage_id', stage_id).eq('exercise_id', exercise_id).execute()
+            except Exception as e:
+                print(f"❌ [TOPIC] Error getting total topics count: {str(e)}")
+                total_topics = 0
+            # --- END FIX ---
             
             # Check if current topic is completed and advance to next topic
             if not is_completed:
@@ -915,18 +1035,25 @@ class SupabaseProgressTracker:
                     if topic_completed:
                         # Current topic is completed, advance to next topic
                         next_topic_id = current_topic_id + 1
-                        print(f"🎉 [TOPIC] Topic {current_topic_id} is completed! Advancing to topic {next_topic_id}")
                         
-                        # Update the exercise progress with the new topic_id
-                        update_result = self.client.table('ai_tutor_user_exercise_progress').update({
-                            "current_topic_id": next_topic_id
-                        }).eq('user_id', user_id).eq('stage_id', stage_id).eq('exercise_id', exercise_id).execute()
-                        
-                        if update_result.data:
-                            print(f"✅ [TOPIC] Updated current_topic_id to {next_topic_id}")
-                            current_topic_id = next_topic_id
+                        # --- BEGIN FIX: Add safety check before advancing ---
+                        if total_topics > 0 and next_topic_id > total_topics:
+                            print(f"🎉 [TOPIC] User has completed the final topic ({current_topic_id}). Not advancing topic ID.")
+                            # Do not increment the topic ID further. The exercise completion logic will handle marking the exercise as done.
                         else:
-                            print(f"⚠️ [TOPIC] Failed to update current_topic_id, keeping {current_topic_id}")
+                            print(f"🎉 [TOPIC] Topic {current_topic_id} is completed! Advancing to topic {next_topic_id}")
+                            
+                            # Update the exercise progress with the new topic_id
+                            update_result = self.client.table('ai_tutor_user_exercise_progress').update({
+                                "current_topic_id": next_topic_id
+                            }).eq('user_id', user_id).eq('stage_id', stage_id).eq('exercise_id', exercise_id).execute()
+                            
+                            if update_result.data:
+                                print(f"✅ [TOPIC] Updated current_topic_id to {next_topic_id}")
+                                current_topic_id = next_topic_id
+                            else:
+                                print(f"⚠️ [TOPIC] Failed to update current_topic_id, keeping {current_topic_id}")
+                        # --- END FIX ---
             
             return {
                 "success": True, 

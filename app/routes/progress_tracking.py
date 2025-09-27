@@ -63,7 +63,29 @@ async def initialize_user_progress(
     try:
         print(f"🔄 [API] Starting progress initialization for user: {request.user_id}")
         
-        result = await progress_tracker.initialize_user_progress(request.user_id)
+        # Get assigned_start_stage from user metadata
+        assigned_stage = 1  # Default fallback
+        english_proficiency_text = None
+        
+        try:
+            # Get user metadata from Supabase Auth
+            from app.supabase_client import supabase
+            user_response = supabase.auth.admin.get_user_by_id(request.user_id)
+            if user_response and user_response.user:
+                user_metadata = user_response.user.user_metadata or {}
+                assigned_stage = user_metadata.get('assigned_start_stage', 1)
+                english_proficiency_text = user_metadata.get('english_proficiency_text')
+                print(f"📊 [API] Retrieved assigned_start_stage from user metadata: {assigned_stage}")
+            else:
+                print(f"⚠️ [API] Could not retrieve user metadata, using default stage: {assigned_stage}")
+        except Exception as e:
+            print(f"⚠️ [API] Error retrieving user metadata: {str(e)}, using default stage: {assigned_stage}")
+        
+        result = await progress_tracker.initialize_user_progress(
+            request.user_id, 
+            assigned_start_stage=assigned_stage,
+            english_proficiency_text=english_proficiency_text
+        )
         print(f"📊 [API] Progress initialization result: {result}")
         
         if result["success"]:
@@ -337,7 +359,31 @@ async def get_comprehensive_progress(
         # If no summary exists, the user is likely new. Initialize them.
         if not progress_result.get("data") or not progress_result.get("data").get("summary"):
             print(f"⚠️ [API] No progress found for user {request.user_id}. Initializing now.")
-            init_result = await progress_tracker.initialize_user_progress(request.user_id)
+            
+            # Get assigned_start_stage from user metadata
+            assigned_stage = 1  # Default fallback
+            english_proficiency_text = None
+            
+            try:
+                # Get user metadata from Supabase Auth
+                from app.supabase_client import supabase
+                user_response = supabase.auth.admin.get_user_by_id(request.user_id)
+                if user_response and user_response.user:
+                    user_metadata = user_response.user.user_metadata or {}
+                    assigned_stage = user_metadata.get('assigned_start_stage', 1)
+                    english_proficiency_text = user_metadata.get('english_proficiency_text')
+                    print(f"📊 [API] Retrieved assigned_start_stage from user metadata: {assigned_stage}")
+                else:
+                    print(f"⚠️ [API] Could not retrieve user metadata, using default stage: {assigned_stage}")
+            except Exception as e:
+                print(f"⚠️ [API] Error retrieving user metadata: {str(e)}, using default stage: {assigned_stage}")
+            
+            # Initialize with the retrieved assigned_start_stage
+            init_result = await progress_tracker.initialize_user_progress(
+                request.user_id, 
+                assigned_start_stage=assigned_stage,
+                english_proficiency_text=english_proficiency_text
+            )
             if not init_result.get("success"):
                 # Handle case where initialization fails
                 raise HTTPException(status_code=500, detail="Failed to initialize user progress.")
