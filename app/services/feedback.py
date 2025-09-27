@@ -3439,8 +3439,8 @@ Focus on C2-level expectations: sophisticated language, complex ideas, nuanced a
         )
         
         # Determine completion status
-        is_correct = weighted_score >= 70
-        completed = weighted_score >= 80
+        is_correct = weighted_score >= 35
+        completed = weighted_score >= 35
         
         print(f"📊 [EVAL] Evaluation results:")
         print(f"   Overall Score: {weighted_score:.1f}")
@@ -3625,8 +3625,8 @@ Focus on C2-level expectations: sophisticated diplomatic language, emotional int
         )
         
         # Determine completion status
-        is_correct = weighted_score >= 70
-        completed = weighted_score >= 80
+        is_correct = weighted_score >= 35
+        completed = weighted_score >= 35
         
         print(f"📊 [EVAL] Evaluation results:")
         print(f"   Overall Score: {weighted_score:.1f}")
@@ -3769,8 +3769,8 @@ You are an expert English language evaluator for C2 Advanced level critical opin
 **REQUIRED JSON OUTPUT FORMAT:**
 {{
     "score": <number between 0-100>,
-    "is_correct": <boolean - true if score >= 75>,
-    "completed": <boolean - true if score >= 80>,
+    "is_correct": <boolean - true if score >= 35>,
+    "completed": <boolean - true if score >= 35>,
     "keyword_matches": <number of expected keywords found>,
     "total_keywords": <total number of expected keywords>,
     "academic_expressions_used": <number of academic expressions found>,
@@ -3859,8 +3859,8 @@ You are an expert English language evaluator for C2 Advanced level critical opin
             score = 50
             evaluation_result["score"] = score
         
-        is_correct = evaluation_result.get("is_correct", score >= 75)
-        completed = evaluation_result.get("completed", score >= 80)
+        is_correct = evaluation_result.get("is_correct", score >= 35)
+        completed = evaluation_result.get("completed", score >= 35)
         
         # Ensure keyword matches is valid
         keyword_matches = evaluation_result.get("keyword_matches", 0)
