@@ -49,6 +49,7 @@ from app.routes import (
     progress_tracking,
     admin_dashboard,
     teacher_dashboard,
+    teacher_dashboard_optimized,
     messaging,
     auth
 )
@@ -179,6 +180,9 @@ app.include_router(admin_dashboard.router, tags=["Admin Dashboard"])
 
 # Teacher dashboard routes (NEW - Teacher Dashboard System)
 app.include_router(teacher_dashboard.router, tags=["Teacher Dashboard"])
+
+# Optimized teacher dashboard routes (PERFORMANCE OPTIMIZED)
+app.include_router(teacher_dashboard_optimized.router, tags=["Teacher Dashboard Optimized"])
 
 # Messaging system routes (NEW - Real-time Messaging)
 app.include_router(messaging.router, prefix="/api", tags=["Messaging System"])

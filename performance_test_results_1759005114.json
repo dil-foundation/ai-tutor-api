@@ -1,0 +1,84 @@
+{
+  "timestamp": 1759005114,
+  "test_config": {
+    "base_url": "https://d3k15uo8yl49h6.cloudfront.net",
+    "iterations": 3
+  },
+  "results": [
+    {
+      "test_name": "Progress Overview",
+      "type": "comparison",
+      "results": {
+        "old_endpoint": {
+          "endpoint": "/teacher/dashboard/progress-overview?time_range=all_time",
+          "method": "GET",
+          "success": false,
+          "error": "No successful requests",
+          "errors": [
+            "Cannot connect to host d3k15uo8yl49h6.cloudfront.net:443 ssl:True [SSLCertVerificationError: (1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1007)')]",
+            "Cannot connect to host d3k15uo8yl49h6.cloudfront.net:443 ssl:True [SSLCertVerificationError: (1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1007)')]",
+            "Cannot connect to host d3k15uo8yl49h6.cloudfront.net:443 ssl:True [SSLCertVerificationError: (1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1007)')]"
+          ]
+        },
+        "new_endpoint": {
+          "endpoint": "/teacher/optimized/dashboard/progress-overview-fast?time_range=all_time",
+          "method": "GET",
+          "success": false,
+          "error": "No successful requests",
+          "errors": [
+            "Cannot connect to host d3k15uo8yl49h6.cloudfront.net:443 ssl:True [SSLCertVerificationError: (1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1007)')]",
+            "Cannot connect to host d3k15uo8yl49h6.cloudfront.net:443 ssl:True [SSLCertVerificationError: (1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1007)')]",
+            "Cannot connect to host d3k15uo8yl49h6.cloudfront.net:443 ssl:True [SSLCertVerificationError: (1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1007)')]"
+          ]
+        },
+        "improvement": null,
+        "error": "One or both endpoints failed"
+      }
+    },
+    {
+      "test_name": "Progress Metrics",
+      "type": "comparison",
+      "results": {
+        "old_endpoint": {
+          "endpoint": "/teacher/dashboard/progress-metrics?time_range=all_time",
+          "method": "GET",
+          "success": false,
+          "error": "No successful requests",
+          "errors": [
+            "Cannot connect to host d3k15uo8yl49h6.cloudfront.net:443 ssl:True [SSLCertVerificationError: (1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1007)')]",
+            "Cannot connect to host d3k15uo8yl49h6.cloudfront.net:443 ssl:True [SSLCertVerificationError: (1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1007)')]",
+            "Cannot connect to host d3k15uo8yl49h6.cloudfront.net:443 ssl:True [SSLCertVerificationError: (1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1007)')]"
+          ]
+        },
+        "new_endpoint": {
+          "endpoint": "/teacher/optimized/dashboard/progress-metrics-fast?time_range=all_time",
+          "method": "GET",
+          "success": false,
+          "error": "No successful requests",
+          "errors": [
+            "Cannot connect to host d3k15uo8yl49h6.cloudfront.net:443 ssl:True [SSLCertVerificationError: (1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1007)')]",
+            "Cannot connect to host d3k15uo8yl49h6.cloudfront.net:443 ssl:True [SSLCertVerificationError: (1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1007)')]",
+            "Cannot connect to host d3k15uo8yl49h6.cloudfront.net:443 ssl:True [SSLCertVerificationError: (1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1007)')]"
+          ]
+        },
+        "improvement": null,
+        "error": "One or both endpoints failed"
+      }
+    },
+    {
+      "test_name": "Batch Dashboard Data",
+      "type": "new_only",
+      "results": {
+        "endpoint": "/teacher/optimized/dashboard/batch-data",
+        "method": "GET",
+        "success": false,
+        "error": "No successful requests",
+        "errors": [
+          "Cannot connect to host d3k15uo8yl49h6.cloudfront.net:443 ssl:True [SSLCertVerificationError: (1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1007)')]",
+          "Cannot connect to host d3k15uo8yl49h6.cloudfront.net:443 ssl:True [SSLCertVerificationError: (1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1007)')]",
+          "Cannot connect to host d3k15uo8yl49h6.cloudfront.net:443 ssl:True [SSLCertVerificationError: (1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1007)')]"
+        ]
+      }
+    }
+  ]
+}
