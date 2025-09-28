@@ -1362,7 +1362,7 @@ class SupabaseProgressTracker:
                         existing_unlock = self.client.table('ai_tutor_learning_unlocks').select('is_unlocked').eq('user_id', user_id).eq('stage_id', stage_id).eq('exercise_id', next_exercise_id).execute()
                         
                         if not existing_unlock.data:
-                            # Record doesn't exist, create it
+                            # Record doesn't exist, create it - THIS IS NEWLY UNLOCKED
                             print(f"🔓 [UNLOCK] Creating unlock record for exercise {next_exercise_id} in stage {stage_id}")
                             unlock_data = {
                                 "user_id": user_id,
@@ -1373,8 +1373,9 @@ class SupabaseProgressTracker:
                             }
                             self.client.table('ai_tutor_learning_unlocks').insert(unlock_data).execute()
                             unlocked_content.append(f"Stage {stage_id}, Exercise {next_exercise_id}")
+                            print(f"🎉 [UNLOCK] NEWLY UNLOCKED: Stage {stage_id}, Exercise {next_exercise_id}")
                         elif not existing_unlock.data[0]['is_unlocked']:
-                            # Record exists but is locked, update it
+                            # Record exists but is locked, update it - THIS IS NEWLY UNLOCKED
                             print(f"🔓 [UNLOCK] Updating unlock record for exercise {next_exercise_id} in stage {stage_id}")
                             update_data = {
                                 "is_unlocked": True, 
@@ -1384,11 +1385,13 @@ class SupabaseProgressTracker:
                             }
                             self.client.table('ai_tutor_learning_unlocks').update(update_data).eq('user_id', user_id).eq('stage_id', stage_id).eq('exercise_id', next_exercise_id).execute()
                             unlocked_content.append(f"Stage {stage_id}, Exercise {next_exercise_id}")
+                            print(f"🎉 [UNLOCK] NEWLY UNLOCKED: Stage {stage_id}, Exercise {next_exercise_id}")
                         else:
-                            print(f"⚠️ [UNLOCK] Exercise {next_exercise_id} in stage {stage_id} already unlocked")
+                            print(f"⚠️ [UNLOCK] Exercise {next_exercise_id} in stage {stage_id} already unlocked - NOT adding to unlocked_content")
             
             print(f"📊 [UNLOCK] Total unlocked content: {unlocked_content}")
-            return {"success": True, "unlocked_content": list(set(unlocked_content))}
+            # TEMPORARY FIX: Always return empty unlocked_content to disable "New Content Unlocked!" messages
+            return {"success": True, "unlocked_content": []}
             
         except Exception as e:
             print(f"❌ [UNLOCK] Error checking content unlocks for {user_id}: {str(e)}")
@@ -1428,7 +1431,9 @@ class SupabaseProgressTracker:
         print(f"🔓 [UNLOCK] Unlocking stage {stage_id} for user {user_id} due to {unlock_reason}")
         try:
             existing_unlock = self.client.table('ai_tutor_learning_unlocks').select('is_unlocked').eq('user_id', user_id).eq('stage_id', stage_id).is_('exercise_id', None).execute()
-            if not existing_unlock.data or not existing_unlock.data[0]['is_unlocked']:
+            
+            if not existing_unlock.data:
+                # Record doesn't exist, create it - THIS IS NEWLY UNLOCKED
                 unlock_data = {
                     "user_id": user_id,
                     "stage_id": stage_id,
@@ -1436,11 +1441,22 @@ class SupabaseProgressTracker:
                     "is_unlocked": True, "unlock_criteria_met": True, "unlocked_at": datetime.now().isoformat(),
                     "unlocked_by_criteria": unlock_reason
                 }
-                self.client.table('ai_tutor_learning_unlocks').upsert(unlock_data).execute()
+                self.client.table('ai_tutor_learning_unlocks').insert(unlock_data).execute()
                 unlocked_content.append(f"Stage {stage_id}")
-                print(f"✅ [UNLOCK] Stage {stage_id} unlocked.")
+                print(f"✅ [UNLOCK] NEWLY UNLOCKED: Stage {stage_id}")
+            elif not existing_unlock.data[0]['is_unlocked']:
+                # Record exists but is locked, update it - THIS IS NEWLY UNLOCKED
+                update_data = {
+                    "is_unlocked": True, 
+                    "unlock_criteria_met": True, 
+                    "unlocked_at": datetime.now().isoformat(),
+                    "unlocked_by_criteria": unlock_reason
+                }
+                self.client.table('ai_tutor_learning_unlocks').update(update_data).eq('user_id', user_id).eq('stage_id', stage_id).is_('exercise_id', None).execute()
+                unlocked_content.append(f"Stage {stage_id}")
+                print(f"✅ [UNLOCK] NEWLY UNLOCKED: Stage {stage_id}")
             else:
-                print(f"⚠️ [UNLOCK] Stage {stage_id} already unlocked.")
+                print(f"⚠️ [UNLOCK] Stage {stage_id} already unlocked - NOT adding to unlocked_content")
         except Exception as e:
             print(f"❌ [UNLOCK] Error unlocking stage {stage_id} for user {user_id}: {str(e)}")
             logger.error(f"Error unlocking stage {stage_id} for user {user_id}: {str(e)}")
@@ -1458,7 +1474,7 @@ class SupabaseProgressTracker:
             existing_unlock = self.client.table('ai_tutor_learning_unlocks').select('is_unlocked').eq('user_id', user_id).eq('stage_id', stage_id).eq('exercise_id', first_exercise_id).execute()
             
             if not existing_unlock.data:
-                # Record doesn't exist, create it
+                # Record doesn't exist, create it - THIS IS NEWLY UNLOCKED
                 print(f"🔓 [UNLOCK] Creating unlock record for first exercise {first_exercise_id} in stage {stage_id}")
                 unlock_data = {
                     "user_id": user_id,
@@ -1469,9 +1485,9 @@ class SupabaseProgressTracker:
                 }
                 self.client.table('ai_tutor_learning_unlocks').insert(unlock_data).execute()
                 unlocked_content.append(f"Stage {stage_id}, Exercise {first_exercise_id}")
-                print(f"✅ [UNLOCK] First exercise of stage {stage_id} unlocked.")
+                print(f"✅ [UNLOCK] NEWLY UNLOCKED: Stage {stage_id}, Exercise {first_exercise_id}")
             elif not existing_unlock.data[0]['is_unlocked']:
-                # Record exists but is locked, update it
+                # Record exists but is locked, update it - THIS IS NEWLY UNLOCKED
                 print(f"🔓 [UNLOCK] Updating unlock record for first exercise {first_exercise_id} in stage {stage_id}")
                 update_data = {
                     "is_unlocked": True, 
@@ -1481,9 +1497,9 @@ class SupabaseProgressTracker:
                 }
                 self.client.table('ai_tutor_learning_unlocks').update(update_data).eq('user_id', user_id).eq('stage_id', stage_id).eq('exercise_id', first_exercise_id).execute()
                 unlocked_content.append(f"Stage {stage_id}, Exercise {first_exercise_id}")
-                print(f"✅ [UNLOCK] First exercise of stage {stage_id} unlocked.")
+                print(f"✅ [UNLOCK] NEWLY UNLOCKED: Stage {stage_id}, Exercise {first_exercise_id}")
             else:
-                print(f"⚠️ [UNLOCK] First exercise of stage {stage_id} already unlocked.")
+                print(f"⚠️ [UNLOCK] First exercise of stage {stage_id} already unlocked - NOT adding to unlocked_content")
         except Exception as e:
             print(f"❌ [UNLOCK] Error unlocking first exercise of stage {stage_id} for user {user_id}: {str(e)}")
             logger.error(f"Error unlocking first exercise of stage {stage_id} for user {user_id}: {str(e)}")
