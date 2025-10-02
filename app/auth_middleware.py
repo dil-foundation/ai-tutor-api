@@ -61,20 +61,70 @@ class AuthMiddleware:
             result = self.supabase.auth.get_user(token)
             
             if result.user:
-                user_data = {
-                    "id": result.user.id,
-                    "email": result.user.email,
-                    "role": result.user.user_metadata.get("role", "student"),
-                    "first_name": result.user.user_metadata.get("first_name", ""),
-                    "last_name": result.user.user_metadata.get("last_name", ""),
-                    "grade": result.user.user_metadata.get("grade", "")
-                }
+                user_id = result.user.id
+                user_email = result.user.email
+                
+                # Check if account is deleted by querying profiles table
+                try:
+                    profile_response = self.supabase.table('profiles').select('is_deleted, deleted_at, role, grade, first_name, last_name').eq('id', user_id).single().execute()
+                    
+                    if profile_response.data:
+                        profile = profile_response.data
+                        
+                        # 🚫 BLOCK DELETED ACCOUNTS - Prevent access for soft-deleted accounts
+                        if profile.get("is_deleted", False):
+                            logger.warning(f"Access denied - account is deleted: {user_email}")
+                            raise HTTPException(
+                                status_code=403, 
+                                detail="Account has been deleted. Please contact support if you believe this is an error."
+                            )
+                        
+                        # Use profile data if available
+                        user_data = {
+                            "id": user_id,
+                            "email": user_email,
+                            "role": profile.get("role", "student"),
+                            "first_name": profile.get("first_name", ""),
+                            "last_name": profile.get("last_name", ""),
+                            "grade": profile.get("grade", ""),
+                            "is_deleted": profile.get("is_deleted", False),
+                            "deleted_at": profile.get("deleted_at")
+                        }
+                    else:
+                        # Fallback to user metadata if no profile found
+                        user_data = {
+                            "id": user_id,
+                            "email": user_email,
+                            "role": result.user.user_metadata.get("role", "student"),
+                            "first_name": result.user.user_metadata.get("first_name", ""),
+                            "last_name": result.user.user_metadata.get("last_name", ""),
+                            "grade": result.user.user_metadata.get("grade", ""),
+                            "is_deleted": False,
+                            "deleted_at": None
+                        }
+                        
+                except Exception as profile_error:
+                    logger.warning(f"Error checking profile for {user_email}: {str(profile_error)}")
+                    # Fallback to user metadata if profile check fails
+                    user_data = {
+                        "id": user_id,
+                        "email": user_email,
+                        "role": result.user.user_metadata.get("role", "student"),
+                        "first_name": result.user.user_metadata.get("first_name", ""),
+                        "last_name": result.user.user_metadata.get("last_name", ""),
+                        "grade": result.user.user_metadata.get("grade", ""),
+                        "is_deleted": False,
+                        "deleted_at": None
+                    }
+                
                 logger.info(f"Token verified for user: {user_data['email']}")
                 return user_data
             else:
                 logger.error("Invalid token: No user found")
                 raise HTTPException(status_code=401, detail="Invalid token")
                 
+        except HTTPException:
+            raise
         except Exception as e:
             logger.error(f"Token verification failed: {str(e)}")
             raise HTTPException(status_code=401, detail="Invalid or expired token")

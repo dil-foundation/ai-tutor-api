@@ -50,7 +50,8 @@ from app.routes import (
     admin_dashboard,
     teacher_dashboard,
     messaging,
-    auth
+    auth,
+    account_deletion
 )
 from .services.settings_manager import get_ai_settings
 from .services.safety_manager import get_ai_safety_settings
@@ -179,6 +180,9 @@ app.include_router(admin_dashboard.router, tags=["Admin Dashboard"])
 
 # Teacher dashboard routes (NEW - Teacher Dashboard System)
 app.include_router(teacher_dashboard.router, tags=["Teacher Dashboard"])
+
+# Account deletion routes (NEW - Account Deletion System)
+app.include_router(account_deletion.router, prefix="/api/account", tags=["Account Deletion"])
 
 # Messaging system routes (NEW - Real-time Messaging)
 app.include_router(messaging.router, prefix="/api", tags=["Messaging System"])
