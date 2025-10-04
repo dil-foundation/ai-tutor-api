@@ -103,6 +103,9 @@ class AuthMiddleware:
                             "deleted_at": None
                         }
                         
+                except HTTPException:
+                    # Re-raise the exception to ensure it's not caught by the general catch-all
+                    raise
                 except Exception as profile_error:
                     logger.warning(f"Error checking profile for {user_email}: {str(profile_error)}")
                     # Fallback to user metadata if profile check fails
@@ -146,6 +149,8 @@ class AuthMiddleware:
             token = credentials.credentials
             user_data = await self.verify_token(token)
             return user_data
+        except HTTPException:
+            raise
         except Exception as e:
             logger.error(f"Authentication failed: {str(e)}")
             raise HTTPException(status_code=401, detail="Authentication required")
