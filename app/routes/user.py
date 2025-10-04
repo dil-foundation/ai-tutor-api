@@ -5,9 +5,11 @@ from fastapi import APIRouter, Depends, HTTPException, status
 # from sqlalchemy.orm import Session
 # from sqlalchemy.sql import text
 from datetime import datetime
+from typing import Dict, Any
 
 from app.schemas.user_input import UserRegisterInput, StageResult, WordPressUserRegistration, UserLogin
 from app.services.cefr_evaluator import evaluate_cefr_level
+from app.auth_middleware import require_admin_or_teacher_or_student
 # from app.database import get_db
 
 router = APIRouter()
@@ -20,6 +22,13 @@ WP_API_USERNAME = os.getenv("WP_API_USERNAME")
 WP_API_APPLICATION_PASSWORD = os.getenv("WP_API_APPLICATION_PASSWORD")
 
 DEFAULT_WP_TOKEN_ENDPOINT_PATH = "/wp-json/jwt-auth/v1/token"
+
+@router.get("/me", response_model=Dict[str, Any])
+async def read_users_me(current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
+    """
+    Get current user profile
+    """
+    return current_user
 
 @router.post("/register", response_model=StageResult)
 async def register_user(user_input: UserRegisterInput):
