@@ -23,18 +23,34 @@ class SignUpRequest(BaseModel):
 async def signup(request: SignUpRequest):
     """
     Handles the user sign-up process.
-    1. Assesses English proficiency to assign a starting stage.
-    2. Creates the user in Supabase Auth.
-    3. Initializes user progress at the assigned stage.
+    1. Checks if user already exists or is soft-deleted.
+    2. Assesses English proficiency to assign a starting stage.
+    3. Creates the user in Supabase Auth.
+    4. Initializes user progress at the assigned stage.
     """
     logger.info(f"Received sign-up request for email: {request.email}")
 
     try:
-        # Step 1: Assess English proficiency
+        # Step 1: Check if user already exists in our profiles table
+        existing_profile_response = supabase.table('profiles').select('id, is_deleted').eq('email', request.email).execute()
+        
+        if existing_profile_response.data:
+            existing_profile = existing_profile_response.data[0]
+            if existing_profile.get('is_deleted'):
+                logger.warning(f"Signup attempt for a deleted account: {request.email}")
+                raise HTTPException(
+                    status_code=400,
+                    detail="This account has been deleted. Please restore your account or wait 30 days for it to be permanently removed."
+                )
+            else:
+                logger.warning(f"Signup attempt for an existing email: {request.email}")
+                raise HTTPException(status_code=400, detail="A user with this email address is already registered.")
+
+        # Step 2: Assess English proficiency
         assigned_stage = await assess_english_proficiency(request.english_proficiency_text)
         logger.info(f"Assigned stage {assigned_stage} for user {request.email}")
 
-        # Step 2: Create user in Supabase Auth
+        # Step 3: Create user in Supabase Auth
         logger.info(f"Creating user in Supabase Auth for {request.email}")
         auth_response = supabase.auth.sign_up({
             "email": request.email,
@@ -55,7 +71,7 @@ async def signup(request: SignUpRequest):
             user = auth_response.user
             logger.info(f"User created successfully in Supabase Auth with ID: {user.id}")
 
-            # Step 3: Initialize user progress with the assigned stage
+            # Step 4: Initialize user progress with the assigned stage
             logger.info(f"Initializing progress for user {user.id} at stage {assigned_stage}")
             
             init_result = await progress_tracker.initialize_user_progress(
