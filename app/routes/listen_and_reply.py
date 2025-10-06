@@ -24,7 +24,7 @@ class AudioEvaluationRequest(BaseModel):
     urdu_used: bool
 
 async def get_dialogue_by_id(dialogue_id: int):
-    """Fetch a dialogue from Supabase by its topic_number for Stage 1, Exercise 3."""
+    """Fetch a dialogue from Supabase by its topic_number for Stage 1, Exercise 3..."""
     print(f"🔍 [DB] Looking for dialogue with topic_number (ID): {dialogue_id} for Stage 1, Exercise 3")
     try:
         # parent_id for Stage 1, Exercise 3 ('Functional Dialogue') is 9.
