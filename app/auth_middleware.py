@@ -63,23 +63,24 @@ class AuthMiddleware:
             if result.user:
                 user_id = result.user.id
                 user_email = result.user.email
+                user_metadata = result.user.user_metadata or {}
+
+                # 🚫 BLOCK DELETED ACCOUNTS from JWT metadata - Simpler and Faster
+                if user_metadata.get("account_deleted", False):
+                    logger.warning(f"Access denied - account is deleted (from JWT): {user_email}")
+                    raise HTTPException(
+                        status_code=403, 
+                        detail="Account has been deleted. Please contact support if you believe this is an error."
+                    )
                 
-                # Check if account is deleted by querying profiles table
+                # We can now trust the JWT and a separate profile query isn't needed for this check.
+                # We still query the profile to get the most up-to-date role, grade, etc.
                 try:
-                    profile_response = self.supabase.table('profiles').select('is_deleted, deleted_at, role, grade, first_name, last_name').eq('id', user_id).single().execute()
+                    profile_response = self.supabase.table('profiles').select('role, grade, first_name, last_name').eq('id', user_id).single().execute()
                     
                     if profile_response.data:
                         profile = profile_response.data
                         
-                        # 🚫 BLOCK DELETED ACCOUNTS - Prevent access for soft-deleted accounts
-                        if profile.get("is_deleted", False):
-                            logger.warning(f"Access denied - account is deleted: {user_email}")
-                            raise HTTPException(
-                                status_code=403, 
-                                detail="Account has been deleted. Please contact support if you believe this is an error."
-                            )
-                        
-                        # Use profile data if available
                         user_data = {
                             "id": user_id,
                             "email": user_email,
@@ -87,20 +88,20 @@ class AuthMiddleware:
                             "first_name": profile.get("first_name", ""),
                             "last_name": profile.get("last_name", ""),
                             "grade": profile.get("grade", ""),
-                            "is_deleted": profile.get("is_deleted", False),
-                            "deleted_at": profile.get("deleted_at")
+                            "is_deleted": True, # We know this from the JWT check
+                            "deleted_at": user_metadata.get("deleted_at")
                         }
                     else:
                         # Fallback to user metadata if no profile found
                         user_data = {
                             "id": user_id,
                             "email": user_email,
-                            "role": result.user.user_metadata.get("role", "student"),
-                            "first_name": result.user.user_metadata.get("first_name", ""),
-                            "last_name": result.user.user_metadata.get("last_name", ""),
-                            "grade": result.user.user_metadata.get("grade", ""),
-                            "is_deleted": False,
-                            "deleted_at": None
+                            "role": user_metadata.get("role", "student"),
+                            "first_name": user_metadata.get("first_name", ""),
+                            "last_name": user_metadata.get("last_name", ""),
+                            "grade": user_metadata.get("grade", ""),
+                            "is_deleted": user_metadata.get("account_deleted", False),
+                            "deleted_at": user_metadata.get("deleted_at")
                         }
                         
                 except HTTPException:
@@ -112,12 +113,12 @@ class AuthMiddleware:
                     user_data = {
                         "id": user_id,
                         "email": user_email,
-                        "role": result.user.user_metadata.get("role", "student"),
-                        "first_name": result.user.user_metadata.get("first_name", ""),
-                        "last_name": result.user.user_metadata.get("last_name", ""),
-                        "grade": result.user.user_metadata.get("grade", ""),
-                        "is_deleted": False,
-                        "deleted_at": None
+                        "role": user_metadata.get("role", "student"),
+                        "first_name": user_metadata.get("first_name", ""),
+                        "last_name": user_metadata.get("last_name", ""),
+                        "grade": user_metadata.get("grade", ""),
+                        "is_deleted": user_metadata.get("account_deleted", False),
+                        "deleted_at": user_metadata.get("deleted_at")
                     }
                 
                 logger.info(f"Token verified for user: {user_data['email']}")
