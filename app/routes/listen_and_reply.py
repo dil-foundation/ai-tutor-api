@@ -169,7 +169,7 @@ async def check_exercise_completion(user_id: str) -> dict:
 
 @router.get("/dialogues")
 async def get_all_dialogues(current_user: Dict[str, Any] = Depends(require_admin_or_teacher_or_student)):
-    """Get all available dialogues for Listen and Reply exercise from Supabase"""
+    """Get all available dialogues for Listen and Reply exercise from Supabase..."""
     print("🔄 [API] GET /dialogues endpoint called")
     try:
         print("🔄 [DB] Fetching all dialogues for Stage 1, Exercise 3 from Supabase")
