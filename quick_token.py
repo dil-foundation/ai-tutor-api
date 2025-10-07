@@ -12,9 +12,11 @@ load_dotenv(override=True)
 
 def get_token():
     """Get JWT token for testing"""
-    url = "https://yfaiauooxwvekdimfeuu.supabase.co"
-    key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlmYWlhdW9veHd2ZWtkaW1mZXV1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTE1OTEyMDksImV4cCI6MjA2NzE2NzIwOX0.rAc49wpyOERCcNpxpI12TPn6NSSoySToNq33bhakEho"
+    # url = "https://yfaiauooxwvekdimfeuu.supabase.co"
+    # key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlmYWlhdW9veHd2ZWtkaW1mZXV1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTE1OTEyMDksImV4cCI6MjA2NzE2NzIwOX0.rAc49wpyOERCcNpxpI12TPn6NSSoySToNq33bhakEho"
     
+    url = "https://otobfhnqafoyqinjenle.supabase.co"
+    key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im90b2JmaG5xYWZveXFpbmplbmxlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgxMjQwMDYsImV4cCI6MjA3MzcwMDAwNn0.tDZjL1M6JJLEgaycQ_1VsNO07O625FlddwsD3FAD_MM"
     if not url or not key:
         print("❌ Error: Missing Supabase environment variables")
         return None
