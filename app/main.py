@@ -135,7 +135,7 @@ async def shutdown_event():
 print("🚀 [MAIN] Initializing AI English Tutor API...")
 
 # User management and authentication
-app.include_router(user.router, prefix="/user", tags=["User Management"])
+app.include_router(user.router, prefix="/api/user", tags=["User Management"])
 app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
 
 # Translation services
