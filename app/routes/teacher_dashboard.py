@@ -5,7 +5,9 @@ import logging
 from datetime import date, datetime, timedelta
 from app.supabase_client import supabase, progress_tracker
 from app.auth_middleware import get_current_user, require_admin_or_teacher
+from app.cache import cache_manager
 import json
+import asyncio
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/teacher", tags=["Teacher Dashboard"])
@@ -156,22 +158,47 @@ async def get_teacher_dashboard_overview(
     current_user: Dict[str, Any] = Depends(require_admin_or_teacher)
 ):
     """
-    Get comprehensive teacher dashboard overview with learn feature engagement summary and top used practice lessons
+    Get comprehensive teacher dashboard overview (OPTIMIZED with caching)
     """
     print(f"🔄 [TEACHER] GET /teacher/dashboard/overview called")
     print(f"📝 [TEACHER] Time range: {time_range}")
     print(f"👤 [TEACHER] Authenticated user: {current_user['email']} (Role: {current_user.get('role', 'unknown')})")
     
     try:
-        # Get all required metrics with time range filtering
-        learn_engagement_summary = await _get_learn_feature_engagement_summary(time_range)
-        top_used_lessons = await _get_top_used_practice_lessons(time_range=time_range)
+        # OPTIMIZATION: Add caching for overview data
+        cache_key = f"teacher_overview:{time_range}"
+        cached_result = None
+        
+        try:
+            cached_result = await cache_manager.get(cache_key)
+        except Exception as cache_error:
+            print(f"⚠️ [TEACHER] Cache error (continuing without cache): {str(cache_error)}")
+        
+        if cached_result:
+            print(f"✅ [TEACHER] Using cached overview data for {time_range}")
+            return TeacherDashboardResponse(
+                success=True,
+                data=cached_result,
+                message="Teacher dashboard data retrieved successfully (cached)"
+            )
+        
+        # Get all required metrics with time range filtering (OPTIMIZED)
+        learn_engagement_summary, top_used_lessons = await asyncio.gather(
+            _get_learn_feature_engagement_summary(time_range),
+            _get_top_used_practice_lessons(time_range=time_range)
+        )
         
         dashboard_data = {
             "learn_feature_engagement_summary": learn_engagement_summary,
             "top_used_practice_lessons": top_used_lessons,
             "last_updated": datetime.now().isoformat()
         }
+        
+        # Cache for 3 minutes (overview data changes more frequently)
+        try:
+            await cache_manager.set(cache_key, dashboard_data, ttl=180)
+        except Exception as cache_error:
+            print(f"⚠️ [TEACHER] Cache set error (continuing): {str(cache_error)}")
         
         print(f"✅ [TEACHER] Dashboard data retrieved successfully")
         return TeacherDashboardResponse(
@@ -628,13 +655,37 @@ async def get_behavior_insights(
     current_user: Dict[str, Any] = Depends(require_admin_or_teacher)
 ):
     """
-    Get behavior insights for teacher dashboard (only features possible with existing database)
+    Get behavior insights for teacher dashboard (OPTIMIZED with caching)
     """
     print(f"🔄 [TEACHER] GET /teacher/dashboard/behavior-insights called")
     print(f"👤 [TEACHER] Authenticated user: {current_user['email']} (Role: {current_user.get('role', 'unknown')})")
     
     try:
+        # OPTIMIZATION: Add caching for behavior insights
+        cache_key = f"behavior_insights:{time_range}"
+        cached_result = None
+        
+        try:
+            cached_result = await cache_manager.get(cache_key)
+        except Exception as cache_error:
+            print(f"⚠️ [TEACHER] Cache error (continuing without cache): {str(cache_error)}")
+        
+        if cached_result:
+            print(f"✅ [TEACHER] Using cached behavior insights for {time_range}")
+            return TeacherDashboardResponse(
+                success=True,
+                data=cached_result,
+                message="Behavior insights retrieved successfully (cached)"
+            )
+        
+        # Calculate fresh data
         behavior_insights = await _get_behavior_insights(time_range)
+        
+        # Cache for 5 minutes (behavior insights don't change frequently)
+        try:
+            await cache_manager.set(cache_key, behavior_insights, ttl=300)
+        except Exception as cache_error:
+            print(f"⚠️ [TEACHER] Cache set error (continuing): {str(cache_error)}")
         
         return TeacherDashboardResponse(
             success=True,
@@ -911,7 +962,7 @@ async def _get_behavior_insights(time_range: str = "all_time") -> Dict[str, Any]
 
 async def _get_high_retry_insight(start_date: Optional[date], end_date: Optional[date]) -> Dict[str, Any]:
     """
-    Get high retry rate insight (POSSIBLE - using attempt_num from topic progress)
+    Get high retry rate insight (OPTIMIZED - batch student name lookup)
     """
     try:
         # Get students with high retry rates (more than 5 attempts on any topic)
@@ -947,26 +998,30 @@ async def _get_high_retry_insight(start_date: Optional[date], end_date: Optional
             user_attempts[user_id]['topics'].add(record['topic_id'])
         
         # Find students with excessive retries (>5 attempts)
-        excessive_retry_students = []
-        for user_id, data in user_attempts.items():
-            if data['total_attempts'] > 5:  # Threshold for excessive retries
-                # Get real student name from auth.users table
-                student_name = await _get_student_name(user_id)
-                
-                excessive_retry_students.append({
-                    'user_id': user_id,
-                    'student_name': student_name,
-                    'total_attempts': data['total_attempts'],
-                    'stages_affected': list(data['stages']),
-                    'topics_affected': len(data['topics'])
-                })
+        excessive_retry_user_ids = [user_id for user_id, data in user_attempts.items() if data['total_attempts'] > 5]
         
-        if not excessive_retry_students:
+        if not excessive_retry_user_ids:
             return {
                 "has_alert": False,
                 "message": "No excessive retries detected",
                 "affected_students": 0
             }
+        
+        # OPTIMIZATION: Batch fetch all student names at once
+        student_names = await _get_batch_student_names(excessive_retry_user_ids)
+        
+        excessive_retry_students = []
+        for user_id in excessive_retry_user_ids:
+            data = user_attempts[user_id]
+            student_name = student_names.get(user_id, f"Student {user_id[:8]}")
+            
+            excessive_retry_students.append({
+                'user_id': user_id,
+                'student_name': student_name,
+                'total_attempts': data['total_attempts'],
+                'stages_affected': list(data['stages']),
+                'topics_affected': len(data['topics'])
+            })
         
         return {
             "has_alert": True,
@@ -1938,6 +1993,43 @@ def _get_stage_display_name(stage_id: int) -> str:
         6: "Stage 6"
     }
     return stage_names.get(stage_id, f"Stage {stage_id}")
+
+async def _get_batch_student_names(user_ids: List[str]) -> Dict[str, str]:
+    """
+    OPTIMIZATION: Batch fetch student names to avoid N+1 queries
+    """
+    try:
+        if not user_ids:
+            return {}
+        
+        # Batch fetch all student profiles at once
+        profiles_result = supabase.table('profiles').select(
+            'id, first_name, last_name, email'
+        ).in_('id', user_ids).execute()
+        
+        student_names = {}
+        if profiles_result.data:
+            for profile in profiles_result.data:
+                user_id = profile['id']
+                
+                # Priority: first_name + last_name > first_name only > last_name only > email
+                if profile.get('first_name') and profile.get('last_name') and profile['first_name'].strip() and profile['last_name'].strip():
+                    student_names[user_id] = f"{profile['first_name']} {profile['last_name']}"
+                elif profile.get('first_name') and profile['first_name'].strip():
+                    student_names[user_id] = profile['first_name']
+                elif profile.get('last_name') and profile['last_name'].strip():
+                    student_names[user_id] = profile['last_name']
+                elif profile.get('email') and profile['email'].strip():
+                    student_names[user_id] = profile['email']
+                else:
+                    student_names[user_id] = f"Student {user_id[:8]}"
+        
+        return student_names
+        
+    except Exception as e:
+        print(f"⚠️ [TEACHER] Error in batch student names: {str(e)}")
+        # Fallback: return user IDs as names
+        return {user_id: f"Student {user_id[:8]}" for user_id in user_ids}
 
 async def _get_student_name(user_id: str) -> str:
     """
