@@ -12,11 +12,11 @@ load_dotenv(override=True)
 
 def get_token():
     """Get JWT token for testing"""
-    # url = "https://yfaiauooxwvekdimfeuu.supabase.co"
-    # key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlmYWlhdW9veHd2ZWtkaW1mZXV1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTE1OTEyMDksImV4cCI6MjA2NzE2NzIwOX0.rAc49wpyOERCcNpxpI12TPn6NSSoySToNq33bhakEho"
+    url = "https://yfaiauooxwvekdimfeuu.supabase.co"
+    key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlmYWlhdW9veHd2ZWtkaW1mZXV1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTE1OTEyMDksImV4cCI6MjA2NzE2NzIwOX0.rAc49wpyOERCcNpxpI12TPn6NSSoySToNq33bhakEho"
     
-    url = "https://otobfhnqafoyqinjenle.supabase.co"
-    key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im90b2JmaG5xYWZveXFpbmplbmxlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgxMjQwMDYsImV4cCI6MjA3MzcwMDAwNn0.tDZjL1M6JJLEgaycQ_1VsNO07O625FlddwsD3FAD_MM"
+    # url = "https://otobfhnqafoyqinjenle.supabase.co"
+    # key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im90b2JmaG5xYWZveXFpbmplbmxlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgxMjQwMDYsImV4cCI6MjA3MzcwMDAwNn0.tDZjL1M6JJLEgaycQ_1VsNO07O625FlddwsD3FAD_MM"
     if not url or not key:
         print("❌ Error: Missing Supabase environment variables")
         return None
@@ -28,8 +28,8 @@ def get_token():
     # password = "Arun@123"   # Replace with your password
 
     # Test credentials (replace with your actual credentials)
-    email = "mkarthikeyan00100010@gmail.com"  # Replace with your email
-    password = "Aug@1234"   # Replace with your password
+    email = "arun.varadharajalu@infiniai.tech"  # Replace with your email
+    password = "Arun@123"   # Replace with your password
     
     try:
         response = supabase.auth.sign_in_with_password({
