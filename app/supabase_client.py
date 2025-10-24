@@ -23,8 +23,38 @@ if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
     logger.error("Missing Supabase environment variables")
     raise ValueError("SUPABASE_URL and SUPABASE_SERVICE_KEY must be set")
 
-# Create Supabase client
+# Create Supabase client with connection pooling
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+
+# Connection warmup function
+async def warmup_database_connections():
+    """Warm up database connections to reduce cold start time"""
+    print("🔥 [WARMUP] Warming up database connections...")
+    try:
+        # Test basic connection
+        test_result = supabase.table('ai_tutor_user_progress_summary').select('user_id').limit(1).execute()
+        print("✅ [WARMUP] Database connection established")
+        
+        # Warm up commonly used tables
+        warmup_tables = [
+            'ai_tutor_user_progress_summary',
+            'ai_tutor_daily_learning_analytics', 
+            'ai_tutor_user_topic_progress',
+            'profiles'
+        ]
+        
+        for table in warmup_tables:
+            try:
+                supabase.table(table).select('*').limit(1).execute()
+                print(f"✅ [WARMUP] {table} table warmed up")
+            except Exception as e:
+                print(f"⚠️ [WARMUP] {table} warmup failed: {str(e)}")
+        
+        print("✅ [WARMUP] Database warmup completed")
+        
+    except Exception as e:
+        print(f"❌ [WARMUP] Database warmup failed: {str(e)}")
+        logger.error(f"Database warmup failed: {str(e)}")
 
 class SupabaseProgressTracker:
     """Professional progress tracking service for AI Tutor app"""

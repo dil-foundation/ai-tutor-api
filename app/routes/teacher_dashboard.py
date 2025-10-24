@@ -539,7 +539,7 @@ async def _get_low_engagement_student_details(
     end_date: Optional[date]
 ) -> List[Dict[str, Any]]:
     """
-    Get detailed information about students with low engagement
+    Get detailed information about students with low engagement (OPTIMIZED)
     """
     try:
         print(f"🔄 [TEACHER] Getting low engagement student details...")
@@ -548,27 +548,36 @@ async def _get_low_engagement_student_details(
         active_user_ids = set([record['user_id'] for record in recent_activity_data]) if recent_activity_data else set()
         
         # Find students with low engagement (not in active users)
-        low_engagement_students = []
-        
+        low_engagement_user_ids = []
         for user_record in total_users_data:
             user_id = user_record['user_id']
-            
-            # Skip if user has recent activity
-            if user_id in active_user_ids:
+            if user_id not in active_user_ids:
+                low_engagement_user_ids.append(user_id)
+        
+        if not low_engagement_user_ids:
+            return []
+        
+        # OPTIMIZATION: Batch fetch all progress data at once
+        progress_result = supabase.table('ai_tutor_user_progress_summary').select(
+            'user_id, current_stage, current_exercise, overall_progress_percentage, last_activity_date, total_time_spent_minutes'
+        ).in_('user_id', low_engagement_user_ids).execute()
+        
+        if not progress_result.data:
+            return []
+        
+        # OPTIMIZATION: Batch fetch all student names at once
+        student_names = await _get_batch_student_names(low_engagement_user_ids)
+        
+        # Create progress lookup dictionary
+        progress_lookup = {record['user_id']: record for record in progress_result.data}
+        
+        low_engagement_students = []
+        for user_id in low_engagement_user_ids:
+            progress_data = progress_lookup.get(user_id)
+            if not progress_data:
                 continue
             
-            # Get student progress information
-            progress_result = supabase.table('ai_tutor_user_progress_summary').select(
-                'current_stage, current_exercise, overall_progress_percentage, last_activity_date, total_time_spent_minutes'
-            ).eq('user_id', user_id).execute()
-            
-            if not progress_result.data:
-                continue
-                
-            progress_data = progress_result.data[0]
-            
-            # Get student name
-            student_name = await _get_student_name(user_id)
+            student_name = student_names.get(user_id, f"Student {user_id[:8]}")
             
             # Get current lesson name
             current_stage = progress_data.get('current_stage', 1)
@@ -920,24 +929,20 @@ async def export_progress_data(
 
 async def _get_behavior_insights(time_range: str = "all_time") -> Dict[str, Any]:
     """
-    Get behavior insights (only features possible with existing database)
+    Get behavior insights (OPTIMIZED with parallel execution)
     """
     try:
         print(f"🔄 [TEACHER] Calculating behavior insights for time range: {time_range}...")
         
         start_date, end_date = _get_date_range(time_range)
         
-        # 1. High Retry Rate Detection (POSSIBLE - using attempt_num)
-        high_retry_insight = await _get_high_retry_insight(start_date, end_date)
-        
-        # 2. Low Engagement Detection (POSSIBLE - using daily analytics)
-        low_engagement_insight = await _get_low_engagement_insight(start_date, end_date)
-        
-        # 3. Inactivity Detection (POSSIBLE - using daily analytics)
-        inactivity_insight = await _get_inactivity_insight(start_date, end_date)
-        
-        # 4. Students Stuck at Stages Detection (POSSIBLE - using progress summary and activity data)
-        stuck_students_insight = await _get_stuck_students_insight(start_date, end_date)
+        # OPTIMIZATION: Run all insight calculations in parallel
+        high_retry_insight, low_engagement_insight, inactivity_insight, stuck_students_insight = await asyncio.gather(
+            _get_high_retry_insight(start_date, end_date),
+            _get_low_engagement_insight(start_date, end_date),
+            _get_inactivity_insight(start_date, end_date),
+            _get_stuck_students_insight(start_date, end_date)
+        )
         
         behavior_insights = {
             "high_retry_rate": high_retry_insight,
@@ -965,10 +970,11 @@ async def _get_high_retry_insight(start_date: Optional[date], end_date: Optional
     Get high retry rate insight (OPTIMIZED - batch student name lookup)
     """
     try:
-        # Get students with high retry rates (more than 5 attempts on any topic)
+        # OPTIMIZATION: Get students with high retry rates (more than 5 attempts on any topic)
+        # Limit query to prevent excessive data processing
         retry_query = supabase.table('ai_tutor_user_topic_progress').select(
             'user_id, stage_id, exercise_id, topic_id, attempt_num'
-        )
+        ).limit(10000)  # Limit to prevent memory issues
         
         if start_date and end_date:
             retry_query = retry_query.gte('created_at', start_date.isoformat()).lte('created_at', end_date.isoformat())
@@ -1084,12 +1090,15 @@ async def _get_high_retry_students(stage_id: Optional[int], retry_threshold: int
             user_retries[user_id]['topics_attempted'].add(record['topic_id'])
             user_retries[user_id]['stages_worked_on'].add(record['stage_id'])
         
+        # OPTIMIZATION: Batch fetch all student names at once
+        high_retry_user_ids = [user_id for user_id, data in user_retries.items() if data['total_attempts'] >= retry_threshold]
+        student_names = await _get_batch_student_names(high_retry_user_ids)
+        
         # Filter students above threshold
         high_retry_students = []
         for user_id, data in user_retries.items():
             if data['total_attempts'] >= retry_threshold:
-                # Get real student name from auth.users table
-                student_name = await _get_student_name(user_id)
+                student_name = student_names.get(user_id, f"Student {user_id[:8]}")
                 
                 student_info = {
                     'user_id': user_id,
@@ -1142,8 +1151,8 @@ async def _get_low_engagement_insight(start_date: Optional[date], end_date: Opti
         
         recent_activity_result = recent_activity_query.execute()
         
-        # Get total users
-        total_users_result = supabase.table('ai_tutor_user_progress_summary').select('user_id').execute()
+        # OPTIMIZATION: Get total users (with limit to prevent memory issues)
+        total_users_result = supabase.table('ai_tutor_user_progress_summary').select('user_id').limit(10000).execute()
         total_users = len(total_users_result.data) if total_users_result.data else 0
         
         if total_users == 0:
@@ -1201,8 +1210,8 @@ async def _get_inactivity_insight(start_date: Optional[date], end_date: Optional
         inactive_students_data = await _get_inactive_students(None, 30, "all_time")
         inactive_count = inactive_students_data.get('total_affected', 0)
         
-        # Get total users for percentage calculation
-        total_users_result = supabase.table('ai_tutor_user_progress_summary').select('user_id').execute()
+        # OPTIMIZATION: Get total users for percentage calculation (with limit)
+        total_users_result = supabase.table('ai_tutor_user_progress_summary').select('user_id').limit(10000).execute()
         total_users = len(total_users_result.data) if total_users_result.data else 0
         
         if total_users == 0:
@@ -1255,10 +1264,10 @@ async def _get_stuck_students_insight(start_date: Optional[date], end_date: Opti
         
         recent_activity_result = recent_activity_query.execute()
         
-        # Get all users with their current stage and last activity
+        # OPTIMIZATION: Get all users with their current stage and last activity (with limit)
         all_users_query = supabase.table('ai_tutor_user_progress_summary').select(
             'user_id, current_stage, current_exercise, last_activity_date, overall_progress_percentage'
-        )
+        ).limit(5000)  # Limit to prevent memory issues
         
         if start_date and end_date:
             all_users_query = all_users_query.gte('updated_at', start_date.isoformat()).lte('updated_at', end_date.isoformat())
@@ -1274,7 +1283,10 @@ async def _get_stuck_students_insight(start_date: Optional[date], end_date: Opti
         
         # Calculate stuck students
         active_users = set([record['user_id'] for record in recent_activity_result.data]) if recent_activity_result.data else set()
-        stuck_students = []
+        
+        # OPTIMIZATION: Identify stuck students first, then batch fetch names
+        stuck_user_ids = []
+        stuck_students_data = []
         
         for user_record in all_users_result.data:
             user_id = user_record['user_id']
@@ -1288,23 +1300,39 @@ async def _get_stuck_students_insight(start_date: Optional[date], end_date: Opti
                     days_inactive = (date.today() - last_activity_date).days
                     
                     if days_inactive >= 7 and user_id not in active_users:
-                        # Get real student name
-                        student_name = await _get_student_name(user_id)
-                        
-                        # Get current lesson name
-                        current_lesson = _get_current_lesson_name(current_stage)
-                        
-                        stuck_students.append({
+                        stuck_user_ids.append(user_id)
+                        stuck_students_data.append({
                             'user_id': user_id,
-                            'student_name': student_name,
-                            'current_stage': _get_stage_display_name(current_stage),
+                            'current_stage': current_stage,
                             'days_stuck': days_inactive,
-                            'current_lesson': current_lesson,
-                            'progress_percentage': user_record.get('overall_progress_percentage', 0)
+                            'progress_percentage': user_record.get('overall_progress_percentage', 0),
+                            'last_activity': last_activity
                         })
+                        
                 except (ValueError, TypeError):
                     # Skip if date parsing fails
                     continue
+        
+        # OPTIMIZATION: Batch fetch all student names at once
+        student_names = await _get_batch_student_names(stuck_user_ids)
+        
+        # Build final stuck students list
+        stuck_students = []
+        for student_data in stuck_students_data:
+            user_id = student_data['user_id']
+            student_name = student_names.get(user_id, f"Student {user_id[:8]}")
+            current_stage = student_data['current_stage']
+            current_lesson = _get_current_lesson_name(current_stage)
+            
+            stuck_students.append({
+                'user_id': user_id,
+                'student_name': student_name,
+                'current_stage': _get_stage_display_name(current_stage),
+                'days_stuck': student_data['days_stuck'],
+                'current_lesson': current_lesson,
+                'progress_percentage': student_data['progress_percentage'],
+                'last_activity': student_data['last_activity']
+            })
         
         if not stuck_students:
             return {
@@ -1478,8 +1506,10 @@ async def _get_inactive_students(stage_id: Optional[int], days_threshold: int, t
         recent_activity_result = recent_activity_query.execute()
         active_users = set([record['user_id'] for record in recent_activity_result.data]) if recent_activity_result.data else set()
         
-        # Filter inactive students
-        inactive_students = []
+        # OPTIMIZATION: Identify inactive students first, then batch fetch names
+        inactive_user_ids = []
+        inactive_students_data = []
+        
         for record in result.data:
             user_id = record['user_id']
             last_activity = record.get('last_activity_date')
@@ -1495,27 +1525,40 @@ async def _get_inactive_students(stage_id: Optional[int], days_threshold: int, t
                     days_inactive = (date.today() - last_activity_date).days
                     
                     if days_inactive >= days_threshold:
-                        # Get real student name
-                        student_name = await _get_student_name(user_id)
-                        
-                        # Get current lesson name
-                        current_stage = record.get('current_stage', 1)
-                        current_lesson = _get_current_lesson_name(current_stage)
-                        
-                        student_info = {
+                        inactive_user_ids.append(user_id)
+                        inactive_students_data.append({
                             'user_id': user_id,
-                            'student_name': student_name,
-                            'current_stage': _get_stage_display_name(current_stage),
+                            'current_stage': record.get('current_stage', 1),
                             'days_inactive': days_inactive,
-                            'current_lesson': current_lesson,
                             'progress_percentage': record.get('overall_progress_percentage', 0),
                             'last_activity': last_activity
-                        }
-                        inactive_students.append(student_info)
+                        })
                         
                 except (ValueError, TypeError):
                     # Skip if date parsing fails
                     continue
+        
+        # OPTIMIZATION: Batch fetch all student names at once
+        student_names = await _get_batch_student_names(inactive_user_ids)
+        
+        # Build final inactive students list
+        inactive_students = []
+        for student_data in inactive_students_data:
+            user_id = student_data['user_id']
+            student_name = student_names.get(user_id, f"Student {user_id[:8]}")
+            current_stage = student_data['current_stage']
+            current_lesson = _get_current_lesson_name(current_stage)
+            
+            student_info = {
+                'user_id': user_id,
+                'student_name': student_name,
+                'current_stage': _get_stage_display_name(current_stage),
+                'days_inactive': student_data['days_inactive'],
+                'current_lesson': current_lesson,
+                'progress_percentage': student_data['progress_percentage'],
+                'last_activity': student_data['last_activity']
+            }
+            inactive_students.append(student_info)
         
         # Sort by days inactive (highest first)
         inactive_students.sort(key=lambda x: x['days_inactive'], reverse=True)
