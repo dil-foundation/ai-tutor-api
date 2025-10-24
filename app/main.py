@@ -16,6 +16,7 @@ Version: 1.0.0
 """
 
 import logging
+import asyncio
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -55,7 +56,7 @@ from app.routes import (
 )
 from .services.settings_manager import get_ai_settings
 from .services.safety_manager import get_ai_safety_settings
-from .supabase_client import progress_tracker
+from .supabase_client import progress_tracker, warmup_database_connections
 from .cache import load_content_cache
 
 
@@ -64,6 +65,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel  
 from gtts import gTTS
 import io
+from datetime import datetime
 
 class TextRequest(BaseModel):
     text: str
@@ -104,18 +106,29 @@ logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
 async def startup_event():
     """Application startup event"""
     print("🚀 [STARTUP] AI English Tutor Backend starting...")
+    
+    # Display API key information for verification
+    import os
+    from dotenv import load_dotenv
+    load_dotenv()
+    
+    api_key = os.getenv('OPENAI_API_KEY')
+    if api_key:
+        print(f"🔑 [STARTUP] OPENAI_API_KEY: {api_key[:15]}... (Length: {len(api_key)} chars)")
+    else:
+        print("❌ [STARTUP] OPENAI_API_KEY not found in environment variables!")
 
-    # Proactively fetch and cache AI settings on startup
-    print("⚙️ [STARTUP] Initializing AI Tutor settings...")
-    await get_ai_settings()
-
-    # Proactively fetch and cache AI Safety & Ethics settings on startup
-    print("🛡️ [STARTUP] Initializing AI Safety & Ethics settings...")
-    await get_ai_safety_settings()
-
-    # Proactively load content hierarchy into cache
-    print("📚 [STARTUP] Loading content hierarchy into cache...")
-    await load_content_cache(progress_tracker)
+    # OPTIMIZATION: Warm up database connections first
+    print("🔥 [STARTUP] Warming up database connections...")
+    await warmup_database_connections()
+    
+    # OPTIMIZATION: Parallel initialization of all startup tasks
+    print("⚙️ [STARTUP] Initializing all services in parallel...")
+    await asyncio.gather(
+        get_ai_settings(),
+        get_ai_safety_settings(), 
+        load_content_cache(progress_tracker)
+    )
     
     print("📊 [STARTUP] Features enabled:")
     print("   - Progress Tracking System")
@@ -250,4 +263,35 @@ async def api_status():
             "english_only_tutor": "/api/ws/english-only"
         }
     }
+
+@app.post("/api/warmup")
+async def warmup_application():
+    """Warm up application for optimal performance"""
+    print("🔥 [WARMUP] Manual application warmup requested")
+    try:
+        # Warm up database connections
+        await warmup_database_connections()
+        
+        # Warm up teacher dashboard endpoints
+        from app.routes.teacher_dashboard import _get_behavior_insights, _get_learn_feature_engagement_summary
+        
+        # Pre-calculate common queries
+        await asyncio.gather(
+            _get_behavior_insights("all_time"),
+            _get_learn_feature_engagement_summary("all_time")
+        )
+        
+        return {
+            "status": "success",
+            "message": "Application warmed up successfully",
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        print(f"❌ [WARMUP] Warmup failed: {str(e)}")
+        return {
+            "status": "error", 
+            "message": f"Warmup failed: {str(e)}",
+            "timestamp": datetime.now().isoformat()
+        }
  
