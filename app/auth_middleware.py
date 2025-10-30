@@ -231,5 +231,5 @@ def require_any_role(allowed_roles: list):
 require_student = require_role("student")
 require_teacher = require_role("teacher")
 require_admin = require_role("admin")
-require_admin_or_teacher = require_any_role(["admin", "teacher"]) 
+require_admin_or_teacher = require_any_role(["admin", "teacher", "super_user"]) 
 require_admin_or_teacher_or_student = require_any_role(["admin", "teacher", "student", "super_user"]) 
