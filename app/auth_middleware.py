@@ -80,23 +80,27 @@ class AuthMiddleware:
                     
                     if profile_response.data:
                         profile = profile_response.data
+                        # Normalize role to handle case sensitivity
+                        raw_role = profile.get("role", "student")
                         
                         user_data = {
                             "id": user_id,
                             "email": user_email,
-                            "role": profile.get("role", "student"),
+                            "role": raw_role,  # Keep original for display, normalization happens in checks
                             "first_name": profile.get("first_name", ""),
                             "last_name": profile.get("last_name", ""),
                             "grade": profile.get("grade", ""),
-                            "is_deleted": True, # We know this from the JWT check
+                            "is_deleted": False,  # Fixed: should be False if not deleted
                             "deleted_at": user_metadata.get("deleted_at")
                         }
                     else:
                         # Fallback to user metadata if no profile found
+                        raw_role = user_metadata.get("role", "student")
+                        
                         user_data = {
                             "id": user_id,
                             "email": user_email,
-                            "role": user_metadata.get("role", "student"),
+                            "role": raw_role,  # Keep original for display
                             "first_name": user_metadata.get("first_name", ""),
                             "last_name": user_metadata.get("last_name", ""),
                             "grade": user_metadata.get("grade", ""),
@@ -110,10 +114,12 @@ class AuthMiddleware:
                 except Exception as profile_error:
                     logger.warning(f"Error checking profile for {user_email}: {str(profile_error)}")
                     # Fallback to user metadata if profile check fails
+                    raw_role = user_metadata.get("role", "student")
+                    
                     user_data = {
                         "id": user_id,
                         "email": user_email,
-                        "role": user_metadata.get("role", "student"),
+                        "role": raw_role,  # Keep original for display
                         "first_name": user_metadata.get("first_name", ""),
                         "last_name": user_metadata.get("last_name", ""),
                         "grade": user_metadata.get("grade", ""),
@@ -201,6 +207,22 @@ async def require_auth(request: Request) -> Dict[str, Any]:
     """Dependency function to require authentication"""
     return await auth_middleware.require_auth(request)
 
+def _normalize_role(role: str) -> str:
+    """Normalize role string to handle case sensitivity and variations"""
+    if not role:
+        return ""
+    return role.lower().strip()
+
+def _has_admin_privileges(role: str) -> bool:
+    """Check if role has admin privileges (admin or super_user)"""
+    normalized_role = _normalize_role(role)
+    return normalized_role in ["admin", "super_user", "superuser"]
+
+def _has_teacher_privileges(role: str) -> bool:
+    """Check if role has teacher privileges (teacher, admin, or super_user)"""
+    normalized_role = _normalize_role(role)
+    return normalized_role in ["teacher", "admin", "super_user", "superuser"]
+
 def require_role(required_role: str):
     """
     Decorator to require specific user role
@@ -209,8 +231,17 @@ def require_role(required_role: str):
         required_role: Required role (e.g., "student", "teacher", "admin")
     """
     def role_checker(user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
-        if user.get("role") != required_role:
-            raise HTTPException(status_code=403, detail=f"Role '{required_role}' required")
+        user_role = _normalize_role(user.get("role", ""))
+        required_role_normalized = _normalize_role(required_role)
+        
+        # Special handling: super_user should have access to admin and teacher roles
+        if required_role_normalized == "admin" and _has_admin_privileges(user.get("role", "")):
+            return user
+        if required_role_normalized == "teacher" and _has_teacher_privileges(user.get("role", "")):
+            return user
+        
+        if user_role != required_role_normalized:
+            raise HTTPException(status_code=403, detail=f"Role '{required_role}' required. Current role: {user.get('role')}")
         return user
     return role_checker
 
@@ -222,14 +253,41 @@ def require_any_role(allowed_roles: list):
         allowed_roles: List of allowed roles (e.g., ["admin", "teacher"])
     """
     def role_checker(user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
-        if user.get("role") not in allowed_roles:
-            raise HTTPException(status_code=403, detail=f"One of the following roles required: {', '.join(allowed_roles)}")
+        user_role = _normalize_role(user.get("role", ""))
+        allowed_roles_normalized = [_normalize_role(role) for role in allowed_roles]
+        
+        # Special handling: super_user should have access to admin and teacher endpoints
+        if "admin" in allowed_roles_normalized and _has_admin_privileges(user.get("role", "")):
+            return user
+        if "teacher" in allowed_roles_normalized and _has_teacher_privileges(user.get("role", "")):
+            return user
+        
+        if user_role not in allowed_roles_normalized:
+            raise HTTPException(
+                status_code=403, 
+                detail=f"One of the following roles required: {', '.join(allowed_roles)}. Current role: {user.get('role')}"
+            )
         return user
     return role_checker
 
 # Role-specific dependencies
 require_student = require_role("student")
 require_teacher = require_role("teacher")
-require_admin = require_role("admin")
+require_admin = require_role("admin")  # super_user will have access via _has_admin_privileges check
+require_super_user = require_role("super_user")
+
+# Helper function to check if user has admin privileges (including super_user)
+def has_admin_access(user: Dict[str, Any]) -> bool:
+    """Check if user has admin-level access (admin or super_user)"""
+    return _has_admin_privileges(user.get("role", ""))
+
+# Helper function to check if user has teacher privileges (including admin and super_user)
+def has_teacher_access(user: Dict[str, Any]) -> bool:
+    """Check if user has teacher-level access (teacher, admin, or super_user)"""
+    return _has_teacher_privileges(user.get("role", ""))
+
+# Admin or teacher access - super_user included automatically
 require_admin_or_teacher = require_any_role(["admin", "teacher", "super_user"]) 
-require_admin_or_teacher_or_student = require_any_role(["admin", "teacher", "student", "super_user"]) 
+
+# Admin, teacher, student, or super_user access
+require_admin_or_teacher_or_student = require_any_role(["admin", "teacher", "student", "super_user"])
