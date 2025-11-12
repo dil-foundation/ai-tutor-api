@@ -65,7 +65,7 @@ async def synthesize_speech_bytes_slow(text: str) -> bytes:
         voice_settings={
             "stability": 0.7,
             "similarity_boost": 0.8,
-            "speed": 0.7
+            "speed": 0.8
         }
     )
     # If it's a normal (not async) generator:
