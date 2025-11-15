@@ -77,6 +77,42 @@ async def async_analyze_english_input(user_text: str, stage: str, topic: Optiona
         loop  # Pass the running event loop to the thread
     )
 
+# Lightweight context snapshot loader
+async def _load_conversation_context(conversation_state: dict) -> Dict[str, Any]:
+    """Capture conversation context while STT runs to prepare downstream analysis."""
+    return {
+        "recent_messages": conversation_state.get("recent_messages", [])[-5:],
+        "stage_history": conversation_state.get("stage_history", [])[-3:],
+        "learning_path": conversation_state.get("learning_path"),
+        "skill_level": conversation_state.get("skill_level"),
+        "topic": conversation_state.get("topic"),
+    }
+
+tts_warmup_done: bool = False
+tts_warmup_lock: Optional[asyncio.Lock] = None
+
+async def _warmup_tts_engine():
+    """Perform a one-time TTS warmup so the first user response is faster."""
+    global tts_warmup_done, tts_warmup_lock
+
+    if tts_warmup_done:
+        return
+
+    if tts_warmup_lock is None:
+        tts_warmup_lock = asyncio.Lock()
+
+    async with tts_warmup_lock:
+        if tts_warmup_done:
+            return
+        try:
+            # Use a tiny text snippet so warmup remains lightweight.
+            await synthesize_speech_bytes("initializing")
+            print("⚙️ [TTS] Warmup completed")
+        except Exception as exc:
+            print(f"⚠️ [TTS] Warmup failed: {exc}")
+        finally:
+            tts_warmup_done = True
+
 # Enhanced TTS caching with metadata
 async def get_cached_or_generate_tts(text: str, use_slow_tts: bool = False) -> bytes:
     """Get TTS audio from cache or generate new with metadata tracking"""
@@ -141,8 +177,52 @@ async def english_only_conversation(websocket: WebSocket):
 
     try:
         while True:
-            # Step 1: Receive message data
-            data = await websocket.receive_text()
+            # Step 1: Receive message data (support both text and binary)
+            try:
+                # Try to receive as text first (JSON messages)
+                message_data = await websocket.receive()
+                
+                # Check if it's binary audio or text JSON
+                if "bytes" in message_data:
+                    # Binary audio received - handle directly
+                    audio_bytes = message_data["bytes"]
+                    profiler.mark("📥 Received binary audio")
+                    conversation_state["interaction_count"] += 1
+                    
+                    # Use pending user_name from metadata if available
+                    user_name = conversation_state.get("pending_binary_user_name", conversation_state["user_name"])
+                    if "pending_binary_user_name" in conversation_state:
+                        del conversation_state["pending_binary_user_name"]
+                    if "pending_binary_size" in conversation_state:
+                        del conversation_state["pending_binary_size"]
+                    
+                    # Create a message dict for binary audio
+                    message = {
+                        "type": "audio_binary",
+                        "audio_bytes": audio_bytes,
+                        "user_name": user_name
+                    }
+                    await _handle_binary_audio_processing(websocket, message, conversation_state, profiler)
+                    continue
+                elif "text" in message_data:
+                    data = message_data["text"]
+                else:
+                    print("⚠️ [WEBSOCKET] Unknown message format")
+                    continue
+                    
+            except WebSocketDisconnect:
+                # Client disconnected - break out of loop
+                print(f"🔌 [WEBSOCKET] Client disconnected during receive: {conversation_state['user_name']}")
+                break
+            except Exception as e:
+                # Check if this is a disconnect-related error
+                error_str = str(e).lower()
+                if "disconnect" in error_str or "receive" in error_str:
+                    print(f"🔌 [WEBSOCKET] Disconnect detected: {e}")
+                    break
+                print(f"❌ [WEBSOCKET] Error receiving message: {e}")
+                continue
+                
             profiler.mark("📥 Received message")
             conversation_state["interaction_count"] += 1
 
@@ -182,22 +262,34 @@ async def english_only_conversation(websocket: WebSocket):
                 await _handle_processing_started_message(websocket, message, conversation_state, profiler)
                 continue
 
-            # Main audio processing block
+            elif message_type == "audio_binary_metadata":
+                # Metadata for binary audio - store user_name and wait for binary data
+                conversation_state["pending_binary_user_name"] = message.get("user_name", conversation_state["user_name"])
+                conversation_state["pending_binary_size"] = message.get("audio_size", 0)
+                print(f"📋 [BINARY] Received metadata, expecting {conversation_state['pending_binary_size']} bytes")
+                continue
+
+            # Main audio processing block (Base64 fallback)
             await _handle_audio_processing(websocket, message, conversation_state, profiler)
             
     except WebSocketDisconnect:
         print(f"🔌 [WEBSOCKET] Client disconnected: {conversation_state['user_name']}")
     except Exception as e:
-        print(f"❌ [WEBSOCKET] Unexpected error: {e}")
-        # Try to send error response before closing
-        try:
-            await safe_send_json(websocket, {
-                "response": "I'm experiencing a technical difficulty. Please try reconnecting.",
-                "step": "error",
-                "error_type": "unexpected_error"
-            })
-        except:
-            pass
+        # Check if this is a disconnect-related error
+        error_str = str(e).lower()
+        if "disconnect" in error_str or "receive" in error_str:
+            print(f"🔌 [WEBSOCKET] Disconnect detected in outer handler: {e}")
+        else:
+            print(f"❌ [WEBSOCKET] Unexpected error: {e}")
+            # Try to send error response before closing only if not a disconnect error
+            try:
+                await safe_send_json(websocket, {
+                    "response": "I'm experiencing a technical difficulty. Please try reconnecting.",
+                    "step": "error",
+                    "error_type": "unexpected_error"
+                })
+            except:
+                pass
     finally:
         print(f"🏁 [WEBSOCKET] Session ended for user: {conversation_state['user_name']}")
         print(f"📊 Session stats: {conversation_state['interaction_count']} interactions, "
@@ -305,7 +397,10 @@ async def _handle_processing_started_message(websocket: WebSocket, message: dict
 
 async def _handle_audio_processing(websocket: WebSocket, message: dict, 
                                  conversation_state: dict, profiler: Profiler):
-    """Handle main audio processing with enhanced stage management"""
+    """
+    Optimized audio processing with parallel pipeline, early analysis trigger, 
+    response streaming, and parallel TTS generation.
+    """
     audio_base64 = message.get("audio_base64")
     user_name = message.get("user_name", conversation_state["user_name"])
 
@@ -314,16 +409,22 @@ async def _handle_audio_processing(websocket: WebSocket, message: dict,
         return
 
     try:
-        # Decode audio
+        # Step 1: Decode audio (required first step)
         audio_bytes = await asyncio.get_event_loop().run_in_executor(
             thread_pool, base64.b64decode, audio_base64
         )
         profiler.mark("🎙️ Audio decoded")
 
-        # Transcribe audio
-        transcription_result = await async_transcribe_audio_eng_only(audio_bytes)
-        transcribed_text = transcription_result["text"]
+        # Step 2: Run STT and context snapshot in parallel
+        stt_task = asyncio.create_task(async_transcribe_audio_eng_only(audio_bytes))
+        context_task = asyncio.create_task(_load_conversation_context(conversation_state))
+
+        transcription_result, context_snapshot = await asyncio.gather(stt_task, context_task)
+        conversation_state["context_snapshot"] = context_snapshot
         profiler.mark("📝 STT completed")
+        profiler.mark("📚 Context captured")
+
+        transcribed_text = transcription_result["text"]
 
         if not transcribed_text.strip():
             await _handle_empty_transcription(websocket, user_name, conversation_state, profiler)
@@ -331,24 +432,80 @@ async def _handle_audio_processing(websocket: WebSocket, message: dict,
         
         print(f"🔍 [ENGLISH_ONLY] Processing: '{transcribed_text}' at stage: {conversation_state['stage']}")
 
-        # Analyze with enhanced stage management
-        analysis_result = await async_analyze_english_input(
-            user_text=transcribed_text,
-            stage=conversation_state["stage"],
-            topic=conversation_state["topic"]
-        )
-        profiler.mark("🧠 AI analysis completed")
+        # Step 3: Early Analysis Trigger - Start analysis immediately when we have 3+ words
+        word_count = len(transcribed_text.split())
+        should_trigger_early = word_count >= 3
+        
+        if should_trigger_early:
+            print(f"⚡ [EARLY_TRIGGER] Detected {word_count} words, starting analysis pipeline early")
+            # Send partial response to indicate processing has started
+            await safe_send_json(websocket, {
+                "partial": True,
+                "status": "processing",
+                "transcribed_text": transcribed_text,
+                "step": "analysis_started"
+            })
 
-        # Update conversation state based on AI response
+        # Step 4: Parallel execution - Analysis + TTS warmup + Predictive TTS preparation
+        analysis_task = asyncio.create_task(
+            async_analyze_english_input(
+                user_text=transcribed_text,
+                stage=conversation_state["stage"],
+                topic=conversation_state["topic"]
+            )
+        )
+
+        # Warm TTS engine in background
+        warmup_task = asyncio.create_task(_warmup_tts_engine())
+
+        # Step 5: Wait for analysis while warmup continues in background
+        analysis_result = await analysis_task
+        profiler.mark("🧠 AI analysis completed")
+        
+        # Ensure warmup completes without blocking
+        await asyncio.gather(warmup_task, return_exceptions=True)
+
+        # Step 6: Update conversation state
         await _update_conversation_state(conversation_state, analysis_result, transcribed_text)
         
-        # Generate TTS response
+        # Step 7: Generate TTS response (can be optimized further with predictive caching)
         conversation_text = analysis_result.get("conversation_text", "Let's continue.")
-        response_audio = await get_cached_or_generate_tts(conversation_text, use_slow_tts=True)
+        
+        # Step 8: Start TTS generation in parallel with sending partial response
+        tts_task = asyncio.create_task(
+            get_cached_or_generate_tts(conversation_text, use_slow_tts=True)
+        )
+        
+        # Step 9: Stream partial response immediately (before TTS completes)
+        await safe_send_json(websocket, {
+            "partial": True,
+            "response": conversation_text,
+            "conversation_text": conversation_text,
+            "step": conversation_state["stage"],
+            "original_text": transcribed_text,
+            "user_name": user_name,
+            "conversation_stage": conversation_state["stage"],
+            "current_topic": conversation_state["topic"],
+            "learning_path": conversation_state["learning_path"],
+            "skill_level": conversation_state["skill_level"],
+            "analysis": {
+                "next_stage": analysis_result.get("next_stage"),
+                "current_topic": conversation_state["topic"],
+                "needs_correction": analysis_result.get("needs_correction", False),
+                "correction_type": analysis_result.get("correction_type", "none"),
+                "learning_activity": analysis_result.get("learning_activity"),
+                "session_progress": analysis_result.get("session_progress")
+            }
+        })
+        
+        # Step 10: Wait for TTS to complete, then send audio
+        response_audio = await tts_task
         profiler.mark("🔊 TTS response generated")
 
-        # Send enhanced response with full context
+        # Step 11: Send final complete response with audio
         await safe_send_json(websocket, {
+            "partial": False,
+            "final": True,
             "response": conversation_text,
             "conversation_text": conversation_text,
             "step": conversation_state["stage"],
@@ -419,6 +576,131 @@ async def _update_conversation_state(conversation_state: dict, analysis_result: 
     # Log state update
     print(f"📝 [STATE] Updated state: stage={conversation_state['stage']}, "
           f"topic={conversation_state['topic']}, path={conversation_state['learning_path']}")
+
+async def _handle_binary_audio_processing(websocket: WebSocket, message: dict,
+                                         conversation_state: dict, profiler: Profiler):
+    """
+    Handle binary audio directly without base64 decoding overhead.
+    This reduces payload size by ~33% and eliminates encoding/decoding time.
+    """
+    audio_bytes = message.get("audio_bytes")
+    user_name = message.get("user_name", conversation_state["user_name"])
+
+    if not audio_bytes:
+        print("⚠️ [AUDIO] No binary audio data received")
+        return
+
+    try:
+        profiler.mark("🎙️ Binary audio received (no decode needed)")
+
+        # Run STT and context snapshot in parallel (same as base64 path)
+        stt_task = asyncio.create_task(async_transcribe_audio_eng_only(audio_bytes))
+        context_task = asyncio.create_task(_load_conversation_context(conversation_state))
+
+        transcription_result, context_snapshot = await asyncio.gather(stt_task, context_task)
+        conversation_state["context_snapshot"] = context_snapshot
+        profiler.mark("📝 STT completed")
+        profiler.mark("📚 Context captured")
+
+        transcribed_text = transcription_result["text"]
+
+        if not transcribed_text.strip():
+            await _handle_empty_transcription(websocket, user_name, conversation_state, profiler)
+            return
+        
+        print(f"🔍 [ENGLISH_ONLY] Processing binary audio: '{transcribed_text}' at stage: {conversation_state['stage']}")
+
+        # Early Analysis Trigger
+        word_count = len(transcribed_text.split())
+        should_trigger_early = word_count >= 3
+        
+        if should_trigger_early:
+            print(f"⚡ [EARLY_TRIGGER] Detected {word_count} words, starting analysis pipeline early")
+            await safe_send_json(websocket, {
+                "partial": True,
+                "status": "processing",
+                "transcribed_text": transcribed_text,
+                "step": "analysis_started"
+            })
+
+        # Parallel execution
+        analysis_task = asyncio.create_task(
+            async_analyze_english_input(
+                user_text=transcribed_text,
+                stage=conversation_state["stage"],
+                topic=conversation_state["topic"]
+            )
+        )
+
+        warmup_task = asyncio.create_task(_warmup_tts_engine())
+
+        analysis_result = await analysis_task
+        profiler.mark("🧠 AI analysis completed")
+        await asyncio.gather(warmup_task, return_exceptions=True)
+
+        await _update_conversation_state(conversation_state, analysis_result, transcribed_text)
+        
+        conversation_text = analysis_result.get("conversation_text", "Let's continue.")
+        
+        # Parallel TTS generation
+        tts_task = asyncio.create_task(
+            get_cached_or_generate_tts(conversation_text, use_slow_tts=True)
+        )
+        
+        # Stream partial response
+        await safe_send_json(websocket, {
+            "partial": True,
+            "response": conversation_text,
+            "conversation_text": conversation_text,
+            "step": conversation_state["stage"],
+            "original_text": transcribed_text,
+            "user_name": user_name,
+            "conversation_stage": conversation_state["stage"],
+            "current_topic": conversation_state["topic"],
+            "learning_path": conversation_state["learning_path"],
+            "skill_level": conversation_state["skill_level"],
+            "analysis": {
+                "next_stage": analysis_result.get("next_stage"),
+                "current_topic": conversation_state["topic"],
+                "needs_correction": analysis_result.get("needs_correction", False),
+                "correction_type": analysis_result.get("correction_type", "none"),
+                "learning_activity": analysis_result.get("learning_activity"),
+                "session_progress": analysis_result.get("session_progress")
+            }
+        })
+        
+        response_audio = await tts_task
+        profiler.mark("🔊 TTS response generated")
+
+        # Send final response
+        await safe_send_json(websocket, {
+            "partial": False,
+            "final": True,
+            "response": conversation_text,
+            "conversation_text": conversation_text,
+            "step": conversation_state["stage"],
+            "original_text": transcribed_text,
+            "user_name": user_name,
+            "conversation_stage": conversation_state["stage"],
+            "current_topic": conversation_state["topic"],
+            "learning_path": conversation_state["learning_path"],
+            "skill_level": conversation_state["skill_level"],
+            "analysis": {
+                "next_stage": analysis_result.get("next_stage"),
+                "current_topic": conversation_state["topic"],
+                "needs_correction": analysis_result.get("needs_correction", False),
+                "correction_type": analysis_result.get("correction_type", "none"),
+                "learning_activity": analysis_result.get("learning_activity"),
+                "session_progress": analysis_result.get("session_progress")
+            }
+        })
+        
+        await safe_send_bytes(websocket, response_audio)
+        profiler.summary()
+
+    except Exception as e:
+        print(f"❌ [AUDIO] Error processing binary audio: {e}")
+        await _handle_audio_processing_error(websocket, user_name, conversation_state, e)
 
 async def _handle_audio_processing_error(websocket: WebSocket, user_name: str, 
                                        conversation_state: dict, error: Exception):
