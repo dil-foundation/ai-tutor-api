@@ -17,9 +17,14 @@ from app.utils.profiler import Profiler
 import json
 import base64
 import asyncio
+import contextlib
 from concurrent.futures import ThreadPoolExecutor
 import httpx
 from typing import Dict, Any, Optional
+from app.services.predictive_cache import StageAwareCache, PredictiveResult
+from app.services.multi_level_cache import MultiLevelCache, CachedResponse
+from app.utils.performance_monitor import performance_monitor
+
 
 router = APIRouter()
 
@@ -31,6 +36,16 @@ tts_cache: Dict[str, Dict[str, Any]] = {}
 
 # Connection pool for HTTP clients
 http_client = None
+predictive_cache = StageAwareCache()
+
+# Multi-level cache with pre-generated audio
+multi_level_cache = MultiLevelCache(
+    ttl_seconds=3600,  # 1 hour
+    max_l1_entries=500,
+    max_l2_entries=1000,
+    l1_audio_cache_size=200,
+    l2_audio_cache_size=500,
+)
 
 def get_http_client():
     global http_client
@@ -432,21 +447,20 @@ async def _handle_audio_processing(websocket: WebSocket, message: dict,
         
         print(f"🔍 [ENGLISH_ONLY] Processing: '{transcribed_text}' at stage: {conversation_state['stage']}")
 
-        # Step 3: Early Analysis Trigger - Start analysis immediately when we have 3+ words
+        # Step 3: Start ALL operations in parallel (cache lookup + analysis + warmup)
+        # This ensures maximum parallelism and no blocking
         word_count = len(transcribed_text.split())
         should_trigger_early = word_count >= 3
         
-        if should_trigger_early:
-            print(f"⚡ [EARLY_TRIGGER] Detected {word_count} words, starting analysis pipeline early")
-            # Send partial response to indicate processing has started
-            await safe_send_json(websocket, {
-                "partial": True,
-                "status": "processing",
-                "transcribed_text": transcribed_text,
-                "step": "analysis_started"
-            })
-
-        # Step 4: Parallel execution - Analysis + TTS warmup + Predictive TTS preparation
+        # Start cache lookup, analysis, and warmup ALL in parallel
+        cache_task = asyncio.create_task(
+            multi_level_cache.get_cached_response_fast(
+                stage=conversation_state["stage"],
+                user_input=transcribed_text,
+                topic=conversation_state["topic"],
+            )
+        )
+        
         analysis_task = asyncio.create_task(
             async_analyze_english_input(
                 user_text=transcribed_text,
@@ -454,29 +468,134 @@ async def _handle_audio_processing(websocket: WebSocket, message: dict,
                 topic=conversation_state["topic"]
             )
         )
-
-        # Warm TTS engine in background
+        
         warmup_task = asyncio.create_task(_warmup_tts_engine())
+        
+        # Wait for cache lookup first (it's fast - ~1ms)
+        cached_response: Optional[CachedResponse] = await cache_task
+        
+        # If we have a cached response with audio, use it immediately
+        if cached_response and cached_response.source in ["l1", "l2"]:
+            print(f"⚡ [MULTI_CACHE] {cached_response.source.upper()} cache HIT! Instant response ready")
+            profiler.mark(f"🎯 {cached_response.source.upper()} cache hit")
+            
+            # Cancel analysis and warmup tasks (we don't need them)
+            analysis_task.cancel()
+            warmup_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await asyncio.gather(analysis_task, warmup_task, return_exceptions=True)
+            
+            # Send response immediately with pre-generated audio
+            await safe_send_json(websocket, {
+                "partial": True,
+                "response": cached_response.text,
+                "conversation_text": cached_response.text,
+                "step": conversation_state["stage"],
+                "original_text": transcribed_text,
+                "user_name": user_name,
+                "conversation_stage": conversation_state["stage"],
+                "current_topic": cached_response.topic,
+                "cache_level": cached_response.source,
+                "cache_confidence": cached_response.confidence,
+            })
+            
+            await safe_send_json(websocket, {
+                "partial": False,
+                "final": True,
+                "response": cached_response.text,
+                "conversation_text": cached_response.text,
+                "step": conversation_state["stage"],
+                "original_text": transcribed_text,
+                "user_name": user_name,
+                "conversation_stage": conversation_state["stage"],
+                "current_topic": cached_response.topic,
+                "cache_level": cached_response.source,
+                "cache_confidence": cached_response.confidence,
+            })
+            
+            await safe_send_bytes(websocket, cached_response.audio)
+            profiler.summary()
+            return  # Early return - no AI analysis needed for cache hits
+        
+        if should_trigger_early:
+            print(f"⚡ [EARLY_TRIGGER] Detected {word_count} words, starting analysis pipeline early")
+            await safe_send_json(websocket, {
+                "partial": True,
+                "status": "processing",
+                "transcribed_text": transcribed_text,
+                "step": "analysis_started"
+            })
 
-        # Step 5: Wait for analysis while warmup continues in background
-        analysis_result = await analysis_task
-        profiler.mark("🧠 AI analysis completed")
+        # Step 5: Handle cache hits (L1/L2 only - instant responses)
+        if cached_response and cached_response.source in ["l1", "l2"]:
+            # Cancel the analysis task since we have cached response
+            analysis_task.cancel()
+            warmup_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await asyncio.gather(analysis_task, warmup_task, return_exceptions=True)
+            
+            # Use cached response immediately
+            conversation_text = cached_response.text
+            response_audio = cached_response.audio
+            profiler.mark(f"🎯 {cached_response.source.upper()} cache hit - instant response")
+            
+            # Create minimal analysis result for state update
+            analysis_result = {
+                "conversation_text": conversation_text,
+                "next_stage": conversation_state["stage"],
+                "needs_correction": False,
+                "correction_type": "none",
+            }
+        else:
+            # Cache miss - wait for analysis (already started in parallel)
+            analysis_result = await analysis_task
+            profiler.mark("🧠 AI analysis completed")
+            await asyncio.gather(warmup_task, return_exceptions=True)
+            
+            await _update_conversation_state(conversation_state, analysis_result, transcribed_text)
+            conversation_text = analysis_result.get("conversation_text", "Let's continue.")
+            
+            # Generate TTS in parallel with cache storage
+            # Generate TTS in parallel with cache storage (with performance monitoring)
+            tts_task = performance_monitor.time_step(
+                "tts",
+                get_cached_or_generate_tts,
+                conversation_text,
+                True  # use_slow_tts
+            )
+            
+            # Cache the response asynchronously (non-blocking)
+            asyncio.create_task(
+                multi_level_cache.cache_response(
+                    stage=conversation_state["stage"],
+                    user_input=transcribed_text,
+                    response_text=conversation_text,
+                    audio=None,  # Will be set after TTS completes
+                    topic=conversation_state["topic"],
+                    cache_level="l2",
+                )
+            )
+            
+            response_audio = await tts_task
+            profiler.mark("🔊 TTS response generated")
+            
+            # Update cache with audio (non-blocking)
+            asyncio.create_task(
+                multi_level_cache.update_cached_audio(
+                    stage=conversation_state["stage"],
+                    user_input=transcribed_text,
+                    audio=response_audio,
+                    topic=conversation_state["topic"],
+                )
+            )
         
-        # Ensure warmup completes without blocking
-        await asyncio.gather(warmup_task, return_exceptions=True)
-
-        # Step 6: Update conversation state
-        await _update_conversation_state(conversation_state, analysis_result, transcribed_text)
+        cache_metadata = {
+            "level": cached_response.source if cached_response else "miss",
+            "confidence": cached_response.confidence if cached_response else 0.0,
+            "hit": cached_response is not None,
+        }
         
-        # Step 7: Generate TTS response (can be optimized further with predictive caching)
-        conversation_text = analysis_result.get("conversation_text", "Let's continue.")
-        
-        # Step 8: Start TTS generation in parallel with sending partial response
-        tts_task = asyncio.create_task(
-            get_cached_or_generate_tts(conversation_text, use_slow_tts=True)
-        )
-        
-        # Step 9: Stream partial response immediately (before TTS completes)
+        # Step 6: Stream partial response immediately
         await safe_send_json(websocket, {
             "partial": True,
             "response": conversation_text,
@@ -495,14 +614,11 @@ async def _handle_audio_processing(websocket: WebSocket, message: dict,
                 "correction_type": analysis_result.get("correction_type", "none"),
                 "learning_activity": analysis_result.get("learning_activity"),
                 "session_progress": analysis_result.get("session_progress")
-            }
+            },
+            "cache": cache_metadata
         })
-        
-        # Step 10: Wait for TTS to complete, then send audio
-        response_audio = await tts_task
-        profiler.mark("🔊 TTS response generated")
 
-        # Step 11: Send final complete response with audio
+        # Step 7: Send final complete response with audio
         await safe_send_json(websocket, {
             "partial": False,
             "final": True,
@@ -522,7 +638,8 @@ async def _handle_audio_processing(websocket: WebSocket, message: dict,
                 "correction_type": analysis_result.get("correction_type", "none"),
                 "learning_activity": analysis_result.get("learning_activity"),
                 "session_progress": analysis_result.get("session_progress")
-            }
+            },
+            "cache": cache_metadata
         })
         
         await safe_send_bytes(websocket, response_audio)
@@ -610,9 +727,31 @@ async def _handle_binary_audio_processing(websocket: WebSocket, message: dict,
         
         print(f"🔍 [ENGLISH_ONLY] Processing binary audio: '{transcribed_text}' at stage: {conversation_state['stage']}")
 
-        # Early Analysis Trigger
+        # Start ALL operations in parallel (cache lookup + analysis + warmup)
         word_count = len(transcribed_text.split())
         should_trigger_early = word_count >= 3
+        
+        # Start cache lookup, analysis, and warmup ALL in parallel
+        cache_task = asyncio.create_task(
+            multi_level_cache.get_cached_response_fast(
+                stage=conversation_state["stage"],
+                user_input=transcribed_text,
+                topic=conversation_state["topic"],
+            )
+        )
+        
+        analysis_task = asyncio.create_task(
+            async_analyze_english_input(
+                user_text=transcribed_text,
+                stage=conversation_state["stage"],
+                topic=conversation_state["topic"]
+            )
+        )
+        
+        warmup_task = asyncio.create_task(_warmup_tts_engine())
+        
+        # Wait for cache lookup first (it's fast - ~1ms)
+        cached_response: Optional[CachedResponse] = await cache_task
         
         if should_trigger_early:
             print(f"⚡ [EARLY_TRIGGER] Detected {word_count} words, starting analysis pipeline early")
@@ -623,29 +762,59 @@ async def _handle_binary_audio_processing(websocket: WebSocket, message: dict,
                 "step": "analysis_started"
             })
 
-        # Parallel execution
-        analysis_task = asyncio.create_task(
-            async_analyze_english_input(
-                user_text=transcribed_text,
-                stage=conversation_state["stage"],
-                topic=conversation_state["topic"]
+        # Handle cache hits (L1/L2 only)
+        if cached_response and cached_response.source in ["l1", "l2"]:
+            # Cancel analysis task since we have cached response
+            analysis_task.cancel()
+            warmup_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await asyncio.gather(analysis_task, warmup_task, return_exceptions=True)
+            
+            # Use cached response immediately
+            conversation_text = cached_response.text
+            response_audio = cached_response.audio
+            profiler.mark(f"🎯 {cached_response.source.upper()} cache hit - instant response")
+            
+            # Create minimal analysis result for state update
+            analysis_result = {
+                "conversation_text": conversation_text,
+                "next_stage": conversation_state["stage"],
+                "needs_correction": False,
+                "correction_type": "none",
+            }
+        else:
+            # Cache miss - wait for analysis (already started in parallel)
+            analysis_result = await analysis_task
+            profiler.mark("🧠 AI analysis completed")
+            await asyncio.gather(warmup_task, return_exceptions=True)
+            
+            await _update_conversation_state(conversation_state, analysis_result, transcribed_text)
+            conversation_text = analysis_result.get("conversation_text", "Let's continue.")
+            
+            # Generate TTS
+            tts_task = asyncio.create_task(
+                get_cached_or_generate_tts(conversation_text, use_slow_tts=True)
             )
-        )
-
-        warmup_task = asyncio.create_task(_warmup_tts_engine())
-
-        analysis_result = await analysis_task
-        profiler.mark("🧠 AI analysis completed")
-        await asyncio.gather(warmup_task, return_exceptions=True)
-
-        await _update_conversation_state(conversation_state, analysis_result, transcribed_text)
+            response_audio = await tts_task
+            profiler.mark("🔊 TTS response generated")
+            
+            # Cache the response asynchronously (non-blocking)
+            asyncio.create_task(
+                multi_level_cache.cache_response(
+                    stage=conversation_state["stage"],
+                    user_input=transcribed_text,
+                    response_text=conversation_text,
+                    audio=response_audio,
+                    topic=conversation_state["topic"],
+                    cache_level="l2",
+                )
+            )
         
-        conversation_text = analysis_result.get("conversation_text", "Let's continue.")
-        
-        # Parallel TTS generation
-        tts_task = asyncio.create_task(
-            get_cached_or_generate_tts(conversation_text, use_slow_tts=True)
-        )
+        cache_metadata = {
+            "level": cached_response.source if cached_response else "miss",
+            "confidence": cached_response.confidence if cached_response else 0.0,
+            "hit": cached_response is not None,
+        }
         
         # Stream partial response
         await safe_send_json(websocket, {
@@ -666,11 +835,9 @@ async def _handle_binary_audio_processing(websocket: WebSocket, message: dict,
                 "correction_type": analysis_result.get("correction_type", "none"),
                 "learning_activity": analysis_result.get("learning_activity"),
                 "session_progress": analysis_result.get("session_progress")
-            }
+            },
+            "cache": cache_metadata
         })
-        
-        response_audio = await tts_task
-        profiler.mark("🔊 TTS response generated")
 
         # Send final response
         await safe_send_json(websocket, {
@@ -692,7 +859,8 @@ async def _handle_binary_audio_processing(websocket: WebSocket, message: dict,
                 "correction_type": analysis_result.get("correction_type", "none"),
                 "learning_activity": analysis_result.get("learning_activity"),
                 "session_progress": analysis_result.get("session_progress")
-            }
+            },
+            "cache": cache_metadata
         })
         
         await safe_send_bytes(websocket, response_audio)
