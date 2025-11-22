@@ -19,7 +19,7 @@ Writing Sample:
 Respond with only one stage label: A0, A1, A2, B1, B2, C1, or C2.
 """
         response = client.chat.completions.create(
-            model="gpt-4",
+            model="gpt-4o-mini",
             messages=[
                 {"role": "user", "content": prompt}
             ],

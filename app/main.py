@@ -58,6 +58,7 @@ from .services.settings_manager import get_ai_settings
 from .services.safety_manager import get_ai_safety_settings
 from .supabase_client import progress_tracker, warmup_database_connections
 from .cache import load_content_cache
+from .services.connection_pool import connection_pool
 
 
 from fastapi import FastAPI
@@ -111,6 +112,10 @@ async def startup_event():
     import os
     from dotenv import load_dotenv
     load_dotenv()
+
+    # Initialize pre-warmed connection pools
+    print("🔥 [STARTUP] Initializing connection pools...")
+    await connection_pool.initialize()
     
     api_key = os.getenv('OPENAI_API_KEY')
     if api_key:
@@ -141,6 +146,7 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     """Application shutdown event"""
+    await connection_pool.close()
     print("🛑 [SHUTDOWN] AI English Tutor Backend shutting down...")
     print("✅ [SHUTDOWN] Application shutdown complete")
 
