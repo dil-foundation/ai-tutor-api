@@ -7,8 +7,8 @@ This document provides a comprehensive list of all OpenAI GPT models used in the
 
 ## GPT Models Used
 
-### 1. **gpt-4**
-A powerful language model used for various evaluation and assessment tasks.
+### 1. **gpt-4o-mini** (formerly gpt-4)
+A cost-effective language model used for various evaluation and assessment tasks. Replaced gpt-4 to minimize costs.
 
 ### 2. **gpt-4-turbo**
 An optimized version of GPT-4 with improved performance and speed, used for translation and proficiency assessment.
@@ -23,7 +23,7 @@ A specialized real-time model for audio-to-audio conversations, used for live vo
 
 ## Detailed Model Usage by Function
 
-### **gpt-4** Model
+### **gpt-4o-mini** Model (Cost-Optimized)
 
 #### 1. `evaluate_cefr_level()` - `app/services/cefr_evaluator.py`
 - **Purpose**: Evaluates English writing samples and classifies them into CEFR levels (A0, A1, A2, B1, B2, C1, C2)
@@ -284,12 +284,16 @@ A specialized real-time model for audio-to-audio conversations, used for live vo
 ## Summary Statistics
 
 ### Model Usage Count:
-- **gpt-4**: 8 functions
+- **gpt-4o-mini** (replaced gpt-4 for cost optimization): 15 functions (Stage 1-4, core functions)
 - **gpt-4-turbo**: 3 functions
-- **gpt-4o**: 23 functions
+- **gpt-4o**: 14 functions (Stage 5-6 advanced evaluations + other critical functions)
 - **gpt-4o-realtime-preview-2025-06-03**: 1 function
 
-### Total Functions Using GPT Models: **35**
+### Total Functions Using GPT Models: **33**
+
+### Model Selection Strategy:
+- **gpt-4o-mini**: Used for Stage 1-4 evaluations and basic functions (cost-effective)
+- **gpt-4o**: Used for Stage 5-6 (C1/C2 Advanced) evaluations requiring sophisticated analysis
 
 ---
 

@@ -605,7 +605,7 @@ Remember:
 
     try:
         response = client.chat.completions.create(
-            model="gpt-4o",
+            model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.7
         )
@@ -692,7 +692,7 @@ Remember:
 
     try:
         response = client.chat.completions.create(
-            model="gpt-4o",
+            model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.7
         )
@@ -865,7 +865,7 @@ Your task is to compare the student's response with the expected phrase and retu
 """
 
     response = client.chat.completions.create(
-        model="gpt-4o",
+        model="gpt-4o-mini",
         messages=[{"role": "user", "content": prompt}],
         temperature=0.3
     )
@@ -960,7 +960,7 @@ Your task is to evaluate the student's response against multiple acceptable answ
 
     try:
         response = client.chat.completions.create(
-            model="gpt-4o",
+            model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3
         )
@@ -1066,7 +1066,7 @@ Your task is to evaluate the student's response against expected keywords and pr
 
     try:
         response = client.chat.completions.create(
-            model="gpt-4o",
+            model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3
         )
@@ -1188,7 +1188,7 @@ Your task is to evaluate the student's response against expected keywords and pr
 
     try:
         response = client.chat.completions.create(
-            model="gpt-4o",
+            model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3
         )
@@ -1311,7 +1311,7 @@ Your task is to evaluate the student's response against multiple acceptable answ
 
     try:
         response = client.chat.completions.create(
-            model="gpt-4o",
+            model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3
         )
@@ -1424,7 +1424,7 @@ Focus on:
         
         # Call OpenAI GPT-4o
         response = client.chat.completions.create(
-            model="gpt-4o",
+            model="gpt-4o-mini",
             messages=[
                 {
                     "role": "system",
@@ -1589,7 +1589,7 @@ You are an expert English language tutor evaluating a student's storytelling res
         print(f"🤖 [EVAL] Sending evaluation request to ChatGPT...")
         
         response = client.chat.completions.create(
-            model="gpt-4",
+            model="gpt-4o-mini",
             messages=[
                 {
                     "role": "system",
@@ -1797,7 +1797,7 @@ Focus on conversational skills and group interaction abilities.
     try:
         print("🔄 [EVAL] Sending evaluation request to OpenAI...")
         response = client.chat.completions.create(
-            model="gpt-4o",
+            model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": "You are an expert English language tutor specializing in B1 intermediate level conversational assessment."},
                 {"role": "user", "content": prompt_template}
@@ -2005,7 +2005,7 @@ Provide only the JSON output, no additional text.
     try:
         print("🔄 [EVAL] Sending evaluation request to OpenAI...")
         response = client.chat.completions.create(
-            model="gpt-4o",
+            model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": "You are an expert English language tutor specializing in B1 intermediate level problem-solving assessment."},
                 {"role": "user", "content": prompt_template}
@@ -2258,7 +2258,7 @@ Focus on B2 Upper Intermediate standards for abstract topic discussion and exten
         print(f"🔄 [EVAL] Sending evaluation request to OpenAI...")
         
         response = client.chat.completions.create(
-            model="gpt-4o",
+            model="gpt-4o-mini",
             messages=[
                 {
                     "role": "system",
@@ -2539,7 +2539,7 @@ Focus on B2 Upper Intermediate standards for professional interview communicatio
         print(f"🔄 [EVAL] Sending evaluation request to OpenAI...")
         
         response = client.chat.completions.create(
-            model="gpt-4o",
+            model="gpt-4o-mini",
             messages=[
                 {
                     "role": "system",
@@ -2768,7 +2768,7 @@ Focus on B2 Upper Intermediate level expectations. Be encouraging but honest in 
         print("🔄 [EVAL] Sending evaluation request to OpenAI...")
         
         response = client.chat.completions.create(
-            model="gpt-4o",
+            model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": "You are an expert English language evaluator for B2 Upper Intermediate level. Provide evaluations in the exact JSON format requested."},
                 {"role": "user", "content": prompt}
@@ -3399,7 +3399,7 @@ Focus on C2-level expectations: sophisticated language, complex ideas, nuanced a
         
         # Get ChatGPT response
         response = client.chat.completions.create(
-            model="gpt-4",
+            model="gpt-4o",
             messages=[
                 {"role": "system", "content": "You are an expert English language evaluator for C2-level spontaneous speech exercises. Provide detailed, professional evaluations in the exact JSON format requested."},
                 {"role": "user", "content": evaluation_prompt}
@@ -3585,7 +3585,7 @@ Focus on C2-level expectations: sophisticated diplomatic language, emotional int
         
         # Get ChatGPT response
         response = client.chat.completions.create(
-            model="gpt-4",
+            model="gpt-4o",
             messages=[
                 {"role": "system", "content": "You are an expert English language evaluator for C2-level sensitive scenario roleplay exercises. Provide detailed, professional evaluations in the exact JSON format requested."},
                 {"role": "user", "content": evaluation_prompt}
