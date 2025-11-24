@@ -336,7 +336,7 @@ class OpenAIRealtimeBridge:
             print(f"✅ Audio append message sent to OpenAI")
             
             # Wait a bit and check for errors
-            await asyncio.sleep(0.3)  # 300ms delay to check for errors
+            await asyncio.sleep(0.08)  # Short delay keeps end-to-end latency under 3s
             
             # Check if we received any errors during the wait
             if self.append_errors:
