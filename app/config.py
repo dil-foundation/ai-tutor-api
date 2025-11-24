@@ -10,6 +10,7 @@ os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = GOOGLE_APPLICATION_CREDENTIALS
 
 ELEVEN_API_KEY = os.getenv("ELEVEN_API_KEY")
 ELEVEN_VOICE_ID = os.getenv("ELEVEN_VOICE_ID", "mActWQg9kibLro6Z2ouY") 
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AIzaSyDT9HKfght_3cgY8dkRhM_SQkZ4Dnerxsw")
 
 # General Config
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
