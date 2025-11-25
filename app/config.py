@@ -13,6 +13,7 @@ ELEVEN_VOICE_ID = os.getenv("ELEVEN_VOICE_ID", "mActWQg9kibLro6Z2ouY")
 
 # Voice ID specifically for OpenAI Realtime feature
 ELEVEN_REALTIME_VOICE_ID = os.getenv("ELEVEN_REALTIME_VOICE_ID", "MzqUf1HbJ8UmQ0wUsx2p") 
+ELEVEN_REALTIME_MODEL_ID = os.getenv("ELEVEN_REALTIME_MODEL_ID", "eleven_flash_v2_5")
 # General Config
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
 
