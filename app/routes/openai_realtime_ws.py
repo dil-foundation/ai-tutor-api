@@ -8,12 +8,15 @@ import json
 import base64
 import os
 import io
-from typing import Optional, Dict, Any
+import re
+from contextlib import suppress
+from typing import Optional, Dict, Any, Tuple
 from pydub import AudioSegment
 import websockets
+import httpx
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from app.services.audio_utils import validate_and_convert_audio
-from app.config import OPENAI_API_KEY
+from app.config import OPENAI_API_KEY, ELEVEN_API_KEY, ELEVEN_REALTIME_VOICE_ID
 
 router = APIRouter()
 
@@ -38,6 +41,14 @@ OPENAI_HEADERS = {
 INPUT_AUDIO_FORMAT = "pcm16"  # 16-bit PCM
 OUTPUT_AUDIO_FORMAT = "pcm16"
 SAMPLE_RATE = 24000  # OpenAI Realtime API uses 24kHz
+
+# ElevenLabs TTS configuration
+ELEVENLABS_STREAM_URL = f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVEN_REALTIME_VOICE_ID}/stream"
+ELEVENLABS_HEADERS = {
+    "Accept": "audio/mpeg",
+    "Content-Type": "application/json",
+    "xi-api-key": ELEVEN_API_KEY
+}
 
 
 async def convert_audio_to_pcm16(audio_bytes: bytes) -> bytes:
@@ -108,6 +119,7 @@ class OpenAIRealtimeBridge:
     """
     Bridges between client WebSocket and OpenAI Realtime API.
     Handles bidirectional audio streaming for optimal performance.
+    Now uses ElevenLabs TTS for audio output instead of OpenAI audio.
     """
     
     def __init__(self, client_ws: WebSocket):
@@ -119,6 +131,8 @@ class OpenAIRealtimeBridge:
         self.response_audio_chunks: list = []
         self.response_text: str = ""
         self.response_done = True  # Start as True so first commit can proceed
+        self.partial_text_buffer: str = ""
+        self.min_partial_segment_chars = 80
         # Track audio buffer to ensure we have enough before committing
         self.audio_buffer_size_bytes: int = 0
         self.audio_chunks_count: int = 0
@@ -126,32 +140,40 @@ class OpenAIRealtimeBridge:
         self.MIN_AUDIO_BYTES = 4800  # ~100ms of audio
         # Track if we've received any errors after appending
         self.append_errors: list = []
+        # HTTP client for ElevenLabs streaming
+        self.http_client: Optional[httpx.AsyncClient] = None
+        # Queue + worker for ElevenLabs segments
+        self.tts_queue: asyncio.Queue[Tuple[str, bool]] = asyncio.Queue()
+        self.tts_worker_task: Optional[asyncio.Task] = None
+        self.tts_finalized: bool = True  # no pending speech until first response
         
     async def connect_to_openai(self):
         """Establish connection to OpenAI Realtime API"""
         try:
+            # Initialize HTTP client for ElevenLabs streaming
+            self.http_client = httpx.AsyncClient(timeout=30.0)
+            
             self.openai_ws = await websockets.connect(
                 OPENAI_REALTIME_URI,
                 additional_headers=OPENAI_HEADERS
             )
             
-            # Configure session
+            # Configure session - TEXT ONLY output (no audio from OpenAI)
             # IMPORTANT: Disable automatic turn detection to prevent buffer clearing
             # We'll manually commit when ready
             session_config = {
                 "type": "session.update",
                 "session": {
-                    "modalities": ["audio", "text"],
+                    "modalities": ["audio", "text"],  # Input: audio, Output: text only
                     "input_audio_format": INPUT_AUDIO_FORMAT,
                     "output_audio_format": OUTPUT_AUDIO_FORMAT,
                     "instructions": SYSTEM_PROMPT,
-                    "voice": "alloy",  # Default voice
                     "temperature": 0.8,
                     "turn_detection": None  # Disable automatic VAD - we'll commit manually
                 }
             }
             
-            print(f"📤 Sending session configuration (VAD disabled for manual commit)...")
+            print(f"📤 Sending session configuration (TEXT-ONLY output, VAD disabled for manual commit)...")
             await self.openai_ws.send(json.dumps(session_config))
             
             self.is_connected = True
@@ -160,6 +182,7 @@ class OpenAIRealtimeBridge:
             
             # Start listening for OpenAI messages
             asyncio.create_task(self._listen_to_openai())
+            self.tts_worker_task = asyncio.create_task(self._tts_worker())
             
             # Wait a moment for session.updated to arrive
             await asyncio.sleep(0.5)
@@ -167,6 +190,8 @@ class OpenAIRealtimeBridge:
         except Exception as e:
             print(f"❌ Error connecting to OpenAI Realtime API: {e}")
             self.is_connected = False
+            if self.http_client:
+                await self.http_client.aclose()
             raise
     
     async def _listen_to_openai(self):
@@ -195,40 +220,74 @@ class OpenAIRealtimeBridge:
                     print("✅ Input audio buffer commit confirmed by OpenAI")
                     
                 elif message_type == "response.audio.delta":
-                    # Stream audio chunks to client immediately for low latency
-                    audio_delta = base64.b64decode(data.get("delta", ""))
-                    if audio_delta:
-                        # Convert PCM16 to WAV and send to client
-                        wav_audio = await convert_pcm16_to_wav(audio_delta)
-                        await self.client_ws.send_bytes(wav_audio)
-                        
-                elif message_type == "response.audio_transcript.delta":
-                    # Stream transcription text
-                    transcript_delta = data.get("delta", "")
-                    if transcript_delta:
-                        self.response_text += transcript_delta
-                        # Send text update to client
+                    # OpenAI audio output - IGNORE (we use ElevenLabs instead)
+                    # This should not happen if we configured text-only, but handle gracefully
+                    print("⚠️ Received audio delta from OpenAI (unexpected - using ElevenLabs TTS)")
+                    
+                elif message_type in {
+                    "response.output_text.delta",
+                    "response.text.delta",
+                    "response.audio_transcript.delta",
+                }:
+                    # Normalize delta payloads - OpenAI can send str, dict, or list segments
+                    delta_payload = data.get("delta", "")
+                    delta_text = ""
+                    if isinstance(delta_payload, str):
+                        delta_text = delta_payload
+                    elif isinstance(delta_payload, dict):
+                        delta_text = delta_payload.get("text") or delta_payload.get("content", "")
+                    elif isinstance(delta_payload, list):
+                        delta_text = "".join(
+                            segment.get("text", "") if isinstance(segment, dict) else str(segment)
+                            for segment in delta_payload
+                        )
+                    else:
+                        delta_text = str(delta_payload or "")
+
+                    if delta_text:
+                        self.response_text += delta_text
+                        self.partial_text_buffer += delta_text
+                        self._try_flush_partial_segment()
+                        print(f"📝 Text delta received ({len(delta_text)} chars) | total so far {len(self.response_text)} chars")
                         await self.client_ws.send_json({
                             "type": "transcript_delta",
                             "text": self.response_text
                         })
                         
-                elif message_type == "response.audio_transcript.done":
-                    # Final transcript
-                    final_text = data.get("text", "")
+                elif message_type in {
+                    "response.audio_transcript.done",
+                    "response.output_text.done",
+                    "response.text.done",
+                }:
+                    # Final transcript - now convert to speech using ElevenLabs
+                    text_payload = data.get("text")
+                    final_text = ""
+                    if isinstance(text_payload, str):
+                        final_text = text_payload
+                    elif isinstance(text_payload, dict):
+                        final_text = text_payload.get("text", "")
+                    elif text_payload is None and self.response_text:
+                        final_text = self.response_text
+                    else:
+                        final_text = str(text_payload or "")
+
                     self.response_text = final_text
+                    print(f"✅ Text response complete ({len(final_text)} chars)")
+                    
+                    # Send final transcript to client
                     await self.client_ws.send_json({
                         "type": "transcript_done",
                         "text": final_text
                     })
                     
-                elif message_type == "response.done":
-                    # Response complete
-                    self.response_done = True
-                    await self.client_ws.send_json({
-                        "type": "response_done"
-                    })
+                    # Flush remaining buffered text to ElevenLabs queue
+                    self._finalize_tts_segments()
                     
+                elif message_type == "response.done":
+                    # Response complete - wait for ElevenLabs streaming to finish
+                    # (We'll mark response_done after ElevenLabs completes)
+                    print("✅ OpenAI text response complete event received (waiting for ElevenLabs TTS task to finish)")
+
                 elif message_type == "error":
                     error_details = data.get("error", {})
                     error_msg = error_details.get("message", "Unknown error")
@@ -264,6 +323,9 @@ class OpenAIRealtimeBridge:
                         "message": error_msg,
                         "code": error_code
                     })
+                else:
+                    # Log any unexpected message types for debugging
+                    print(f"ℹ️ Unhandled OpenAI message type: {message_type} | payload keys: {list(data.keys())}")
                     
         except websockets.exceptions.ConnectionClosed:
             print("⚠️ OpenAI WebSocket connection closed")
@@ -398,7 +460,9 @@ class OpenAIRealtimeBridge:
             # Reset response state BEFORE committing (mark as in progress)
             self.response_audio_chunks = []
             self.response_text = ""
+            self.partial_text_buffer = ""
             self.response_done = False  # Mark that we're waiting for a response
+            self.tts_finalized = False
             
             # Store buffer info for logging
             buffer_size = self.audio_buffer_size_bytes
@@ -425,11 +489,11 @@ class OpenAIRealtimeBridge:
             
             print("📤 Audio buffer committed, requesting response...")
             
-            # Request response immediately after commit
+            # Request response immediately after commit - TEXT ONLY (no audio)
             response_message = {
                 "type": "response.create",
                 "response": {
-                    "modalities": ["audio", "text"],
+                    "modalities": ["text"],  # Only text output - audio comes from ElevenLabs
                     "instructions": "Respond naturally and conversationally."
                 }
             }
@@ -449,14 +513,190 @@ class OpenAIRealtimeBridge:
             self.response_done = True
             raise
     
+    async def _stream_elevenlabs_tts(self, text: str, mark_response_complete: bool = False):
+        """
+        Stream text to ElevenLabs TTS and forward audio chunks to client.
+        Uses HTTP streaming API for real-time audio delivery.
+        """
+        try:
+            if not self.http_client:
+                print("⚠️ HTTP client not initialized for ElevenLabs")
+                if mark_response_complete:
+                    self.response_done = True
+                    await self.client_ws.send_json({"type": "response_done"})
+                return
+            
+            print(f"🎵 Starting ElevenLabs TTS streaming for text: '{text[:100]}...'")
+            
+            # Prepare request payload
+            payload = {
+                "text": text,
+                "model_id": "eleven_multilingual_v2",
+                "voice_settings": {
+                    "stability": 0.7,
+                    "similarity_boost": 0.8,
+                    "speed": 1.0
+                }
+            }
+            
+            # Stream audio from ElevenLabs
+            async with self.http_client.stream(
+                "POST",
+                ELEVENLABS_STREAM_URL,
+                headers=ELEVENLABS_HEADERS,
+                json=payload
+            ) as response:
+                if response.status_code != 200:
+                    error_text = await response.aread()
+                    print(f"❌ ElevenLabs TTS error: {response.status_code} - {error_text.decode()}")
+                    self.response_done = True
+                    await self.client_ws.send_json({
+                        "type": "error",
+                        "message": f"ElevenLabs TTS error: {response.status_code}",
+                        "code": "elevenlabs_error"
+                    })
+                    await self.client_ws.send_json({
+                        "type": "response_done"
+                    })
+                    return
+                
+                print("✅ ElevenLabs TTS streaming started, forwarding audio chunks...")
+                
+                # Buffer entire MP3 response for a single contiguous WAV playback
+                mp3_buffer = io.BytesIO()
+                total_bytes = 0
+                chunk_count = 0
+                
+                async for chunk in response.aiter_bytes():
+                    if not chunk:
+                        continue
+                    mp3_buffer.write(chunk)
+                    total_bytes += len(chunk)
+                    chunk_count += 1
+                    if chunk_count % 50 == 0:
+                        print(f"🎧 Buffered {chunk_count} MP3 chunks ({total_bytes} bytes)")
+                
+                if mp3_buffer.tell() == 0:
+                    print("⚠️ ElevenLabs returned no audio data")
+                    if mark_response_complete:
+                        self.response_done = True
+                        await self.client_ws.send_json({
+                            "type": "error",
+                            "message": "ElevenLabs TTS returned no audio",
+                            "code": "elevenlabs_empty_audio"
+                        })
+                        await self.client_ws.send_json({"type": "response_done"})
+                    return
+
+                mp3_buffer.seek(0)
+                print(f"🎧 ElevenLabs stream finished, total MP3 bytes: {total_bytes}")
+                
+                # Decode once and send as a single WAV for seamless playback
+                audio_segment = AudioSegment.from_file(mp3_buffer, format="mp3")
+                audio_segment = audio_segment.set_frame_rate(SAMPLE_RATE).set_channels(1).set_sample_width(2)
+                wav_buffer = io.BytesIO()
+                audio_segment.export(wav_buffer, format="wav")
+                wav_audio = wav_buffer.getvalue()
+                
+                await self.client_ws.send_bytes(wav_audio)
+                print(f"📤 Sent single WAV chunk to client: {len(wav_audio)} bytes")
+            
+            print("✅ ElevenLabs TTS streaming complete")
+            
+            if mark_response_complete:
+                self.response_done = True
+                await self.client_ws.send_json({
+                    "type": "response_done"
+                })
+            
+        except Exception as e:
+            print(f"❌ Error in ElevenLabs TTS streaming: {e}")
+            import traceback
+            traceback.print_exc()
+            if mark_response_complete:
+                self.response_done = True
+                try:
+                    await self.client_ws.send_json({
+                        "type": "error",
+                        "message": f"ElevenLabs TTS error: {str(e)}",
+                        "code": "elevenlabs_error"
+                    })
+                    await self.client_ws.send_json({
+                        "type": "response_done"
+                    })
+                except:
+                    pass
+    
     async def close(self):
         """Close connections"""
         try:
             if self.openai_ws:
                 await self.openai_ws.close()
+            if self.http_client:
+                await self.http_client.aclose()
+            if self.tts_worker_task:
+                self.tts_worker_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await self.tts_worker_task
             self.is_connected = False
         except Exception as e:
-            print(f"⚠️ Error closing OpenAI connection: {e}")
+            print(f"⚠️ Error closing connections: {e}")
+
+    async def _tts_worker(self):
+        """Sequentially process queued text segments for ElevenLabs."""
+        try:
+            while True:
+                text, is_final = await self.tts_queue.get()
+                try:
+                    if text:
+                        await self._stream_elevenlabs_tts(text, mark_response_complete=is_final)
+                    elif is_final:
+                        # No audio but still need to notify completion
+                        self.response_done = True
+                        await self.client_ws.send_json({"type": "response_done"})
+                except Exception as e:
+                    print(f"❌ ElevenLabs TTS worker error: {e}")
+                finally:
+                    self.tts_queue.task_done()
+        except asyncio.CancelledError:
+            pass
+
+    def _enqueue_tts_segment(self, text: str, is_final: bool = False):
+        """Add a text segment to the ElevenLabs queue."""
+        if self.tts_finalized and not is_final:
+            return  # Ignore stale segments after finalization
+        cleaned = text.strip()
+        if not cleaned and not is_final:
+            return
+        if is_final:
+            self.tts_finalized = True
+        print(f"🔊 Enqueuing TTS segment ({len(cleaned)} chars, final={is_final})")
+        self.tts_queue.put_nowait((cleaned, is_final))
+
+    def _try_flush_partial_segment(self):
+        """Flush completed sentences to TTS queue to reduce latency."""
+        buffer = self.partial_text_buffer
+        if len(buffer.strip()) < self.min_partial_segment_chars:
+            return
+        last_sentence_idx = max(buffer.rfind("."), buffer.rfind("!"), buffer.rfind("?"))
+        if last_sentence_idx == -1:
+            return
+        segment = buffer[: last_sentence_idx + 1].strip()
+        if len(segment) < self.min_partial_segment_chars:
+            return
+        self.partial_text_buffer = buffer[last_sentence_idx + 1 :]
+        self._enqueue_tts_segment(segment)
+
+    def _finalize_tts_segments(self):
+        """Flush any remaining text and mark queue completion."""
+        if self.tts_finalized:
+            return
+        remainder = self.partial_text_buffer.strip()
+        self.partial_text_buffer = ""
+        if remainder:
+            self._enqueue_tts_segment(remainder, is_final=True)
+        else:
+            self._enqueue_tts_segment("", is_final=True)
 
 
 @router.websocket("/ws/openai-realtime")
