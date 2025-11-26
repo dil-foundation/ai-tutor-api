@@ -654,37 +654,125 @@ async def _get_practice_stage_performance(time_range: str = "all_time") -> List[
                         stage_data[stage_id]['mature_users'] += 1
         
         # Aggregate topic progress data for more granular performance metrics
+        # Also track unique users from topic progress to supplement stage progress data
+        topic_users_by_stage = {}  # Track unique users per stage from topic progress
+        topic_time_by_stage = {}  # Track total time per stage from topic progress
+        
         if topic_progress_result.data:
             for record in topic_progress_result.data:
                 stage_id = record.get('stage_id', 1)
-                score = record.get('score', 0)
+                user_id = record.get('user_id')
+                score = record.get('score', 0) or 0
                 completed = record.get('completed', False)
+                time_seconds = record.get('total_time_seconds', 0) or 0
                 
                 if stage_id in stage_data:
                     stage_data[stage_id]['total_topic_attempts'] += 1
                     stage_data[stage_id]['total_topic_scores'] += score
                     if completed:
                         stage_data[stage_id]['completed_topics'] += 1
+                    
+                    # Track unique users from topic progress
+                    if stage_id not in topic_users_by_stage:
+                        topic_users_by_stage[stage_id] = set()
+                    topic_users_by_stage[stage_id].add(user_id)
+                    
+                    # Track time from topic progress
+                    if stage_id not in topic_time_by_stage:
+                        topic_time_by_stage[stage_id] = 0
+                    topic_time_by_stage[stage_id] += time_seconds
         
         # Calculate comprehensive performance percentages for all stages
         stage_performance = []
         for stage_id in range(1, 7):  # Ensure all 6 stages are included
             data = stage_data[stage_id]
             
-            if data['total_users'] > 0:
-                # Calculate multiple performance metrics
-                completion_rate = (data['completed_users'] / data['total_users']) * 100
-                progress_rate = data['total_progress'] / data['total_users']
-                average_score_rate = data['total_average_score'] / data['total_users']
-                best_score_rate = data['total_best_score'] / data['total_users']
-                maturity_rate = (data['mature_users'] / data['total_users']) * 100
+            # Get unique user count from topic progress if stage progress doesn't have users
+            topic_user_count = len(topic_users_by_stage.get(stage_id, set()))
+            total_unique_users = max(data['total_users'], topic_user_count)
+            
+            # Use topic-level data to supplement stage-level data when stage data is missing/zero
+            has_stage_data = data['total_users'] > 0 and (
+                data['total_progress'] > 0 or 
+                data['total_average_score'] > 0 or 
+                data['total_best_score'] > 0
+            )
+            has_topic_data = data['total_topic_attempts'] > 0
+            
+            # Initialize all metrics to 0
+            performance_percentage = 0.0
+            completion_rate = 0.0
+            progress_rate = 0.0
+            average_score_rate = 0.0
+            best_score_rate = 0.0
+            maturity_rate = 0.0
+            exercise_completion_rate = 0.0
+            topic_completion_rate = 0.0
+            average_topic_score = 0.0
+            engagement_score = 0.0
+            
+            if total_unique_users > 0 or has_topic_data:
+                # Calculate completion rate
+                if has_stage_data and data['completed_users'] > 0:
+                    completion_rate = (data['completed_users'] / data['total_users']) * 100
+                elif has_topic_data:
+                    # Derive completion rate from topic completion
+                    completion_rate = (data['completed_topics'] / data['total_topic_attempts']) * 100 if data['total_topic_attempts'] > 0 else 0
+                else:
+                    completion_rate = 0.0
+                
+                # Calculate progress rate
+                if has_stage_data and data['total_progress'] > 0:
+                    progress_rate = data['total_progress'] / data['total_users']
+                elif has_topic_data:
+                    # Derive progress from topic completion rate
+                    progress_rate = (data['completed_topics'] / data['total_topic_attempts']) * 100 / 100 if data['total_topic_attempts'] > 0 else 0
+                else:
+                    progress_rate = 0.0
+                
+                # Calculate average score rate
+                if has_stage_data and data['total_average_score'] > 0:
+                    average_score_rate = data['total_average_score'] / data['total_users']
+                elif has_topic_data:
+                    # Use average topic score
+                    average_score_rate = data['total_topic_scores'] / data['total_topic_attempts'] if data['total_topic_attempts'] > 0 else 0
+                else:
+                    average_score_rate = 0.0
+                
+                # Calculate best score rate
+                if has_stage_data and data['total_best_score'] > 0:
+                    best_score_rate = data['total_best_score'] / data['total_users']
+                elif has_topic_data:
+                    # Use average topic score as best score approximation
+                    best_score_rate = data['total_topic_scores'] / data['total_topic_attempts'] if data['total_topic_attempts'] > 0 else 0
+                else:
+                    best_score_rate = 0.0
+                
+                # Calculate maturity rate
+                if has_stage_data:
+                    maturity_rate = (data['mature_users'] / data['total_users']) * 100 if data['total_users'] > 0 else 0
+                elif has_topic_data:
+                    # Derive maturity from high-performing topics (score >= 80)
+                    high_score_topics = 0
+                    if data['total_topic_attempts'] > 0:
+                        # Estimate based on average score (if avg >= 80, consider mature)
+                        avg_score = data['total_topic_scores'] / data['total_topic_attempts']
+                        maturity_rate = 100 if avg_score >= 80 else (avg_score / 80) * 100
+                    else:
+                        maturity_rate = 0.0
+                else:
+                    maturity_rate = 0.0
                 
                 # Calculate exercise completion rate
-                exercise_completion_rate = 0
-                if data['total_users'] > 0:
-                    # Each stage has 3 exercises, so max exercises = total_users * 3
+                if has_stage_data and data['total_exercises_completed'] > 0:
                     max_exercises = data['total_users'] * 3
                     exercise_completion_rate = (data['total_exercises_completed'] / max_exercises) * 100 if max_exercises > 0 else 0
+                elif has_topic_data:
+                    # Estimate exercise completion from topic completion
+                    # Assume each exercise has multiple topics, so use topic completion as proxy
+                    exercise_completion_rate = (data['completed_topics'] / data['total_topic_attempts']) * 100 if data['total_topic_attempts'] > 0 else 0
+                else:
+                    exercise_completion_rate = 0.0
                 
                 # Calculate topic completion rate
                 topic_completion_rate = 0
@@ -698,42 +786,58 @@ async def _get_practice_stage_performance(time_range: str = "all_time") -> List[
                 
                 # Calculate engagement score (time and attempts)
                 engagement_score = 0
-                if data['total_users'] > 0:
-                    avg_time_per_user = data['total_time_spent'] / data['total_users']
-                    avg_attempts_per_user = data['total_attempts'] / data['total_users']
-                    # Normalize engagement (higher time and attempts = better engagement)
+                if has_stage_data and (data['total_time_spent'] > 0 or data['total_attempts'] > 0):
+                    user_count = max(data['total_users'], 1)
+                    avg_time_per_user = data['total_time_spent'] / user_count
+                    avg_attempts_per_user = data['total_attempts'] / user_count
                     engagement_score = min(100, (avg_time_per_user * 0.1 + avg_attempts_per_user * 2))
+                elif has_topic_data and topic_time_by_stage.get(stage_id, 0) > 0:
+                    # Use topic time data
+                    user_count = max(topic_user_count, 1)
+                    total_time_minutes = topic_time_by_stage[stage_id] / 60
+                    avg_time_per_user = total_time_minutes / user_count
+                    avg_attempts_per_user = data['total_topic_attempts'] / user_count
+                    engagement_score = min(100, (avg_time_per_user * 0.1 + avg_attempts_per_user * 2))
+                else:
+                    engagement_score = 0.0
                 
                 # Calculate weighted performance percentage
-                # Weights: Completion (30%), Progress (20%), Scores (25%), Engagement (15%), Maturity (10%)
-                weighted_performance = (
-                    completion_rate * 0.30 +
-                    progress_rate * 0.20 +
-                    (average_score_rate + best_score_rate) / 2 * 0.25 +
-                    engagement_score * 0.15 +
-                    maturity_rate * 0.10
-                )
+                # Enhanced weights when using topic data: Topic Completion (35%), Topic Scores (30%), Engagement (20%), Progress (15%)
+                # When using stage data: Completion (30%), Progress (20%), Scores (25%), Engagement (15%), Maturity (10%)
+                if has_stage_data and (data['total_progress'] > 0 or data['total_average_score'] > 0):
+                    # Use original formula when stage data is available
+                    weighted_performance = (
+                        completion_rate * 0.30 +
+                        progress_rate * 0.20 +
+                        (average_score_rate + best_score_rate) / 2 * 0.25 +
+                        engagement_score * 0.15 +
+                        maturity_rate * 0.10
+                    )
+                elif has_topic_data:
+                    # Use topic-based formula when only topic data is available
+                    weighted_performance = (
+                        topic_completion_rate * 0.35 +
+                        average_topic_score * 0.30 +
+                        engagement_score * 0.20 +
+                        progress_rate * 0.15
+                    )
+                else:
+                    weighted_performance = 0.0
                 
                 performance_percentage = round(weighted_performance, 1)
                 
-            else:
-                # No users for this stage
-                performance_percentage = 0.0
-                completion_rate = 0.0
-                progress_rate = 0.0
-                average_score_rate = 0.0
-                best_score_rate = 0.0
-                maturity_rate = 0.0
-                exercise_completion_rate = 0.0
-                topic_completion_rate = 0.0
-                average_topic_score = 0.0
-                engagement_score = 0.0
+                # Update user count to reflect actual unique users
+                if topic_user_count > data['total_users']:
+                    data['total_users'] = topic_user_count
+                
+            # Get final user count (max of stage users and topic users)
+            final_user_count = max(data['total_users'], topic_user_count)
             
             stage_performance.append({
                 'stage_id': stage_id,
                 'stage_name': data['stage_name'],
                 'performance_percentage': performance_percentage,
-                'user_count': data['total_users'],
+                'user_count': final_user_count,
                 'color': _get_stage_color(stage_id),
                 # Additional detailed metrics for debugging/insights
                 'metrics': {
@@ -754,6 +858,8 @@ async def _get_practice_stage_performance(time_range: str = "all_time") -> List[
         
         print(f"📊 [ADMIN] REAL Practice stage performance calculated: {len(sorted_stages)} stages")
         print(f"📊 [ADMIN] Performance calculation uses: completion, progress, scores, engagement, maturity")
+        for stage in sorted_stages:
+            print(f"   - Stage {stage['stage_id']} ({stage['stage_name']}): {stage['performance_percentage']}% ({stage['user_count']} users)")
         
         return sorted_stages
         
@@ -844,17 +950,17 @@ async def _get_time_usage_patterns(time_range: str = "all_time") -> List[Dict[st
         if time_range == "today":
             analytics_date = date.today().isoformat()
             daily_analytics_result = supabase.table('ai_tutor_daily_learning_analytics').select(
-                'user_id, total_time_minutes, sessions_count'
+                'user_id, total_time_minutes, sessions_count, exercises_completed'
             ).eq('analytics_date', analytics_date).execute()
         elif start_date and end_date:
             daily_analytics_result = supabase.table('ai_tutor_daily_learning_analytics').select(
-                'user_id, total_time_minutes, sessions_count'
+                'user_id, total_time_minutes, sessions_count, exercises_completed'
             ).gte('analytics_date', start_date.isoformat()).lte('analytics_date', end_date.isoformat()).execute()
         else:
             # For all_time, get last 7 days
             week_start = (date.today() - timedelta(days=7)).isoformat()
             daily_analytics_result = supabase.table('ai_tutor_daily_learning_analytics').select(
-                'user_id, total_time_minutes, sessions_count'
+                'user_id, total_time_minutes, sessions_count, exercises_completed'
             ).gte('analytics_date', week_start).execute()
         
         if not daily_analytics_result.data:
@@ -862,31 +968,74 @@ async def _get_time_usage_patterns(time_range: str = "all_time") -> List[Dict[st
             # Return mock data for demonstration
             return _get_mock_time_patterns()
         
-        # Calculate usage patterns based on session times
-        # Since we don't have hourly data, we'll simulate based on session counts
+        # Calculate usage patterns based on actual activity data
+        # Since we don't have hourly data, we'll simulate based on total_time_minutes and exercises_completed
         hour_counts = {}
+        total_usage_units = 0  # Track total usage for normalization
         
         for record in daily_analytics_result.data:
-            sessions_count = record.get('sessions_count', 1)
-            total_time = record.get('total_time_minutes', 0)
+            sessions_count = record.get('sessions_count') or 0
+            total_time = record.get('total_time_minutes', 0) or 0
+            exercises_completed = record.get('exercises_completed', 0) or 0
             
-            # Distribute sessions across hours (simplified approach)
+            # Calculate usage units based on available data
+            # Use sessions_count if available, otherwise derive from time and exercises
             if sessions_count > 0:
-                avg_session_duration = total_time / sessions_count if sessions_count > 0 else 0
+                # Use sessions_count as primary metric
+                usage_units = sessions_count
+            elif total_time > 0 or exercises_completed > 0:
+                # Derive usage from time and exercises
+                # Each exercise completion = 1 unit, each 10 minutes = 1 unit
+                usage_units = exercises_completed + (total_time / 10)
+                # Ensure minimum of 1 unit if there's any activity
+                if usage_units < 1 and (total_time > 0 or exercises_completed > 0):
+                    usage_units = 1
+            else:
+                # Skip records with no activity
+                continue
+            
+            total_usage_units += usage_units
+            
+            # Distribute usage across hours using weighted distribution
+            # Simulate hourly distribution based on typical usage patterns
+            for hour in range(24):
+                # Peak hours: 8-11, 14-17, 20-21 (higher weight)
+                if hour in [8, 9, 10, 11, 14, 15, 16, 17, 20, 21]:
+                    weight = 2.0
+                # Medium hours: 12-13, 18-19, 22-23 (medium weight)
+                elif hour in [12, 13, 18, 19, 22, 23]:
+                    weight = 1.5
+                # Low hours: 0-7 (lower weight)
+                else:
+                    weight = 0.5
                 
-                # Simulate hourly distribution based on typical usage patterns
-                for hour in range(24):
-                    # Peak hours: 8-12, 14-18, 20-22
-                    if hour in [8, 9, 10, 11, 14, 15, 16, 17, 20, 21]:
-                        weight = 2
-                    elif hour in [12, 13, 18, 19, 22, 23]:
-                        weight = 1.5
-                    else:
-                        weight = 0.5
-                    
-                    if hour not in hour_counts:
-                        hour_counts[hour] = 0
-                    hour_counts[hour] += int(sessions_count * weight / 24)
+                # Calculate distribution: usage_units * weight / total_weight_sum
+                # Total weight sum = (10 peak * 2.0) + (6 medium * 1.5) + (8 low * 0.5) = 20 + 9 + 4 = 33
+                total_weight_sum = 33.0
+                hour_contribution = (usage_units * weight) / total_weight_sum
+                
+                if hour not in hour_counts:
+                    hour_counts[hour] = 0.0
+                hour_counts[hour] += hour_contribution
+        
+        # Round to integers for final counts
+        # Also ensure we have some minimum values if there's any activity
+        if total_usage_units > 0:
+            # Scale up if values are too small (to avoid all zeros after rounding)
+            max_hour_count = max(hour_counts.values()) if hour_counts else 0
+            if max_hour_count > 0 and max_hour_count < 1:
+                # Scale up so the peak hour has at least 10
+                scale_factor = 10 / max_hour_count
+                for hour in hour_counts:
+                    hour_counts[hour] *= scale_factor
+            
+            # Round to integers
+            for hour in hour_counts:
+                hour_counts[hour] = max(1, int(round(hour_counts[hour])))
+        else:
+            # No valid usage data found, return mock data
+            print(f"⚠️ [ADMIN] No valid usage data found (total_usage_units=0), returning mock data")
+            return _get_mock_time_patterns()
         
         # Format for line chart
         time_patterns = []
@@ -899,6 +1048,9 @@ async def _get_time_usage_patterns(time_range: str = "all_time") -> List[Dict[st
             })
         
         print(f"📊 [ADMIN] Time usage patterns calculated: {len(time_patterns)} hours")
+        print(f"📊 [ADMIN] Total usage units processed: {total_usage_units}")
+        print(f"📊 [ADMIN] Peak hour usage: {max([p['usage_count'] for p in time_patterns]) if time_patterns else 0}")
+        print(f"📊 [ADMIN] Records processed: {len(daily_analytics_result.data)}")
         return time_patterns
         
     except Exception as e:
