@@ -25,35 +25,103 @@ from app.config import (
 
 router = APIRouter()
 
-# System prompt for the AI tutor (Pakistan Context)
+# Base persona for all modes
+BASE_PERSONA = (
+    "You are an AI English Tutor for Pakistani students (Grades 6–12).\n\n"
+    
+    "Your tone is friendly, encouraging, and locally relatable (cricket, chai, exams, cities).\n\n"
+    
+    "### Core Rule — ENGLISH ONLY\n"
+    "You must always respond only in English, no matter what language the student uses.\n\n"
+    
+    "### Urdu/Roman Urdu Handling (Bridging Rule)\n"
+    "If the student speaks in Urdu or Roman Urdu:\n"
+    "1. Translate their message to English.\n"
+    "2. Respond exactly in this format: 'In English you say this: [correct English sentence]'\n"
+    "3. Give a simple grammar explanation (English only).\n"
+    "4. Ask the student to repeat it in English.\n"
+    "5. Never respond in Urdu.\n\n"
+    
+    "### Style Guidelines\n"
+    "- Keep replies short (1–2 sentences).\n"
+    "- Encourage often, correct gently.\n"
+    "- Maintain natural, conversational pacing.\n"
+    "- All responses must be in English.\n\n"
+)
+
+# Mode-specific instructions
+SENTENCE_STRUCTURE_INSTRUCTION = (
+    BASE_PERSONA +
+    "### ROLE: Sentence Structure Coach\n\n"
+    "- **Goal**: Help the student build complete, grammatically correct sentences. Focus on Subject-Verb-Object (SVO) order.\n\n"
+    "- **Methodology**:\n"
+    "  1. Listen to their sentence.\n"
+    "  2. If the structure is broken (e.g., 'Yesterday I market went'), STOP and correct the order GENTLY.\n"
+    "  3. Say: 'Try saying it like this: Yesterday, I went to the market.'\n"
+    "  4. Ask them to repeat the corrected version.\n\n"
+    "- **Focus**: Word order, connecting words (and, but, because), and sentence length.\n"
+)
+
+GRAMMAR_INSTRUCTION = (
+    BASE_PERSONA +
+    "### ROLE: The Grammar Detective\n\n"
+    "- **Goal**: Identify and fix grammatical errors (Tenses, Prepositions, Articles, Plurals).\n\n"
+    "- **Methodology**:\n"
+    "  1. If they make a grammar mistake, gently pause the conversation.\n"
+    "  2. Example: If they say 'She don't like it', say: 'Ah, remember for She, we say doesn't. Try saying: She doesn't like it.'\n"
+    "  3. **Strictness**: Be more precise than usual. Do not let errors slide.\n\n"
+    "- **Key Areas**: Past vs Present tense, He/She/It rules, In/On/At usage.\n"
+)
+
+VOCABULARY_INSTRUCTION = (
+    BASE_PERSONA +
+    "### ROLE: The Vocabulary Builder\n\n"
+    "- **Goal**: Expand the student's word bank. Replace 'Basic' words with 'Advanced' words.\n\n"
+    "- **Methodology**:\n"
+    "  1. When the student uses a common word (e.g., 'Good', 'Big', 'Sad'), INTERRUPT gently with a better synonym.\n"
+    "  2. Example: Student says 'The movie was good.' -> You say: 'Instead of good, try saying The movie was **fantastic** or **excellent**. Can you say that?'\n"
+    "  3. Gamify it: 'Give me a stronger word for Happy!'\n\n"
+    "- **Level**: \n"
+    "  - Grade 6-8: Teach words like 'Delicious', 'Huge', 'Difficult'.\n"
+    "  - Grade 9-12: Teach words like 'Exquisite', 'Massive', 'Challenging'.\n"
+)
+
+TOPIC_MODERATOR_INSTRUCTION = (
+    BASE_PERSONA +
+    "### ROLE: Topic Discussion Moderator\n\n"
+    "- **Goal**: Deep dive into a specific topic to improve fluency and critical thinking.\n\n"
+    "- **Methodology**:\n"
+    "  1. Once a topic is picked, stay on it.\n"
+    "  2. Ask 'Why' and 'How' questions to force longer answers.\n"
+    "  3. **Correction**: minimal correction. Focus on CONFIDENCE and FLOW. Only correct if the meaning is lost.\n"
+)
+
+# Default system prompt (general conversation)
 SYSTEM_PROMPT = (
-    "You are a specialized AI English Tutor for students in Pakistan (Grades 6-12). "
-    "Your tone is warm, encouraging, and culturally relevant (referencing local context like cricket, chai, exams, or city life when appropriate).\n\n"
-    
-    "### ABSOLUTE RULE: ENGLISH ONLY RESPONSES\n"
-    "**YOU MUST ALWAYS RESPOND IN ENGLISH ONLY. NEVER RESPOND IN URDU, ROMAN URDU, OR ANY OTHER LANGUAGE.**\n"
-    "Even if the student speaks in Urdu or Roman Urdu, you must respond entirely in English.\n\n"
-    
-    "### CRITICAL RULE: URDU/ROMAN URDU SUPPORT (The Bridge)\n"
-    "If the student speaks in Urdu (or Roman Urdu) because they are stuck:\n"
-    "1. **Translate** their thought to English immediately.\n"
-    "2. **Respond EXACTLY in this format**: 'In English you say this: [translated sentence]'\n"
-    "3. **Explain** the grammar simply if needed (IN ENGLISH ONLY).\n"
-    "4. **Ask** them to repeat the sentence in English.\n"
-    "   * Example: Student says 'Mein market ja raha hoon.'\n"
-    "   * You respond (IN ENGLISH): 'In English you say this: I am going to the market. Can you say that for me?'\n"
-    "   * **NEVER respond in Urdu like 'Aap market ja rahe hain' - ALWAYS respond in English only.\n\n"
-    
+    BASE_PERSONA +
     "### ROLE: General Conversation Partner\n"
     "- **Goal**: Engage in open conversation IN ENGLISH ONLY.\n"
     "- **Correction Style**: 'Recasting' (Subtle correction). If they say 'I go school', you say 'Oh, you go to school? When do you leave?'\n"
-    "- **Behavior**: Ask open-ended questions about their day, interests, or studies (IN ENGLISH ONLY).\n\n"
-    
-    "Keep responses SHORT (1-2 sentences) to maintain a fast conversational flow. "
-    "Speak clearly and at a moderate pace. "
-    "Provide gentle corrections when needed and praise good efforts. "
-    "**REMEMBER: ALL YOUR RESPONSES MUST BE IN ENGLISH, NO EXCEPTIONS.**"
+    "- **Behavior**: Ask open-ended questions about their day, interests, or studies (IN ENGLISH ONLY).\n"
 )
+
+# Mode to system prompt mapping
+MODE_PROMPTS = {
+    "sentence_structure": SENTENCE_STRUCTURE_INSTRUCTION,
+    "grammar_practice": GRAMMAR_INSTRUCTION,
+    "vocabulary_builder": VOCABULARY_INSTRUCTION,
+    "topic_discussion": TOPIC_MODERATOR_INSTRUCTION,
+    "general": SYSTEM_PROMPT,
+}
+
+# Mode-specific greeting messages
+MODE_GREETINGS = {
+    "sentence_structure": "Hello {name}! I'm here to help you build perfect sentences. Tell me, what did you do today?",
+    "grammar_practice": "Hi {name}! Let's polish your grammar. Tell me about your favorite hobby.",
+    "vocabulary_builder": "Hello {name}! Let's learn some new exciting words. Describe your house to me.",
+    "topic_discussion": "Hi {name}! I'm ready to chat. Pick a topic: 1) Cricket & Sports, 2) Food & Cooking, or 3) Travel & Cities. Or suggest your own!",
+    "general": "Hi {name}, I'm your AI English tutor. How can I help you today?",
+}
 
 # OpenAI Realtime API configuration
 # Using the same model version as the working example
@@ -152,8 +220,9 @@ class OpenAIRealtimeBridge:
     Now uses ElevenLabs TTS for audio output instead of OpenAI audio.
     """
     
-    def __init__(self, client_ws: WebSocket):
+    def __init__(self, client_ws: WebSocket, mode: str = "general"):
         self.client_ws = client_ws
+        self.mode = mode  # Store the learning mode
         self.openai_ws: Optional[websockets.WebSocketClientProtocol] = None
         self.session_id: Optional[str] = None
         self.is_connected = False
@@ -199,13 +268,17 @@ class OpenAIRealtimeBridge:
             # Configure session - TEXT ONLY output (no audio from OpenAI)
             # IMPORTANT: Disable automatic turn detection to prevent buffer clearing
             # We'll manually commit when ready
+            # Get mode-specific system prompt
+            system_prompt = MODE_PROMPTS.get(self.mode, SYSTEM_PROMPT)
+            print(f"📝 Using system prompt for mode: {self.mode}")
+            
             session_config = {
                 "type": "session.update",
                 "session": {
                     "modalities": ["audio", "text"],  # Input: audio, Output: text only
                     "input_audio_format": INPUT_AUDIO_FORMAT,
                     "output_audio_format": OUTPUT_AUDIO_FORMAT,
-                    "instructions": SYSTEM_PROMPT,
+                    "instructions": system_prompt,
                     "temperature": 0.8,
                     "turn_detection": None  # Disable automatic VAD - we'll commit manually
                 }
@@ -243,6 +316,20 @@ class OpenAIRealtimeBridge:
                 elif message_type == "session.updated":
                     print("✅ OpenAI session updated")
                     self.session_ready = True  # Session is now ready to receive audio
+                    
+                    # If mode was set before session was ready, update instructions now
+                    if hasattr(self, '_pending_mode_update'):
+                        mode = self._pending_mode_update
+                        system_prompt = MODE_PROMPTS.get(mode, SYSTEM_PROMPT)
+                        update_config = {
+                            "type": "session.update",
+                            "session": {
+                                "instructions": system_prompt,
+                            }
+                        }
+                        print(f"📝 Applying pending mode update: {mode}")
+                        await self.openai_ws.send(json.dumps(update_config))
+                        delattr(self, '_pending_mode_update')
                     
                 elif message_type == "input_audio_buffer.speech_started":
                     print("🎤 Speech detected in audio buffer")
@@ -713,6 +800,37 @@ class OpenAIRealtimeBridge:
             print(f"🔊 Flushing TTS segment ({len(segment)} chars, force={force})")
             await self._send_tts_text(segment)
 
+    async def send_greeting(self, greeting_text: str):
+        """Send greeting message through ElevenLabs TTS stream."""
+        try:
+            print(f"👋 [GREETING] Sending greeting text: '{greeting_text}'")
+            
+            # Ensure TTS stream is ready
+            await self._ensure_tts_stream()
+            
+            # Send greeting text to ElevenLabs
+            await self._send_tts_text(greeting_text)
+            
+            # Finalize the stream after greeting is sent
+            await self._finalize_tts_stream(force=True)
+            
+            # Send greeting completion message
+            await self._send_json({
+                "type": "greeting_done",
+                "text": greeting_text
+            })
+            
+            print("✅ [GREETING] Greeting sent successfully")
+        except Exception as e:
+            print(f"❌ [GREETING] Error sending greeting: {e}")
+            import traceback
+            traceback.print_exc()
+            await self._send_json({
+                "type": "error",
+                "message": f"Failed to send greeting: {str(e)}",
+                "code": "greeting_error"
+            })
+
     async def _finalize_tts_stream(self, force: bool = False):
         """Finalize ElevenLabs stream and notify client."""
         try:
@@ -888,8 +1006,9 @@ async def openai_realtime_conversation(websocket: WebSocket):
     bridge: Optional[OpenAIRealtimeBridge] = None
     
     try:
-        # Initialize bridge
-        bridge = OpenAIRealtimeBridge(websocket)
+        # Initialize bridge - mode will be set from greeting message if provided
+        # For now, start with general mode
+        bridge = OpenAIRealtimeBridge(websocket, mode="general")
         await bridge.connect_to_openai()
         
         # Send connection confirmation
@@ -935,6 +1054,43 @@ async def openai_realtime_conversation(websocket: WebSocket):
                             # Client is done sending audio, commit and get response
                             print("📤 Committing audio and requesting response")
                             await bridge.commit_audio_and_get_response()
+                            
+                        elif message_type == "greeting":
+                            # Handle greeting message
+                            user_name = message.get("user_name", "there")
+                            mode = message.get("mode", "general")
+                            
+                            # Update bridge mode if provided and different
+                            if mode != bridge.mode:
+                                print(f"🔄 Updating bridge mode from {bridge.mode} to {mode}")
+                                bridge.mode = mode
+                                
+                                # Update system prompt in OpenAI session if connected and ready
+                                if bridge.is_connected and bridge.openai_ws:
+                                    system_prompt = MODE_PROMPTS.get(mode, SYSTEM_PROMPT)
+                                    if bridge.session_ready:
+                                        # Session is ready, update immediately
+                                        update_config = {
+                                            "type": "session.update",
+                                            "session": {
+                                                "instructions": system_prompt,
+                                            }
+                                        }
+                                        print(f"📝 Updating OpenAI session with new system prompt for mode: {mode}")
+                                        await bridge.openai_ws.send(json.dumps(update_config))
+                                    else:
+                                        # Session not ready yet, store for later
+                                        bridge._pending_mode_update = mode
+                                        print(f"📝 Storing mode update for when session is ready: {mode}")
+                            
+                            print(f"👋 [GREETING] Processing greeting for user: {user_name}, mode: {mode}")
+                            
+                            # Get mode-specific greeting
+                            greeting_template = MODE_GREETINGS.get(mode, MODE_GREETINGS["general"])
+                            greeting_text = greeting_template.format(name=user_name)
+                            
+                            # Send greeting text through ElevenLabs TTS stream
+                            await bridge.send_greeting(greeting_text)
                             
                         elif message_type == "ping":
                             # Keep-alive ping
