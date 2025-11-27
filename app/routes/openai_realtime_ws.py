@@ -14,6 +14,7 @@ from contextlib import suppress
 from typing import Optional, Dict, Any, Tuple, Awaitable, Callable
 from pydub import AudioSegment
 import websockets
+import httpx
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from websockets.exceptions import ConnectionClosedError, ConnectionClosedOK
 from app.config import (
@@ -25,41 +26,70 @@ from app.config import (
 
 router = APIRouter()
 
+NON_ENGLISH_SCRIPT_PATTERN = re.compile(
+    r"[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF\u0900-\u097F]"
+)
+OPENAI_CHAT_COMPLETIONS_URL = "https://api.openai.com/v1/chat/completions"
+TRANSLATION_MODEL = os.getenv("OPENAI_TRANSLATION_MODEL", "gpt-4o-mini")
+ENGLISH_ENFORCEMENT_SYSTEM_PROMPT = (
+    "You convert tutor replies into English-only messages for Pakistani students. "
+    "Always respond ONLY in English and follow this structure:\n"
+    "In English you say this: <translated sentence>.\n"
+    "Add one short grammar or word-choice reminder in English.\n"
+    "Ask the learner to repeat the sentence in English.\n"
+    "Keep tone warm, encouraging, and concise. Never include non-English text."
+)
+ENGLISH_FALLBACK_MESSAGE = (
+    "In English you say this: Let's keep speaking in English only. "
+    "Remember to translate your sentence, then repeat it in English for me."
+)
+_translation_http_client: Optional[httpx.AsyncClient] = None
+
+
+async def get_translation_http_client() -> httpx.AsyncClient:
+    """Return a singleton HTTP client for translation fallbacks."""
+    global _translation_http_client
+    if _translation_http_client is None:
+        _translation_http_client = httpx.AsyncClient(
+            timeout=httpx.Timeout(20.0, connect=5.0)
+        )
+    return _translation_http_client
+
+
 # Base persona for all modes
 BASE_PERSONA = (
     "You are an AI English Tutor for Pakistani students (Grades 6–12).\n\n"
-    
-    "Your tone is friendly, encouraging, and locally relatable (cricket, chai, exams, cities).\n\n"
-    
-    "### Core Rule — ENGLISH ONLY\n"
-    "You must always respond only in English, no matter what language the student uses.\n\n"
-    
-    "### Urdu/Roman Urdu Handling (Bridging Rule)\n"
-    "If the student speaks in Urdu or Roman Urdu:\n"
+    "Your tone is warm, gentle, encouraging, and locally relatable (cricket, chai, city life, exams, rural Pakistan experiences).\n\n"
+    "### ABSOLUTE RULE — ENGLISH ONLY\n"
+    "You must ALWAYS respond in English. Never reply in Urdu, Hindi, Roman Urdu, or any non-English language.\n\n"
+    "### Urdu / Roman Urdu Bridge\n"
+    "If the learner speaks in Urdu / Roman Urdu / Hindi or mixes languages:\n"
     "1. Translate their message to English.\n"
-    "2. Respond exactly in this format: 'In English you say this: [correct English sentence]'\n"
-    "3. Give a simple grammar explanation (English only).\n"
-    "4. Ask the student to repeat it in English.\n"
-    "5. Never respond in Urdu.\n\n"
-    
-    "### Style Guidelines\n"
-    "- Keep replies short (1–2 sentences).\n"
+    "2. Respond EXACTLY in this format: \"In English you say this: [translated sentence].\"\n"
+    "3. Provide a short, friendly grammar or word choice reminder (in ENGLISH).\n"
+    "4. Ask them to repeat the sentence in English.\n"
+    "5. Never reply in the non-English language — ever.\n\n"
+    "### Conversational Style\n"
+    "- Replies are concise (1–2 sentences) unless teaching requires an example.\n"
     "- Encourage often, correct gently.\n"
-    "- Maintain natural, conversational pacing.\n"
-    "- All responses must be in English.\n\n"
+    "- Sound like a supportive Pakistani teacher/mentor.\n"
+    "- Acknowledge good effort even while correcting.\n"
+    "- Keep the pacing natural and interactive.\n\n"
 )
 
 # Mode-specific instructions
 SENTENCE_STRUCTURE_INSTRUCTION = (
     BASE_PERSONA +
     "### ROLE: Sentence Structure Coach\n\n"
-    "- **Goal**: Help the student build complete, grammatically correct sentences. Focus on Subject-Verb-Object (SVO) order.\n\n"
-    "- **Methodology**:\n"
-    "  1. Listen to their sentence.\n"
-    "  2. If the structure is broken (e.g., 'Yesterday I market went'), STOP and correct the order GENTLY.\n"
-    "  3. Say: 'Try saying it like this: Yesterday, I went to the market.'\n"
-    "  4. Ask them to repeat the corrected version.\n\n"
-    "- **Focus**: Word order, connecting words (and, but, because), and sentence length.\n"
+    "- **Mission**: Ensure every learner sentence follows clear Subject-Verb-Object order.\n"
+    "- **Detection**: Immediately notice broken or missing structure (e.g., \"Me park go\").\n"
+    "- **Response Pattern**:\n"
+    "  1. Praise the intent (\"Great idea!\").\n"
+    "  2. Provide the corrected sentence exactly once.\n"
+    "  3. Say \"Please repeat: [correct sentence].\" Do not progress until the learner repeats correctly.\n"
+    "  4. Highlight ONE helpful tip (e.g., \"We put the verb after the subject.\").\n"
+    "- **Conversation Flow**: After the learner repeats correctly, ask a new guiding question tied to their idea.\n"
+    "- **Connectors**: Encourage use of 'and, but, because' for longer thoughts.\n"
 )
 
 GRAMMAR_INSTRUCTION = (
@@ -76,14 +106,18 @@ GRAMMAR_INSTRUCTION = (
 VOCABULARY_INSTRUCTION = (
     BASE_PERSONA +
     "### ROLE: The Vocabulary Builder\n\n"
-    "- **Goal**: Expand the student's word bank. Replace 'Basic' words with 'Advanced' words.\n\n"
+    "- **Opening Hook**: Start the session yourself. Use one of these upbeat prompts: "
+    "\"Let’s grow your vocabulary! I have 3 new words ready. Ready for your first one?\" "
+    "OR \"Let’s play a quick vocab game! I’ll give you a word—can you guess what it means?\"\n"
+    "- **Goal**: Expand the student's word bank by swapping simple words with vivid vocabulary.\n"
     "- **Methodology**:\n"
-    "  1. When the student uses a common word (e.g., 'Good', 'Big', 'Sad'), INTERRUPT gently with a better synonym.\n"
-    "  2. Example: Student says 'The movie was good.' -> You say: 'Instead of good, try saying The movie was **fantastic** or **excellent**. Can you say that?'\n"
-    "  3. Gamify it: 'Give me a stronger word for Happy!'\n\n"
-    "- **Level**: \n"
-    "  - Grade 6-8: Teach words like 'Delicious', 'Huge', 'Difficult'.\n"
-    "  - Grade 9-12: Teach words like 'Exquisite', 'Massive', 'Challenging'.\n"
+    "  1. Introduce ONE new word at a time (definition + example tied to Pakistani life).\n"
+    "  2. Ask the learner to use that word in a sentence.\n"
+    "  3. When they use a basic word (good, big, sad), immediately offer 2 richer synonyms and have them repeat.\n"
+    "  4. Encourage with mini challenges: \"Give me a stronger word for happy!\"\n"
+    "- **Level Guidance**:\n"
+    "  - Grades 6–8: words like delicious, massive, exhausted.\n"
+    "  - Grades 9–12: words like exquisite, resilient, intricate.\n"
 )
 
 TOPIC_MODERATOR_INSTRUCTION = (
@@ -100,9 +134,10 @@ TOPIC_MODERATOR_INSTRUCTION = (
 SYSTEM_PROMPT = (
     BASE_PERSONA +
     "### ROLE: General Conversation Partner\n"
-    "- **Goal**: Engage in open conversation IN ENGLISH ONLY.\n"
-    "- **Correction Style**: 'Recasting' (Subtle correction). If they say 'I go school', you say 'Oh, you go to school? When do you leave?'\n"
-    "- **Behavior**: Ask open-ended questions about their day, interests, or studies (IN ENGLISH ONLY).\n"
+    "- **Goal**: Casual English conversation that builds confidence.\n"
+    "- **Corrections**: Use gentle recasting. If learner says \"Me go market\", say \"Oh, you go to the market? What do you buy there?\"\n"
+    "- **Flow**: Ask open-ended questions about school, hobbies, cities, sports, community life.\n"
+    "- **Language Guard**: Even when learner uses Urdu/Hindi, always switch to English with the bridge format.\n"
 )
 
 # Mode to system prompt mapping
@@ -116,9 +151,9 @@ MODE_PROMPTS = {
 
 # Mode-specific greeting messages
 MODE_GREETINGS = {
-    "sentence_structure": "Hello {name}! I'm here to help you build perfect sentences. Tell me, what did you do today?",
+    "sentence_structure": "Hello {name}! We’re going to build precise sentences together. Tell me one thing you did today and we will polish the sentence step by step.",
     "grammar_practice": "Hi {name}! Let's polish your grammar. Tell me about your favorite hobby.",
-    "vocabulary_builder": "Hello {name}! Let's learn some new exciting words. Describe your house to me.",
+    "vocabulary_builder": "Hello {name}! Let’s grow your vocabulary! I have three exciting words ready. Are you ready for your first one?",
     "topic_discussion": "Hi {name}! I'm ready to chat. Pick a topic: 1) Cricket & Sports, 2) Food & Cooking, or 3) Travel & Cities. Or suggest your own!",
     "general": "Hi {name}, I'm your AI English tutor. How can I help you today?",
 }
@@ -229,6 +264,9 @@ class OpenAIRealtimeBridge:
         self.session_ready = False  # Track if session is fully configured
         self.response_audio_chunks: list = []
         self.response_text: str = ""
+        self.raw_response_text: str = ""
+        self.non_english_detected: bool = False
+        self.non_english_buffer: str = ""
         self.response_done = True  # Start as True so first commit can proceed
         self.partial_text_buffer: str = ""
         self.min_partial_segment_chars = ELEVENLABS_MIN_PARTIAL_CHARS
@@ -367,6 +405,21 @@ class OpenAIRealtimeBridge:
                         delta_text = str(delta_payload or "")
 
                     if delta_text:
+                        self.raw_response_text += delta_text
+                        if self._contains_non_english_script(delta_text):
+                            if not self.non_english_detected:
+                                print("⚠️ Detected non-English script in OpenAI response, enforcing English-only fallback")
+                            self.non_english_detected = True
+                            self.non_english_buffer += delta_text
+                            # Clear any partial English so we can regenerate later
+                            self.response_text = ""
+                            self.partial_text_buffer = ""
+                            continue
+                        
+                        if self.non_english_detected:
+                            self.non_english_buffer += delta_text
+                            continue
+                        
                         self.response_text += delta_text
                         self.partial_text_buffer += delta_text
                         await self._try_flush_partial_segment()
@@ -383,15 +436,34 @@ class OpenAIRealtimeBridge:
                 }:
                     # Final transcript - flush remaining text but DON'T finalize stream yet
                     text_payload = data.get("text")
-                    final_text = ""
+                    raw_final_text = ""
                     if isinstance(text_payload, str):
-                        final_text = text_payload
+                        raw_final_text = text_payload
                     elif isinstance(text_payload, dict):
-                        final_text = text_payload.get("text", "")
-                    elif text_payload is None and self.response_text:
-                        final_text = self.response_text
+                        raw_final_text = text_payload.get("text", "")
+                    elif text_payload is None:
+                        raw_final_text = self.raw_response_text or self.response_text
                     else:
-                        final_text = str(text_payload or "")
+                        raw_final_text = str(text_payload or "")
+
+                    self.raw_response_text = raw_final_text
+                    needs_enforcement = self.non_english_detected or self._contains_non_english_script(raw_final_text)
+                    final_text = raw_final_text
+
+                    if needs_enforcement:
+                        print("⚠️ Final response contained non-English text. Regenerating with enforcement...")
+                        translated = await self._rewrite_text_to_english(raw_final_text)
+                        if translated:
+                            final_text = translated
+                            print("✅ English enforcement succeeded for final response")
+                        else:
+                            final_text = ENGLISH_FALLBACK_MESSAGE
+                            print("⚠️ English enforcement failed, using fallback message")
+                        # Reset buffers to the enforced English output
+                        self.non_english_detected = False
+                        self.non_english_buffer = ""
+                        self.partial_text_buffer = final_text
+                    # When no enforcement is needed we leave the partial buffer untouched
 
                     self.response_text = final_text
                     print(f"✅ Text response complete ({len(final_text)} chars)")
@@ -584,6 +656,9 @@ class OpenAIRealtimeBridge:
             # Reset response state BEFORE committing (mark as in progress)
             self.response_audio_chunks = []
             self.response_text = ""
+            self.raw_response_text = ""
+            self.non_english_detected = False
+            self.non_english_buffer = ""
             self.partial_text_buffer = ""
             self.response_done = False  # Mark that we're waiting for a response
             self.tts_finalized = False
@@ -730,6 +805,59 @@ class OpenAIRealtimeBridge:
             wav_chunk = await convert_pcm16_to_wav(combined_pcm)
             await self._send_bytes(wav_chunk)
             print(f"📤 Sent buffered WAV chunk: {buffer_size} bytes PCM → {len(wav_chunk)} bytes WAV")
+
+    def _contains_non_english_script(self, text: str) -> bool:
+        if not text:
+            return False
+        return bool(NON_ENGLISH_SCRIPT_PATTERN.search(text))
+
+    async def _rewrite_text_to_english(self, original_text: str) -> Optional[str]:
+        cleaned = (original_text or "").strip()
+        if not cleaned:
+            return None
+        try:
+            client = await get_translation_http_client()
+            payload = {
+                "model": TRANSLATION_MODEL,
+                "temperature": 0.1,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": ENGLISH_ENFORCEMENT_SYSTEM_PROMPT,
+                    },
+                    {
+                        "role": "user",
+                        "content": (
+                            "Rewrite the tutor reply below so it strictly follows the rules.\n"
+                            "Original tutor reply:\n"
+                            f"{cleaned}"
+                        ),
+                    },
+                ],
+                "max_tokens": min(512, max(160, len(cleaned) // 2 + 60)),
+            }
+            headers = {
+                "Authorization": f"Bearer {OPENAI_API_KEY}",
+                "Content-Type": "application/json",
+            }
+            response = await client.post(
+                OPENAI_CHAT_COMPLETIONS_URL,
+                json=payload,
+                headers=headers,
+            )
+            response.raise_for_status()
+            data = response.json()
+            choices = data.get("choices") or []
+            if not choices:
+                return None
+            english_text = (choices[0]
+                            .get("message", {})
+                            .get("content", "")
+                            .strip())
+            return english_text or None
+        except Exception as exc:
+            print(f"⚠️ English enforcement failed: {exc}")
+            return None
     
     def _flush_pcm_buffer_internal(self, force: bool = False):
         """Internal flush function - assumes lock is already held. Returns data to process."""
@@ -781,6 +909,9 @@ class OpenAIRealtimeBridge:
 
     async def _try_flush_partial_segment(self, force: bool = False):
         """Flush buffered sentences to ElevenLabs as soon as possible."""
+        if self.non_english_detected and not force:
+            print("⏸️ Skipping TTS flush due to pending English enforcement")
+            return
         buffer = self.partial_text_buffer
         if not buffer.strip():
             return
