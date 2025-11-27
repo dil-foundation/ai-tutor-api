@@ -181,6 +181,7 @@ ELEVENLABS_DEFAULT_VOICE_SETTINGS = {
     "similarity_boost": 0.8,
     "style": 0.0,
     "use_speaker_boost": True,
+    "speed": 0.85,  # Slow down voice to 85% speed (range: 0.25-4.0, 1.0 = normal)
 }
 
 
