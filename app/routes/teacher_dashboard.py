@@ -159,14 +159,18 @@ async def get_teacher_dashboard_overview(
 ):
     """
     Get comprehensive teacher dashboard overview (OPTIMIZED with caching)
+    Now includes teacher filtering - only shows assigned students
     """
     print(f"🔄 [TEACHER] GET /teacher/dashboard/overview called")
     print(f"📝 [TEACHER] Time range: {time_range}")
     print(f"👤 [TEACHER] Authenticated user: {current_user['email']} (Role: {current_user.get('role', 'unknown')})")
     
     try:
-        # OPTIMIZATION: Add caching for overview data
-        cache_key = f"teacher_overview:{time_range}"
+        # Extract teacher_id if user is a teacher (admins see all students)
+        teacher_id = current_user.get('id') if current_user.get('role') == 'teacher' else None
+        
+        # OPTIMIZATION: Add caching for overview data (include teacher_id in cache key)
+        cache_key = f"teacher_overview:{teacher_id or 'admin'}:{time_range}"
         cached_result = None
         
         try:
@@ -182,10 +186,10 @@ async def get_teacher_dashboard_overview(
                 message="Teacher dashboard data retrieved successfully (cached)"
             )
         
-        # Get all required metrics with time range filtering (OPTIMIZED)
+        # Get all required metrics with time range filtering and teacher filtering (OPTIMIZED)
         learn_engagement_summary, top_used_lessons = await asyncio.gather(
-            _get_learn_feature_engagement_summary(time_range),
-            _get_top_used_practice_lessons(time_range=time_range)
+            _get_learn_feature_engagement_summary(time_range, teacher_id),
+            _get_top_used_practice_lessons(time_range=time_range, teacher_id=teacher_id)
         )
         
         dashboard_data = {
@@ -219,12 +223,16 @@ async def get_learn_feature_engagement_summary(
 ):
     """
     Get learn feature engagement summary for teacher dashboard
+    Now includes teacher filtering - only shows assigned students
     """
     print(f"🔄 [TEACHER] GET /teacher/dashboard/learn-engagement-summary called")
     print(f"👤 [TEACHER] Authenticated user: {current_user['email']} (Role: {current_user.get('role', 'unknown')})")
     
     try:
-        engagement_summary = await _get_learn_feature_engagement_summary(time_range)
+        # Extract teacher_id if user is a teacher (admins see all students)
+        teacher_id = current_user.get('id') if current_user.get('role') == 'teacher' else None
+        
+        engagement_summary = await _get_learn_feature_engagement_summary(time_range, teacher_id)
         
         return TeacherDashboardResponse(
             success=True,
@@ -245,13 +253,17 @@ async def get_top_used_practice_lessons(
 ):
     """
     Get top used practice lessons for teacher dashboard
+    Now includes teacher filtering - only shows assigned students
     """
     print(f"🔄 [TEACHER] GET /teacher/dashboard/top-used-lessons called")
     print(f"👤 [TEACHER] Authenticated user: {current_user['email']} (Role: {current_user.get('role', 'unknown')})")
     print(f"📊 [TEACHER] Limit: {limit}")
     
     try:
-        lessons = await _get_top_used_practice_lessons(limit, time_range)
+        # Extract teacher_id if user is a teacher (admins see all students)
+        teacher_id = current_user.get('id') if current_user.get('role') == 'teacher' else None
+        
+        lessons = await _get_top_used_practice_lessons(limit, time_range, teacher_id)
         
         return TeacherDashboardResponse(
             success=True,
@@ -264,63 +276,91 @@ async def get_top_used_practice_lessons(
         logger.error(f"Error in get_top_used_practice_lessons: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
-async def _get_learn_feature_engagement_summary(time_range: str = "all_time") -> Dict[str, Any]:
+async def _get_learn_feature_engagement_summary(time_range: str = "all_time", teacher_id: Optional[str] = None) -> Dict[str, Any]:
     """
-    Get learn feature engagement summary with time range filtering
+    Get learn feature engagement summary with time range filtering and teacher filtering
     """
     try:
         print(f"🔄 [TEACHER] Calculating learn feature engagement summary for time range: {time_range}...")
         
         start_date, end_date = _get_date_range(time_range)
         
+        # Get teacher's assigned students (empty list means admin - show all students)
+        teacher_student_ids = await _get_teacher_student_ids(teacher_id)
+        
         # 1. Total Students Engaged
         if start_date and end_date:
-            total_students_result = supabase.table('ai_tutor_user_progress_summary').select(
+            total_students_query = supabase.table('ai_tutor_user_progress_summary').select(
                 'user_id'
-            ).gte('updated_at', start_date.isoformat()).lte('updated_at', end_date.isoformat()).execute()
+            ).gte('updated_at', start_date.isoformat()).lte('updated_at', end_date.isoformat())
         else:
-            total_students_result = supabase.table('ai_tutor_user_progress_summary').select('user_id').execute()
+            total_students_query = supabase.table('ai_tutor_user_progress_summary').select('user_id')
         
+        # Apply teacher filtering if not admin
+        if teacher_student_ids:
+            total_students_query = total_students_query.in_('user_id', teacher_student_ids)
+        
+        total_students_result = total_students_query.execute()
         total_students_engaged = len(total_students_result.data) if total_students_result.data else 0
         
         # 2. Active Today
         today_date = date.today().isoformat()
-        active_today_result = supabase.table('ai_tutor_daily_learning_analytics').select(
+        active_today_query = supabase.table('ai_tutor_daily_learning_analytics').select(
             'user_id'
-        ).eq('analytics_date', today_date).execute()
+        ).eq('analytics_date', today_date)
         
+        # Apply teacher filtering if not admin
+        if teacher_student_ids:
+            active_today_query = active_today_query.in_('user_id', teacher_student_ids)
+        
+        active_today_result = active_today_query.execute()
         active_today = len(active_today_result.data) if active_today_result.data else 0
         
         # 3. Total Time Spent (in hours)
         if start_date and end_date:
-            time_spent_result = supabase.table('ai_tutor_daily_learning_analytics').select(
-                'total_time_minutes'
-            ).gte('analytics_date', start_date.isoformat()).lte('analytics_date', end_date.isoformat()).execute()
+            time_spent_query = supabase.table('ai_tutor_daily_learning_analytics').select(
+                'total_time_minutes, user_id'
+            ).gte('analytics_date', start_date.isoformat()).lte('analytics_date', end_date.isoformat())
         else:
-            time_spent_result = supabase.table('ai_tutor_daily_learning_analytics').select('total_time_minutes').execute()
+            time_spent_query = supabase.table('ai_tutor_daily_learning_analytics').select('total_time_minutes, user_id')
         
+        # Apply teacher filtering if not admin
+        if teacher_student_ids:
+            time_spent_query = time_spent_query.in_('user_id', teacher_student_ids)
+        
+        time_spent_result = time_spent_query.execute()
         total_time_minutes = sum([record.get('total_time_minutes', 0) for record in time_spent_result.data]) if time_spent_result.data else 0
         total_time_spent_hours = round(total_time_minutes / 60, 1)
         
         # 4. Average Responses per Student
         if start_date and end_date:
-            responses_result = supabase.table('ai_tutor_user_topic_progress').select(
+            responses_query = supabase.table('ai_tutor_user_topic_progress').select(
                 'user_id'
-            ).gte('created_at', start_date.isoformat()).lte('created_at', end_date.isoformat()).execute()
+            ).gte('created_at', start_date.isoformat()).lte('created_at', end_date.isoformat())
         else:
-            responses_result = supabase.table('ai_tutor_user_topic_progress').select('user_id').execute()
+            responses_query = supabase.table('ai_tutor_user_topic_progress').select('user_id')
         
+        # Apply teacher filtering if not admin
+        if teacher_student_ids:
+            responses_query = responses_query.in_('user_id', teacher_student_ids)
+        
+        responses_result = responses_query.execute()
         total_responses = len(responses_result.data) if responses_result.data else 0
         avg_responses_per_student = round(total_responses / total_students_engaged, 0) if total_students_engaged > 0 else 0
         
         # 5. Engagement Rate (percentage of students who used the learn feature)
         if start_date and end_date:
-            engaged_students_result = supabase.table('ai_tutor_daily_learning_analytics').select(
+            engaged_students_query = supabase.table('ai_tutor_daily_learning_analytics').select(
                 'user_id'
-            ).gte('analytics_date', start_date.isoformat()).lte('analytics_date', end_date.isoformat()).execute()
+            ).gte('analytics_date', start_date.isoformat()).lte('analytics_date', end_date.isoformat())
         else:
-            engaged_students_result = supabase.table('ai_tutor_daily_learning_analytics').select('user_id').execute()
+            engaged_students_query = supabase.table('ai_tutor_daily_learning_analytics').select('user_id')
         
+        # Apply teacher filtering if not admin
+        if teacher_student_ids:
+            engaged_students_query = engaged_students_query.in_('user_id', teacher_student_ids)
+        
+        engaged_students_result = engaged_students_query.execute()
         engaged_students = len(set([record['user_id'] for record in engaged_students_result.data])) if engaged_students_result.data else 0
         engagement_rate = round((engaged_students / total_students_engaged * 100), 0) if total_students_engaged > 0 else 0
         
@@ -356,24 +396,33 @@ async def _get_learn_feature_engagement_summary(time_range: str = "all_time") ->
         logger.error(f"Error calculating learn feature engagement summary: {str(e)}")
         raise
 
-async def _get_top_used_practice_lessons(limit: int = 5, time_range: str = "all_time") -> List[Dict[str, Any]]:
+async def _get_top_used_practice_lessons(limit: int = 5, time_range: str = "all_time", teacher_id: Optional[str] = None) -> List[Dict[str, Any]]:
     """
-    Get top used practice lessons with time range filtering
+    Get top used practice lessons with time range filtering and teacher filtering
     """
     try:
         print(f"🔄 [TEACHER] Calculating top used practice lessons for time range: {time_range}...")
         
         start_date, end_date = _get_date_range(time_range)
         
+        # Get teacher's assigned students (empty list means admin - show all students)
+        teacher_student_ids = await _get_teacher_student_ids(teacher_id)
+        
         # Get lesson access data from topic progress with time filtering
         if start_date and end_date:
-            lessons_result = supabase.table('ai_tutor_user_topic_progress').select(
-                'stage_id, exercise_id, topic_id'
-            ).gte('created_at', start_date.isoformat()).lte('created_at', end_date.isoformat()).execute()
+            lessons_query = supabase.table('ai_tutor_user_topic_progress').select(
+                'stage_id, exercise_id, topic_id, user_id'
+            ).gte('created_at', start_date.isoformat()).lte('created_at', end_date.isoformat())
         else:
-            lessons_result = supabase.table('ai_tutor_user_topic_progress').select(
-                'stage_id, exercise_id, topic_id'
-            ).execute()
+            lessons_query = supabase.table('ai_tutor_user_topic_progress').select(
+                'stage_id, exercise_id, topic_id, user_id'
+            )
+        
+        # Apply teacher filtering if not admin
+        if teacher_student_ids:
+            lessons_query = lessons_query.in_('user_id', teacher_student_ids)
+        
+        lessons_result = lessons_query.execute()
         
         if not lessons_result.data:
             print(f"ℹ️ [TEACHER] No lesson access data found")
@@ -665,13 +714,17 @@ async def get_behavior_insights(
 ):
     """
     Get behavior insights for teacher dashboard (OPTIMIZED with caching)
+    Now includes teacher filtering - only shows assigned students
     """
     print(f"🔄 [TEACHER] GET /teacher/dashboard/behavior-insights called")
     print(f"👤 [TEACHER] Authenticated user: {current_user['email']} (Role: {current_user.get('role', 'unknown')})")
     
     try:
-        # OPTIMIZATION: Add caching for behavior insights
-        cache_key = f"behavior_insights:{time_range}"
+        # Extract teacher_id if user is a teacher (admins see all students)
+        teacher_id = current_user.get('id') if current_user.get('role') == 'teacher' else None
+        
+        # OPTIMIZATION: Add caching for behavior insights (include teacher_id in cache key)
+        cache_key = f"behavior_insights:{teacher_id or 'admin'}:{time_range}"
         cached_result = None
         
         try:
@@ -687,8 +740,8 @@ async def get_behavior_insights(
                 message="Behavior insights retrieved successfully (cached)"
             )
         
-        # Calculate fresh data
-        behavior_insights = await _get_behavior_insights(time_range)
+        # Calculate fresh data with teacher filtering
+        behavior_insights = await _get_behavior_insights(time_range, teacher_id)
         
         # Cache for 5 minutes (behavior insights don't change frequently)
         try:
@@ -722,7 +775,10 @@ async def get_high_retry_students(
     print(f"📊 [TEACHER] Stage ID: {stage_id}, Retry Threshold: {retry_threshold}")
     
     try:
-        high_retry_data = await _get_high_retry_students(stage_id, retry_threshold, time_range)
+        # Extract teacher_id if user is a teacher (admins see all students)
+        teacher_id = current_user.get('id') if current_user.get('role') == 'teacher' else None
+        
+        high_retry_data = await _get_high_retry_students(stage_id, retry_threshold, time_range, teacher_id)
         
         return TeacherDashboardResponse(
             success=True,
@@ -750,7 +806,10 @@ async def get_stuck_students(
     print(f"📊 [TEACHER] Stage ID: {stage_id}, Days Threshold: {days_threshold}")
     
     try:
-        stuck_students_data = await _get_stuck_students(stage_id, days_threshold, time_range)
+        # Extract teacher_id if user is a teacher (admins see all students)
+        teacher_id = current_user.get('id') if current_user.get('role') == 'teacher' else None
+        
+        stuck_students_data = await _get_stuck_students(stage_id, days_threshold, time_range, teacher_id)
         
         return TeacherDashboardResponse(
             success=True,
@@ -778,7 +837,10 @@ async def get_inactive_students(
     print(f"📊 [TEACHER] Stage ID: {stage_id}, Days Threshold: {days_threshold}")
     
     try:
-        inactive_students_data = await _get_inactive_students(stage_id, days_threshold, time_range)
+        # Extract teacher_id if user is a teacher (admins see all students)
+        teacher_id = current_user.get('id') if current_user.get('role') == 'teacher' else None
+        
+        inactive_students_data = await _get_inactive_students(stage_id, days_threshold, time_range, teacher_id)
         
         return TeacherDashboardResponse(
             success=True,
@@ -801,13 +863,17 @@ async def get_student_progress_overview(
 ):
     """
     Get comprehensive student progress overview for the Progress tab
+    Now includes teacher filtering - only shows assigned students
     """
     print(f"🔄 [TEACHER] GET /teacher/dashboard/progress-overview called")
     print(f"👤 [TEACHER] Authenticated user: {current_user['email']} (Role: {current_user.get('role', 'unknown')})")
     print(f"📊 [TEACHER] Search: {search_query}, Stage: {stage_id}, Lesson: {lesson_id}")
     
     try:
-        progress_data = await _get_student_progress_overview(search_query, stage_id, lesson_id, time_range)
+        # Extract teacher_id if user is a teacher (admins see all students)
+        teacher_id = current_user.get('id') if current_user.get('role') == 'teacher' else None
+        
+        progress_data = await _get_student_progress_overview(search_query, stage_id, lesson_id, time_range, teacher_id)
         
         return TeacherDashboardResponse(
             success=True,
@@ -927,21 +993,24 @@ async def export_progress_data(
         logger.error(f"Error in export_progress_data: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
-async def _get_behavior_insights(time_range: str = "all_time") -> Dict[str, Any]:
+async def _get_behavior_insights(time_range: str = "all_time", teacher_id: Optional[str] = None) -> Dict[str, Any]:
     """
-    Get behavior insights (OPTIMIZED with parallel execution)
+    Get behavior insights (OPTIMIZED with parallel execution) with teacher filtering
     """
     try:
         print(f"🔄 [TEACHER] Calculating behavior insights for time range: {time_range}...")
         
         start_date, end_date = _get_date_range(time_range)
         
+        # Get teacher's assigned students (empty list means admin - show all students)
+        teacher_student_ids = await _get_teacher_student_ids(teacher_id)
+        
         # OPTIMIZATION: Run all insight calculations in parallel
         high_retry_insight, low_engagement_insight, inactivity_insight, stuck_students_insight = await asyncio.gather(
-            _get_high_retry_insight(start_date, end_date),
-            _get_low_engagement_insight(start_date, end_date),
-            _get_inactivity_insight(start_date, end_date),
-            _get_stuck_students_insight(start_date, end_date)
+            _get_high_retry_insight(start_date, end_date, teacher_student_ids),
+            _get_low_engagement_insight(start_date, end_date, teacher_student_ids),
+            _get_inactivity_insight(start_date, end_date, teacher_student_ids),
+            _get_stuck_students_insight(start_date, end_date, teacher_student_ids)
         )
         
         behavior_insights = {
@@ -965,9 +1034,9 @@ async def _get_behavior_insights(time_range: str = "all_time") -> Dict[str, Any]
         logger.error(f"Error calculating behavior insights: {str(e)}")
         raise
 
-async def _get_high_retry_insight(start_date: Optional[date], end_date: Optional[date]) -> Dict[str, Any]:
+async def _get_high_retry_insight(start_date: Optional[date], end_date: Optional[date], teacher_student_ids: Optional[List[str]] = None) -> Dict[str, Any]:
     """
-    Get high retry rate insight (OPTIMIZED - batch student name lookup)
+    Get high retry rate insight (OPTIMIZED - batch student name lookup) with teacher filtering
     """
     try:
         # OPTIMIZATION: Get students with high retry rates (more than 5 attempts on any topic)
@@ -975,6 +1044,10 @@ async def _get_high_retry_insight(start_date: Optional[date], end_date: Optional
         retry_query = supabase.table('ai_tutor_user_topic_progress').select(
             'user_id, stage_id, exercise_id, topic_id, attempt_num'
         ).limit(10000)  # Limit to prevent memory issues
+        
+        # Apply teacher filtering if not admin (teacher_student_ids is None or empty means admin)
+        if teacher_student_ids:
+            retry_query = retry_query.in_('user_id', teacher_student_ids)
         
         if start_date and end_date:
             retry_query = retry_query.gte('created_at', start_date.isoformat()).lte('created_at', end_date.isoformat())
@@ -1044,19 +1117,26 @@ async def _get_high_retry_insight(start_date: Optional[date], end_date: Optional
             "affected_students": 0
         }
 
-async def _get_high_retry_students(stage_id: Optional[int], retry_threshold: int, time_range: str) -> Dict[str, Any]:
+async def _get_high_retry_students(stage_id: Optional[int], retry_threshold: int, time_range: str, teacher_id: Optional[str] = None) -> Dict[str, Any]:
     """
-    Get detailed list of students with high retry rates (POSSIBLE - using attempt_num)
+    Get detailed list of students with high retry rates (POSSIBLE - using attempt_num) with teacher filtering
     """
     try:
         print(f"🔄 [TEACHER] Getting high retry students with threshold: {retry_threshold}")
         
         start_date, end_date = _get_date_range(time_range)
         
+        # Get teacher's assigned students (empty list means admin - show all students)
+        teacher_student_ids = await _get_teacher_student_ids(teacher_id)
+        
         # Build query for topic progress
         query = supabase.table('ai_tutor_user_topic_progress').select(
             'user_id, stage_id, exercise_id, topic_id, attempt_num, created_at'
         )
+        
+        # Apply teacher filtering if not admin
+        if teacher_student_ids:
+            query = query.in_('user_id', teacher_student_ids)
         
         if stage_id:
             query = query.eq('stage_id', stage_id)
@@ -1131,9 +1211,9 @@ async def _get_high_retry_students(stage_id: Optional[int], retry_threshold: int
             "error": str(e)
         }
 
-async def _get_low_engagement_insight(start_date: Optional[date], end_date: Optional[date]) -> Dict[str, Any]:
+async def _get_low_engagement_insight(start_date: Optional[date], end_date: Optional[date], teacher_student_ids: Optional[List[str]] = None) -> Dict[str, Any]:
     """
-    Get low engagement insight with detailed student information (POSSIBLE - using daily learning analytics)
+    Get low engagement insight with detailed student information (POSSIBLE - using daily learning analytics) with teacher filtering
     """
     try:
         print(f"🔄 [TEACHER] Calculating low engagement insight...")
@@ -1146,13 +1226,23 @@ async def _get_low_engagement_insight(start_date: Optional[date], end_date: Opti
             'user_id'
         ).gte('analytics_date', seven_days_ago)
         
+        # Apply teacher filtering if not admin
+        if teacher_student_ids:
+            recent_activity_query = recent_activity_query.in_('user_id', teacher_student_ids)
+        
         if start_date and end_date:
             recent_activity_query = recent_activity_query.gte('analytics_date', start_date.isoformat()).lte('analytics_date', end_date.isoformat())
         
         recent_activity_result = recent_activity_query.execute()
         
         # OPTIMIZATION: Get total users (with limit to prevent memory issues)
-        total_users_result = supabase.table('ai_tutor_user_progress_summary').select('user_id').limit(10000).execute()
+        total_users_query = supabase.table('ai_tutor_user_progress_summary').select('user_id').limit(10000)
+        
+        # Apply teacher filtering if not admin
+        if teacher_student_ids:
+            total_users_query = total_users_query.in_('user_id', teacher_student_ids)
+        
+        total_users_result = total_users_query.execute()
         total_users = len(total_users_result.data) if total_users_result.data else 0
         
         if total_users == 0:
@@ -1199,19 +1289,36 @@ async def _get_low_engagement_insight(start_date: Optional[date], end_date: Opti
             "affected_students": 0
         }
 
-async def _get_inactivity_insight(start_date: Optional[date], end_date: Optional[date]) -> Dict[str, Any]:
+async def _get_inactivity_insight(start_date: Optional[date], end_date: Optional[date], teacher_student_ids: Optional[List[str]] = None) -> Dict[str, Any]:
     """
-    Get inactivity insight (POSSIBLE - using daily learning analytics and progress summary)
+    Get inactivity insight (POSSIBLE - using daily learning analytics and progress summary) with teacher filtering
     """
     try:
         print(f"🔄 [TEACHER] Calculating inactivity insight...")
         
         # Get inactive students data using the helper function
-        inactive_students_data = await _get_inactive_students(None, 30, "all_time")
+        # We pass None as teacher_id and let _get_inactive_students handle the filtering via teacher_student_ids
+        # But we need to pass teacher_id, so we'll need to extract it from context
+        # For now, pass None and let _get_inactive_students use teacher_student_ids directly
+        inactive_students_data = await _get_inactive_students(None, 30, "all_time", None)
+        # Apply filtering manually here since we have teacher_student_ids
+        if teacher_student_ids and inactive_students_data.get('students'):
+            inactive_students_data['students'] = [
+                s for s in inactive_students_data['students'] 
+                if s.get('user_id') in teacher_student_ids
+            ]
+            inactive_students_data['total_affected'] = len(inactive_students_data['students'])
+        
         inactive_count = inactive_students_data.get('total_affected', 0)
         
         # OPTIMIZATION: Get total users for percentage calculation (with limit)
-        total_users_result = supabase.table('ai_tutor_user_progress_summary').select('user_id').limit(10000).execute()
+        total_users_query = supabase.table('ai_tutor_user_progress_summary').select('user_id').limit(10000)
+        
+        # Apply teacher filtering if not admin
+        if teacher_student_ids:
+            total_users_query = total_users_query.in_('user_id', teacher_student_ids)
+        
+        total_users_result = total_users_query.execute()
         total_users = len(total_users_result.data) if total_users_result.data else 0
         
         if total_users == 0:
@@ -1246,9 +1353,9 @@ async def _get_inactivity_insight(start_date: Optional[date], end_date: Optional
             "affected_students": 0
         }
 
-async def _get_stuck_students_insight(start_date: Optional[date], end_date: Optional[date]) -> Dict[str, Any]:
+async def _get_stuck_students_insight(start_date: Optional[date], end_date: Optional[date], teacher_student_ids: Optional[List[str]] = None) -> Dict[str, Any]:
     """
-    Get stuck students insight (POSSIBLE - using progress summary and activity data)
+    Get stuck students insight (POSSIBLE - using progress summary and activity data) with teacher filtering
     """
     try:
         # Get students who haven't progressed from their current stage in 7+ days
@@ -1259,6 +1366,10 @@ async def _get_stuck_students_insight(start_date: Optional[date], end_date: Opti
             'user_id'
         ).gte('analytics_date', seven_days_ago)
         
+        # Apply teacher filtering if not admin
+        if teacher_student_ids:
+            recent_activity_query = recent_activity_query.in_('user_id', teacher_student_ids)
+        
         if start_date and end_date:
             recent_activity_query = recent_activity_query.gte('analytics_date', start_date.isoformat()).lte('analytics_date', end_date.isoformat())
         
@@ -1268,6 +1379,10 @@ async def _get_stuck_students_insight(start_date: Optional[date], end_date: Opti
         all_users_query = supabase.table('ai_tutor_user_progress_summary').select(
             'user_id, current_stage, current_exercise, last_activity_date, overall_progress_percentage'
         ).limit(5000)  # Limit to prevent memory issues
+        
+        # Apply teacher filtering if not admin
+        if teacher_student_ids:
+            all_users_query = all_users_query.in_('user_id', teacher_student_ids)
         
         if start_date and end_date:
             all_users_query = all_users_query.gte('updated_at', start_date.isoformat()).lte('updated_at', end_date.isoformat())
@@ -1359,14 +1474,17 @@ async def _get_stuck_students_insight(start_date: Optional[date], end_date: Opti
             "affected_students": 0
         }
 
-async def _get_stuck_students(stage_id: Optional[int], days_threshold: int, time_range: str) -> Dict[str, Any]:
+async def _get_stuck_students(stage_id: Optional[int], days_threshold: int, time_range: str, teacher_id: Optional[str] = None) -> Dict[str, Any]:
     """
-    Get detailed list of students stuck at stages (POSSIBLE - using progress summary and activity data)
+    Get detailed list of students stuck at stages (POSSIBLE - using progress summary and activity data) with teacher filtering
     """
     try:
         print(f"🔄 [TEACHER] Getting stuck students with threshold: {days_threshold} days")
         
         start_date, end_date = _get_date_range(time_range)
+        
+        # Get teacher's assigned students (empty list means admin - show all students)
+        teacher_student_ids = await _get_teacher_student_ids(teacher_id)
         
         # Calculate the cutoff date for stuck students
         cutoff_date = (date.today() - timedelta(days=days_threshold)).isoformat()
@@ -1375,6 +1493,10 @@ async def _get_stuck_students(stage_id: Optional[int], days_threshold: int, time
         query = supabase.table('ai_tutor_user_progress_summary').select(
             'user_id, current_stage, current_exercise, last_activity_date, overall_progress_percentage, created_at'
         )
+        
+        # Apply teacher filtering if not admin
+        if teacher_student_ids:
+            query = query.in_('user_id', teacher_student_ids)
         
         if stage_id:
             query = query.eq('current_stage', stage_id)
@@ -1396,6 +1518,10 @@ async def _get_stuck_students(stage_id: Optional[int], days_threshold: int, time
         recent_activity_query = supabase.table('ai_tutor_daily_learning_analytics').select(
             'user_id'
         ).gte('analytics_date', cutoff_date)
+        
+        # Apply teacher filtering if not admin
+        if teacher_student_ids:
+            recent_activity_query = recent_activity_query.in_('user_id', teacher_student_ids)
         
         if start_date and end_date:
             recent_activity_query = recent_activity_query.gte('analytics_date', start_date.isoformat()).lte('analytics_date', end_date.isoformat())
@@ -1462,14 +1588,17 @@ async def _get_stuck_students(stage_id: Optional[int], days_threshold: int, time
             "error": str(e)
         }
 
-async def _get_inactive_students(stage_id: Optional[int], days_threshold: int, time_range: str) -> Dict[str, Any]:
+async def _get_inactive_students(stage_id: Optional[int], days_threshold: int, time_range: str, teacher_id: Optional[str] = None) -> Dict[str, Any]:
     """
-    Get detailed list of students who have been inactive for a specified number of days
+    Get detailed list of students who have been inactive for a specified number of days with teacher filtering
     """
     try:
         print(f"🔄 [TEACHER] Getting inactive students with threshold: {days_threshold} days")
         
         start_date, end_date = _get_date_range(time_range)
+        
+        # Get teacher's assigned students (empty list means admin - show all students)
+        teacher_student_ids = await _get_teacher_student_ids(teacher_id)
         
         # Calculate the cutoff date for inactive students
         cutoff_date = (date.today() - timedelta(days=days_threshold)).isoformat()
@@ -1478,6 +1607,10 @@ async def _get_inactive_students(stage_id: Optional[int], days_threshold: int, t
         query = supabase.table('ai_tutor_user_progress_summary').select(
             'user_id, current_stage, current_exercise, last_activity_date, overall_progress_percentage, created_at'
         )
+        
+        # Apply teacher filtering if not admin
+        if teacher_student_ids:
+            query = query.in_('user_id', teacher_student_ids)
         
         if stage_id:
             query = query.eq('current_stage', stage_id)
@@ -1499,6 +1632,10 @@ async def _get_inactive_students(stage_id: Optional[int], days_threshold: int, t
         recent_activity_query = supabase.table('ai_tutor_daily_learning_analytics').select(
             'user_id'
         ).gte('analytics_date', cutoff_date)
+        
+        # Apply teacher filtering if not admin
+        if teacher_student_ids:
+            recent_activity_query = recent_activity_query.in_('user_id', teacher_student_ids)
         
         if start_date and end_date:
             recent_activity_query = recent_activity_query.gte('analytics_date', start_date.isoformat()).lte('analytics_date', end_date.isoformat())
@@ -1580,19 +1717,26 @@ async def _get_inactive_students(stage_id: Optional[int], days_threshold: int, t
             "error": str(e)
         }
 
-async def _get_student_progress_overview(search_query: Optional[str], stage_id: Optional[int], lesson_id: Optional[int], time_range: str) -> Dict[str, Any]:
+async def _get_student_progress_overview(search_query: Optional[str], stage_id: Optional[int], lesson_id: Optional[int], time_range: str, teacher_id: Optional[str] = None) -> Dict[str, Any]:
     """
-    Get comprehensive student progress overview with detailed student data
+    Get comprehensive student progress overview with detailed student data and teacher filtering
     """
     try:
         print(f"🔄 [TEACHER] Getting student progress overview...")
         
         start_date, end_date = _get_date_range(time_range)
         
+        # Get teacher's assigned students (empty list means admin - show all students)
+        teacher_student_ids = await _get_teacher_student_ids(teacher_id)
+        
         # Build base query for student progress
         base_query = supabase.table('ai_tutor_user_progress_summary').select(
             'user_id, current_stage, current_exercise, overall_progress_percentage, last_activity_date, total_time_spent_minutes, total_exercises_completed'
         )
+        
+        # Apply teacher filtering if not admin
+        if teacher_student_ids:
+            base_query = base_query.in_('user_id', teacher_student_ids)
         
         # Apply filters
         if stage_id:
@@ -2036,6 +2180,36 @@ def _get_stage_display_name(stage_id: int) -> str:
         6: "Stage 6"
     }
     return stage_names.get(stage_id, f"Stage {stage_id}")
+
+async def _get_teacher_student_ids(teacher_id: Optional[str]) -> List[str]:
+    """
+    Get list of student IDs assigned to a teacher.
+    Returns empty list if teacher_id is None (admin) or if no students are assigned.
+    For admins, returns empty list which signals to show all students.
+    """
+    try:
+        if not teacher_id:
+            # Admin or no teacher_id provided - return empty list to indicate "all students"
+            return []
+        
+        result = supabase.table('teacher_student_assignments').select(
+            'student_id'
+        ).eq('teacher_id', teacher_id).eq('status', 'active').execute()
+        
+        if result.data:
+            student_ids = [record['student_id'] for record in result.data]
+            print(f"✅ [TEACHER] Found {len(student_ids)} assigned students for teacher {teacher_id}")
+            return student_ids
+        
+        print(f"⚠️ [TEACHER] No assigned students found for teacher {teacher_id}")
+        return []
+        
+    except Exception as e:
+        print(f"❌ [TEACHER] Error getting teacher students: {str(e)}")
+        logger.error(f"Error getting teacher students: {str(e)}")
+        # Return empty list on error - this will cause functions to return empty data
+        # which is safer than showing all students
+        return []
 
 async def _get_batch_student_names(user_ids: List[str]) -> Dict[str, str]:
     """
