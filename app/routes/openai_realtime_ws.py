@@ -77,32 +77,38 @@ BASE_PERSONA = (
     "- Keep the pacing natural and interactive.\n\n"
 )
 
+
 # Mode-specific instructions
-SENTENCE_STRUCTURE_INSTRUCTION = (
-    BASE_PERSONA +
-    "### ROLE: Sentence Structure Coach\n\n"
-    "- **Mission**: Focus ONLY on correcting sentence structure. Do NOT interpret meaning, guess intent, or make small talk.\n"
-    "- **Critical Rule**: When you detect broken structure (e.g., \"Me no understanding\", \"Me park go to\"), you must:\n"
-    "  1. IMMEDIATELY correct the structure without interpreting what the user meant.\n"
-    "  2. Use this exact format: \"A better way to say that is: '[corrected sentence].' Let's practice it together.\"\n"
-    "  3. Ask the learner to repeat the corrected sentence.\n"
-    "  4. Provide ONE brief grammar tip about the structure (e.g., \"We put the subject before the verb.\").\n"
-    "  5. Do NOT ask follow-up questions about their meaning or make conversation about the topic.\n"
-    "- **What NOT to do**:\n"
-    "  - Do NOT say things like \"It sounds like you're going to the park\" or \"Enjoy going to the park\"\n"
-    "  - Do NOT interpret meaning or make assumptions about what they meant\n"
-    "  - Do NOT engage in small talk or topic discussion\n"
-    "  - Do NOT praise the intent or make encouraging comments about the content\n"
-    "- **What TO do**:\n"
-    "  - Focus ONLY on the grammatical structure\n"
-    "  - Correct the word order (Subject-Verb-Object)\n"
-    "  - Provide the corrected sentence clearly\n"
-    "  - Ask for repetition of the corrected structure\n"
-    "- **Example Responses**:\n"
-    "  - User: \"Me no understanding\" → You: \"A better way to say that is: 'I don't understand.' Let's practice it together. Please repeat: I don't understand.\"\n"
-    "  - User: \"Me park go to\" → You: \"A better way to say that is: 'I am going to the park.' Let's practice it together. Please repeat: I am going to the park.\"\n"
-    "- **After Correction**: Once the learner repeats correctly, you may ask them to create a NEW sentence with similar structure, but keep it focused on structure practice, not topic discussion.\n"
-)
+SENTENCE_STRUCTURE_INSTRUCTION = """
+You are an AI English Tutor operating in STRICT "Sentence Structure Mode".
+
+RULES:
+1. If the user speaks or types an incorrect English sentence, you must NOT respond to the meaning. 
+   Your ONLY job is to correct the structure by replying:
+   “A better way to say that is: ‘{corrected sentence}’. Try repeating this.”
+
+2. Do NOT continue the conversation until the user correctly repeats the corrected sentence.
+   - If the user repeats it correctly → respond normally to that sentence.
+   - If the user repeats it incorrectly → correct again using the same format.
+
+3. Corrections must be simple, gentle, and A1-A2 level.
+
+4. You must NOT:
+   - guess their intent  
+   - add extra meaning  
+   - change the topic  
+   - start small talk  
+   - explain grammar unless needed  
+
+WORKFLOW:
+- Incorrect → correct + ask to repeat  
+- Correct repeat → reply normally  
+- Incorrect repeat → correct again  
+
+Stay fully consistent. Prioritize structure correction over conversation.
+Note: Correct the user speaked sentence.
+"""
+
 
 GRAMMAR_INSTRUCTION = (
     BASE_PERSONA +
@@ -204,7 +210,7 @@ ELEVENLABS_DEFAULT_VOICE_SETTINGS = {
     "similarity_boost": 0.8,
     "style": 0.0,
     "use_speaker_boost": True,
-    "speed": 0.85,  # Slow down voice to 85% speed (range: 0.25-4.0, 1.0 = normal)
+    "speed": 0.90,  # Slow down voice to 85% speed (range: 0.25-4.0, 1.0 = normal)
 }
 
 
@@ -1159,14 +1165,10 @@ async def openai_realtime_conversation(websocket: WebSocket):
     print("✅ Client connected to OpenAI Realtime endpoint")
     
     bridge: Optional[OpenAIRealtimeBridge] = None
+    mode_initialized = False  # Track if mode has been set and OpenAI connected
     
     try:
-        # Initialize bridge - mode will be set from greeting message if provided
-        # For now, start with general mode
-        bridge = OpenAIRealtimeBridge(websocket, mode="general")
-        await bridge.connect_to_openai()
-        
-        # Send connection confirmation
+        # Send connection confirmation immediately
         await websocket.send_json({
             "type": "connected",
             "message": "Connected to OpenAI Realtime API"
@@ -1180,6 +1182,16 @@ async def openai_realtime_conversation(websocket: WebSocket):
                 
                 # Handle binary audio data
                 if "bytes" in message_data:
+                    # Check if bridge is initialized (should have been initialized by greeting)
+                    if not mode_initialized or bridge is None:
+                        print("⚠️ Bridge not initialized yet. Please send greeting first.")
+                        await websocket.send_json({
+                            "type": "error",
+                            "message": "Please send greeting message first to initialize the session.",
+                            "code": "not_initialized"
+                        })
+                        continue
+                    
                     audio_bytes = message_data["bytes"]
                     print(f"📥 Received binary audio: {len(audio_bytes)} bytes")
                     
@@ -1206,6 +1218,16 @@ async def openai_realtime_conversation(websocket: WebSocket):
                         message_type = message.get("type")
                         
                         if message_type == "audio_commit":
+                            # Check if bridge is initialized
+                            if not mode_initialized or bridge is None:
+                                print("⚠️ Bridge not initialized yet. Please send greeting first.")
+                                await websocket.send_json({
+                                    "type": "error",
+                                    "message": "Please send greeting message first to initialize the session.",
+                                    "code": "not_initialized"
+                                })
+                                continue
+                            
                             # Client is done sending audio, commit and get response
                             print("📤 Committing audio and requesting response")
                             await bridge.commit_audio_and_get_response()
@@ -1215,28 +1237,36 @@ async def openai_realtime_conversation(websocket: WebSocket):
                             user_name = message.get("user_name", "there")
                             mode = message.get("mode", "general")
                             
-                            # Update bridge mode if provided and different
-                            if mode != bridge.mode:
-                                print(f"🔄 Updating bridge mode from {bridge.mode} to {mode}")
-                                bridge.mode = mode
-                                
-                                # Update system prompt in OpenAI session if connected and ready
-                                if bridge.is_connected and bridge.openai_ws:
-                                    system_prompt = MODE_PROMPTS.get(mode, SYSTEM_PROMPT)
-                                    if bridge.session_ready:
-                                        # Session is ready, update immediately
-                                        update_config = {
-                                            "type": "session.update",
-                                            "session": {
-                                                "instructions": system_prompt,
+                            # Initialize bridge with correct mode if not already initialized
+                            if not mode_initialized:
+                                print(f"🎯 Initializing bridge with mode: {mode}")
+                                bridge = OpenAIRealtimeBridge(websocket, mode=mode)
+                                await bridge.connect_to_openai()  # Connect with correct mode from start
+                                mode_initialized = True
+                                print(f"✅ Bridge initialized and OpenAI connected with mode: {mode}")
+                            else:
+                                # Bridge already initialized, update mode if different
+                                if mode != bridge.mode:
+                                    print(f"🔄 Updating bridge mode from {bridge.mode} to {mode}")
+                                    bridge.mode = mode
+                                    
+                                    # Update system prompt in OpenAI session if connected and ready
+                                    if bridge.is_connected and bridge.openai_ws:
+                                        system_prompt = MODE_PROMPTS.get(mode, SYSTEM_PROMPT)
+                                        if bridge.session_ready:
+                                            # Session is ready, update immediately
+                                            update_config = {
+                                                "type": "session.update",
+                                                "session": {
+                                                    "instructions": system_prompt,
+                                                }
                                             }
-                                        }
-                                        print(f"📝 Updating OpenAI session with new system prompt for mode: {mode}")
-                                        await bridge.openai_ws.send(json.dumps(update_config))
-                                    else:
-                                        # Session not ready yet, store for later
-                                        bridge._pending_mode_update = mode
-                                        print(f"📝 Storing mode update for when session is ready: {mode}")
+                                            print(f"📝 Updating OpenAI session with new system prompt for mode: {mode}")
+                                            await bridge.openai_ws.send(json.dumps(update_config))
+                                        else:
+                                            # Session not ready yet, store for later
+                                            bridge._pending_mode_update = mode
+                                            print(f"📝 Storing mode update for when session is ready: {mode}")
                             
                             print(f"👋 [GREETING] Processing greeting for user: {user_name}, mode: {mode}")
                             
